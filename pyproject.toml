@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ogc"
+version = "0.0.1"
+authors = [
+    { name="Rob Atkinson", email="ratkinson@ogc.org" },
+    { name="Piotr Zaborowski", email="pzaborowski@ogc.org" },
+    { name="Alejandro Villar", email="avillar@ogc.org" },
+]
+description = "OGC Naming Authority tools"
+readme = "README.md"
+requires-python = ">=3.7"
+dynamic = ["dependencies"]
+
+[project.urls]
+"Homepage" = "https://www.ogc.org/def-server"
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
