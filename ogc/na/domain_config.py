@@ -22,10 +22,15 @@ class DomainConfiguration:
     def clear(self):
         self.entries = {}
 
-    def _load_rule_collection(self, g: Graph, n: Node) -> list[str]:
+    def _load_rule_collection(self, g: Graph, n: Node, seen: set = None) -> list[str]:
+        if seen is None:
+            seen = set((n,))
         rules = list(g.objects(n, DOMAINCFG.hasFile))
         for imp in g.objects(n, DOMAINCFG.imports):
-            rules.extend(self._load_rule_collection(g, imp))
+            if imp in seen:
+                raise Exception(f'Recursive import detected: {imp}')
+            rules.extend(self._load_rule_collection(g, imp, seen))
+            seen.add(imp)
         return rules
 
     def load(self, source: Union[Graph, str, IO], domain: Union[str, Path] = None):

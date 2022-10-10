@@ -16,6 +16,7 @@ from ogc.na.domain_config import DomainConfiguration, DomainConfigurationEntry
 
 logger = logging.getLogger('update_vocabs')
 
+# extension: rdflib format
 ENTAILED_FORMATS = {
     'ttl': 'ttl',
     'rdf': 'xml',

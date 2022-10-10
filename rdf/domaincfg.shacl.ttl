@@ -53,5 +53,16 @@ _:nodeShapeRuleCollection a sh:NodeShape ;
     sh:path :hasFile ;
     sh:datatype xsd:string ;
   ] ;
+  sh:sparql [
+    a sh:SPARQLConstraint ;
+    sh:message "Circular dependency detected on imports" ;
+    sh:prefixes : ;
+    sh:select """
+      SELECT ?this (:imports as ?path) (?this as ?value)
+      WHERE {
+        ?this :imports+ ?this
+      }
+    """
+  ]
 .
 
