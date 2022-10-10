@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 import os
-from glob import glob
 from pathlib import Path
 from typing import Union, Optional
 from typing.io import IO
 from rdflib import Graph, Namespace, RDF, RDFS
 from rdflib.term import Node
+from pyshacl import validate
+from importlib.resources import open_binary
 import logging
 
 DOMAINCFG = Namespace('urn:ogc:na/domaincfg#')
+with open_binary('ogc.na', 'domaincfg.shacl.ttl') as shacl_file:
+    SHACL_VALIDATOR = Graph().parse(shacl_file)
 logger = logging.getLogger('domain_config')
 
 class DomainConfiguration:
@@ -40,7 +43,12 @@ class DomainConfiguration:
         :param domain: Domain path filter
         :return:
         '''
-        g = Graph().parse(source)
+        if not isinstance(source, Graph):
+            g = Graph().parse(source)
+
+        validresult = validate(g, shacl_graph=SHACL_VALIDATOR)
+        if not validresult[0]:
+            raise Exception('Domain Configuration graph not valid: %s', validresult[2])
 
         domain = None if not domain else Path(domain).resolve()
 
