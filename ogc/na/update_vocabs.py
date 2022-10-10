@@ -57,23 +57,29 @@ def setup_logging(debug: bool = False):
     rootlogger.addHandler(herr)
 
 
-def load_vocab(vocab: Path, graph_uri: str,
+def load_vocab(vocab: Union[Graph, str, Path], graph_uri: str,
                graph_store: str, authdetails: tuple[str] = None) -> None:
 
     # PUT is equivalent to DROP GRAPH + INSERT DATA
     # Graph is automatically created per Graph Store spec
-    with open(vocab, 'rb') as f:
-        r = httpx.put(
-            graph_store,
-            params={
-                'graph': graph_uri,
-            },
-            auth=authdetails,
-            headers={
-                'Content-type': 'text/turtle',
-            },
-            content=f.read()
-        )
+
+    if isinstance(vocab, Graph):
+        content = vocab.serialize(format='Turtle')
+    else:
+        with open(vocab, 'rb') as f:
+            content = f.read()
+
+    r = httpx.put(
+        graph_store,
+        params={
+            'graph': graph_uri,
+        },
+        auth=authdetails,
+        headers={
+            'Content-type': 'text/turtle',
+        },
+        content=content
+    )
     logger.debug('HTTP status code: %d', r.status_code)
     r.raise_for_status()
 
