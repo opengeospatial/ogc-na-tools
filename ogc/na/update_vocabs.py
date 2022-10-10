@@ -4,13 +4,13 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, Union, Generator
 
 import httpx
-from pyshacl import validate
+from pyshacl import validate as shacl_validate
 from rdflib import Graph, URIRef, RDF, SKOS
 
-from ogc.na.domain_config import DomainConfiguration
+from ogc.na.domain_config import DomainConfiguration, DomainConfigurationEntry
 
 logger = logging.getLogger('update_vocabs')
 
@@ -78,7 +78,7 @@ def load_vocab(vocab: Path, graph_uri: str,
     r.raise_for_status()
 
 
-def get_graph_uri_for_vocab(g: Graph = None) -> URIRef:
+def get_graph_uri_for_vocab(g: Graph = None) -> Generator[str]:
     """
     We can get the Graph URI for a vocab using assumption that
     the ConceptScheme is declared in the graph being processed.
@@ -148,15 +148,23 @@ def perform_entailments(g: Graph,
     entailed_extra = None
     if extra:
         entailed_extra = _copy_triples(extra)
-        validate(entailed_extra, shacl_graph=rules, ont_graph=None, advanced=True, inplace=True)
+        shacl_validate(entailed_extra, shacl_graph=rules, ont_graph=None, advanced=True, inplace=True)
 
-    validate(g, shacl_graph=rules, ont_graph=extra, advanced=True, inplace=True)
+    shacl_validate(g, shacl_graph=rules, ont_graph=extra, advanced=True, inplace=True)
 
     if entailed_extra:
         for s, p, o in entailed_extra:
             g.remove((s, p, o))
 
     return g
+
+
+def validate(g: Graph, cfg: DomainConfigurationEntry):
+    cfg.load()
+    return validate(data_graph=newg,
+             ont_graph=cfg.extra_ontology,
+             inference='rdfs',
+             shacl_graph=cfg.validator)
 
 
 if __name__ == "__main__":
@@ -306,10 +314,7 @@ if __name__ == "__main__":
             newg = perform_entailments(origg,
                                        cfg.rules,
                                        extra=cfg.extra_ontology)
-            validation_result = validate(data_graph=newg,
-                             ont_graph=cfg.extra_ontology,
-                             inference='rdfs',
-                             shacl_graph=cfg.validator)
+            validation_result = validate(newg, cfg)
 
             with open(doc.with_suffix('.txt'), 'w') as validation_file:
                 validation_file.write(validation_result[2])
