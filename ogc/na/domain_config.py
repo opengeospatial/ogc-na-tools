@@ -137,11 +137,12 @@ class DomainConfigurationEntry:
             for prop in ('rules', 'validator', 'extra_ontology', 'annotation'):
                 val = getattr(self, prop)
                 if isinstance(val, Graph):
-                    continue
+                    setattr(self, f'{prop}_path', None)
                 g = Graph()
                 for fn in val:
                     g.parse(self.working_directory / fn)
                 setattr(self, prop, g)
+                setattr(self, f'{prop}_path', val)
 
             self._loaded = True
 

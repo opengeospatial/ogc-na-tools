@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
-import logging
-import sys
-from glob import glob
-from typing import Optional, Union
 import argparse
+import logging
+import os
+import sys
 from pathlib import Path
-from urllib.parse import quote_plus
+from typing import Optional, Union
 
 import httpx
 from pyshacl import validate
 from rdflib import Graph, URIRef, RDF, SKOS
-import os
 
-from ogc.na.domain_config import DomainConfiguration, DomainConfigurationEntry
+from ogc.na.domain_config import DomainConfiguration
 
 logger = logging.getLogger('update_vocabs')
 
@@ -59,22 +57,25 @@ def setup_logging(debug: bool = False):
     rootlogger.addHandler(herr)
 
 
-def load_vocab(vocab: Path, guri, authdetails: tuple[str] = None):
-    context = "{}/rdf4j-server/repositories/{}/statements?context=<{}>".format(RDF4JSERVER, REPO, quote_plus(guri))
+def load_vocab(vocab: Path, graph_uri: str,
+               graph_store: str, authdetails: tuple[str] = None) -> None:
 
-    r = httpx.delete(
-        context,
-        auth=authdetails
-    )
-    r = httpx.post(
-        context,
-        params={"graph":  guri },
-        headers={"Content-Type": "application/x-turtle;charset=UTF-8"},
-        content=open(vocab, "rb").read(),
-        auth= authdetails
-    )
-    assert 200 <= r.status_code <= 300, "Status code was {}".format(r.status_code)
-    return context
+    # PUT is equivalent to DROP GRAPH + INSERT DATA
+    # Graph is automatically created per Graph Store spec
+    with open(vocab, 'rb') as f:
+        r = httpx.put(
+            graph_store,
+            params={
+                'graph': graph_uri,
+            },
+            auth=authdetails,
+            headers={
+                'Content-type': 'text/turtle',
+            },
+            content=f.read()
+        )
+    logger.debug('HTTP status code: %d', r.status_code)
+    r.raise_for_status()
 
 
 def get_graph_uri_for_vocab(g: Graph = None) -> URIRef:
@@ -117,7 +118,7 @@ def get_entailed_path(f: Path, g: Graph, extension, rootpattern='/def/',
 
 
 def make_rdf(filename: Union[str, Path], g: Graph, rootpath='/def/',
-             entailment_directory=DEFAULT_ENTAILED_DIR):
+             entailment_directory=DEFAULT_ENTAILED_DIR) -> Path:
 
     if not isinstance(filename, Path):
         filename = Path(filename)
@@ -221,9 +222,9 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "-s",
-        "--sparql-endpoint",
+        "--graph-store",
         default=os.environ.get("SPARQL_ENDPOINT"),
-        help="SPARQL endpoint (when --update enabled)"
+        help="SPARQL Graph Store-compatible endpoint (when --update enabled)"
     )
 
     parser.add_argument(
@@ -249,18 +250,18 @@ if __name__ == "__main__":
 
     setup_logging(args.debug)
 
-    sparql_endpoint = args.sparql_endpoint or os.environ.get('SPARQL_ENDPOINT')
+    graph_store = args.graph_store or os.environ.get('SPARQL_GRAPH_STORE')
 
-    if args.update and not sparql_endpoint:
-        print("ERROR: --update requires a SPARQL endpoint", file=sys.stderr)
+    if args.update and not graph_store:
+        print("ERROR: --update requires a SPARQL Graph Store endpoint", file=sys.stderr)
         sys.exit(-1)
 
     authdetails = None
     if 'DB_USERNAME' in os.environ:
         authdetails = (os.environ["DB_USERNAME"], os.environ.get("DB_PASSWORD", ""))
 
-    if sparql_endpoint:
-        logger.info(f"Using SPARQL endpoint %s with{'' if authdetails else 'out'} authentication", sparql_endpoint)
+    if graph_store:
+        logger.info(f"Using SPARQL graph store %s with{'' if authdetails else 'out'} authentication", graph_store)
 
     modlist = []
     addlist = []
@@ -316,8 +317,33 @@ if __name__ == "__main__":
             loadable_path = make_rdf(doc, newg, cfg.uri_root_filter)
 
             if args.update:
-                # TODO: Implement
-                pass
+                loadables = {
+                    loadable_path: loadable_path
+                }
+                if cfg.annotation:
+                    loadables[cfg.annotation_path] = cfg.annotation
+
+                graphname = next(get_graph_uri_for_vocab(newg), None)
+                if not graphname:
+                    logger.warning("No graph name could be deduced from the vocabulary")
+                    # Create graph name from a colon-separated list of
+                    # path components relative to the working directory
+                    relpath = Path(os.path.relpath(doc, args.working_directory))
+                    urnpart = ':'.join(p for p in relpath.parts if p and p != '..')
+                    graphname = "x-urn:{}".format(urnpart)
+                logger.info("Using graph name %s for %s", graphname, str(doc))
+
+                versioned_gname = graphname
+                for n, (path, loadable) in enumerate(loadables.items()):
+                    try:
+                        load_vocab(loadable, versioned_gname,
+                                   args.graph_store, authdetails)
+                        logging.info("Uploaded %s for %s to SPARQL graph store",
+                                      str(path), str(doc))
+                    except Exception as e:
+                        logging.error("Failed to upload %s for %s: %s",
+                                      str(path), str(doc), str(e))
+                    versioned_gname = f'{graphname}{n+1}'
 
             report.setdefault(os.path.relpath(cfg.localpath), {}) \
                 .setdefault(report_cat, []).append(os.path.relpath(doc))
@@ -325,100 +351,3 @@ if __name__ == "__main__":
     for scope, scopereport in report.items():
         logger.info("Scope: %s\n  added: %s\n  modified: %s",
                     scope, scopereport.get('added', []), scopereport.get('modified', []))
-
-    sys.exit(0)
-
-
-    for scopepath in DOMAIN_CFG.keys():
-        cfglist = DOMAIN_CFG[scopepath]
-        if not isinstance( cfglist,list) :
-            cfglist = [cfglist]
-        for cfg in cfglist:
-            try:
-                annotations = cfg['annotations']
-            except:
-                annotations = []
-
-            if args.domain and args.domain != scopepath:
-                continue
-            modified = []
-            domainlist = [os.path.normpath(i) for i in glob(scopepath+cfg['glob'])]
-
-            if args.batch:
-                # update modified list to be everything missing, or everything if -f
-                if args.force :
-                    modified = domainlist
-                else:
-                    # fix - this will be broken for globbing pattern
-                    modified = list ( set(domainlist) - set(glob(scopepath+ "/entailed" + cfg['glob'])))
-
-
-            for f in modlist:
-                # if the file matches the glob using the scopepath and glob pattern  it's a vocab file
-                if f.startswith(scopepath) and f.endswith(".ttl") and os.path.normpath(f) in domainlist:
-                    modified.append(Path(f))
-
-            added = []
-            for f in addedlist:
-                if f.startswith(scopepath) and f.endswith(".ttl") and os.path.normpath(f) in domainlist:
-                    p = Path(f)
-                    added.append(p)
-            if modified + added :
-                if 'extraont' in cfg and cfg['extraont'] :
-                    extra_ont = get_closure_graph(cfg['extraont'])
-                else:
-                    extra_ont = None
-
-
-            for f in modified + added:
-                try:
-                    newg = perform_entailments(cfg['rulelist'],f,extra=extra_ont, anno=annotations)
-                    v = validate(data_graph=newg, ont_graph=extra_ont , inference='rdfs', shacl_graph=cfg['validator'])
-                    if True or not v[0]:
-                        with open( str(f).replace('.ttl','.txt') , "w" ) as vr:
-                            vr.write(v[2])
-                    loadable_path = make_rdf(f, g=newg,
-                                             rootpath=cfg['uri_root_filter'],
-                                             entailment_directory=args.entailment_directory)
-                    if args.update:
-                        loadlist = [loadable_path]
-                        if annotations:
-                            loadlist += annotations
-                        try:
-                            gname = list(get_graph_uri_for_vocab(None, newg))[0]
-                        except:
-                            gname = "x-urn:{}".format(str(f).replace('\\', ':'))
-                        for n,loadable in enumerate(loadlist):
-                            try:
-                                # need to add annotations to a new context
-                                loc = load_vocab( loadable, gname)
-                                log("Uploaded {} for {} to   {} ".format(loadable, f, loc))
-                            except  Exception as e:
-                                log("Failed to upload {} for {} : ( {} )".format(loadable, f, e))
-                            if n == 0 :
-                                gname = gname+str(n+1)
-                            else:
-                                gname = gname[:-1] +str(n+1)
-                except Exception as e:
-                    log("Failed to generate {} : ( {}  )".format(f, e))
-
-            removed = []
-            if args.removed:
-                for f in args.removed.split(","):
-                    # if the file is in the vocabularies/ folder and ends with .ttl, it's a vocab file
-                    if f.startswith(scopepath) and f.endswith(".ttl"):
-                        p = Path(f)
-                        removed.append(p)
-
-            # print for testing
-            print ( "Scope : {}".format(scopepath))
-            if modified:
-                print("modified:")
-                print([str(x) for x in modified])
-            if added:
-                print("added:")
-                print([str(x) for x in added])
-            if removed:
-                print("removed:")
-                print([str(x) for x in removed])
-
