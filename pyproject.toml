@@ -18,5 +18,8 @@ dynamic = ["dependencies"]
 [project.urls]
 "Homepage" = "https://www.ogc.org/def-server"
 
+[tool.setuptools]
+py-modules = ["ogc"]
+
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
