@@ -78,7 +78,7 @@ def load_vocab(vocab: Path, graph_uri: str,
     r.raise_for_status()
 
 
-def get_graph_uri_for_vocab(g: Graph = None) -> Generator[str]:
+def get_graph_uri_for_vocab(g: Graph = None) -> Generator[str, None, None]:
     """
     We can get the Graph URI for a vocab using assumption that
     the ConceptScheme is declared in the graph being processed.
