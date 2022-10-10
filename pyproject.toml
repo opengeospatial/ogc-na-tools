@@ -19,7 +19,10 @@ dynamic = ["dependencies"]
 "Homepage" = "https://www.ogc.org/def-server"
 
 [tool.setuptools]
-py-modules = ["ogc"]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["ogc*"]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
