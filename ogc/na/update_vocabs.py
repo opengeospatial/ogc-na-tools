@@ -124,7 +124,7 @@ def get_entailed_path(f: Path, g: Graph, extension, rootpattern='/def/',
 
 
 def make_rdf(filename: Union[str, Path], g: Graph, rootpath='/def/',
-             entailment_directory=DEFAULT_ENTAILED_DIR) -> Path:
+             entailment_directory: Union[str, Path] = DEFAULT_ENTAILED_DIR) -> Path:
 
     if not isinstance(filename, Path):
         filename = Path(filename)
@@ -167,7 +167,7 @@ def perform_entailments(g: Graph,
 
 def validate(g: Graph, cfg: DomainConfigurationEntry):
     cfg.load()
-    return validate(data_graph=newg,
+    return shacl_validate(data_graph=newg,
              ont_graph=cfg.extra_ontology,
              inference='rdfs',
              shacl_graph=cfg.validator)
@@ -227,13 +227,6 @@ if __name__ == "__main__":
         help="Batch entail all vocabs ( use -f to force overwrite of existing entailments )",
     )
 
-    # parser.add_argument(
-    #     "-f",
-    #     "--force",
-    #     action='store_true',
-    #     help="force overwrite of existing entailments",
-    # )
-
     parser.add_argument(
         "-s",
         "--graph-store",
@@ -258,6 +251,12 @@ if __name__ == "__main__":
         '--debug',
         action='store_true',
         help="Enable debugging"
+    )
+
+    parser.add_argument(
+        '-o',
+        '--output-directory',
+        help='Output directory where new files will be generated',
     )
 
     args = parser.parse_args()
@@ -312,6 +311,8 @@ if __name__ == "__main__":
         modified = domaincfg.find_files(modlist)
         added = domaincfg.find_files(addlist)
 
+    output_path = Path(args.output_directory) if args.output_directory else None
+
     report = {}
     for collection in (modified, added):
         report_cat = 'modified' if collection == modified else 'added'
@@ -322,10 +323,22 @@ if __name__ == "__main__":
                                        extra=cfg.extra_ontology)
             validation_result = validate(newg, cfg)
 
-            with open(doc.with_suffix('.txt'), 'w') as validation_file:
+            docrelpath = Path(os.path.relpath(doc, args.working_directory))
+            if output_path:
+                output_doc = output_path / docrelpath
+                entailment_dir = (output_doc.parent / DEFAULT_ENTAILED_DIR).resolve()
+            else:
+                entailment_dir = DEFAULT_ENTAILED_DIR
+                output_doc = doc
+
+            os.makedirs(output_doc.parent, exist_ok=True)
+            os.makedirs(entailment_dir, exist_ok=True)
+
+            with open(output_doc.with_suffix('.txt'), 'w') as validation_file:
                 validation_file.write(validation_result[2])
 
-            loadable_path = make_rdf(doc, newg, cfg.uri_root_filter)
+            loadable_path = make_rdf(doc, newg, cfg.uri_root_filter,
+                                     entailment_dir)
 
             if args.update:
                 loadables = {
@@ -339,8 +352,7 @@ if __name__ == "__main__":
                     logger.warning("No graph name could be deduced from the vocabulary")
                     # Create graph name from a colon-separated list of
                     # path components relative to the working directory
-                    relpath = Path(os.path.relpath(doc, args.working_directory))
-                    urnpart = ':'.join(p for p in relpath.parts if p and p != '..')
+                    urnpart = ':'.join(p for p in docrelpath.parts if p and p != '..')
                     graphname = "x-urn:{}".format(urnpart)
                 logger.info("Using graph name %s for %s", graphname, str(doc))
 
