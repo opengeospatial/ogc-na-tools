@@ -10,7 +10,8 @@ import httpx
 from pyshacl import validate as shacl_validate
 from rdflib import Graph, URIRef, RDF, SKOS
 
-from ogc.na.domain_config import DomainConfiguration, DomainConfigurationEntry
+from ogc.na import util
+from ogc.na.profile import ProfileRegistry
 
 logger = logging.getLogger('update_vocabs')
 
@@ -24,12 +25,13 @@ ENTAILED_FORMATS = {
 DEFAULT_ENTAILED_DIR = 'entailed'
 
 
-def _copy_triples(src: Graph, dst: Optional[Graph] = None):
-    if dst is None:
-        dst = Graph()
-    for s, p, o in src:
-        dst.add((s, p, o))
-    return dst
+def get_profiles(src: Union[str, Path]):
+    if isinstance(src, Path) or not src.startswith('sparql'):
+        # file
+        pass
+    else:
+        # SPARQL endpoint
+        pass
 
 
 def setup_logging(debug: bool = False):
@@ -148,39 +150,14 @@ def make_rdf(filename: Union[str, Path], g: Graph, rootpath='/def/',
     return loadable_ttl
 
 
-def perform_entailments(g: Graph,
-                        rules: Graph,
-                        extra: Optional[Graph] = None):
-    entailed_extra = None
-    if extra:
-        entailed_extra = _copy_triples(extra)
-        shacl_validate(entailed_extra, shacl_graph=rules, ont_graph=None, advanced=True, inplace=True)
-
-    shacl_validate(g, shacl_graph=rules, ont_graph=extra, advanced=True, inplace=True)
-
-    if entailed_extra:
-        for s, p, o in entailed_extra:
-            g.remove((s, p, o))
-
-    return g
-
-
-def validate(g: Graph, cfg: DomainConfigurationEntry):
-    cfg.load()
-    return shacl_validate(data_graph=newg,
-             ont_graph=cfg.extra_ontology,
-             inference='rdfs',
-             shacl_graph=cfg.validator)
-
-
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "domaincfg",
-        metavar="domain-cfg",
-        help="Domain configuration Turtle file",
+        "profile_source",
+        nargs="+",
+        help="Profile source (can be a local or remote RDF file, or a SPARQL endpoint in the form 'sparql:http://example.org/sparql')",
     )
 
     parser.add_argument(
@@ -292,17 +269,7 @@ if __name__ == "__main__":
         dellist = args.removed.split(',')
         logger.info("Removed: %s", dellist)
 
-    domaincfg = (DomainConfiguration(args.working_directory)
-                 .load(args.domaincfg, domain=args.domain))
-
-    if not len(domaincfg):
-        if args.domain:
-            logger.warning('No configuration found in %s for domain %s, exiting',
-                           args.domaincfg, args.domain)
-        else:
-            logger.warning('No configuration found in %s exiting', args.domaincfg)
-
-        sys.exit(1)
+    profile_registry = ProfileRegistry(args.profile_source)
 
     if args.batch:
         modified = domaincfg.find_all()
