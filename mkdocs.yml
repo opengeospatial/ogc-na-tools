@@ -1,0 +1,21 @@
+site_name: OGC Naming Authority tools
+
+theme:
+  name: material
+
+plugins:
+  - search
+  - gen-files:
+      scripts:
+        - docs/gen_ref_pages.py
+  - literate-nav:
+      nav_file: SUMMARY.md
+  - section-index
+  - mkdocstrings:
+
+watch:
+  - ogc
+
+nav:
+  - Overview: index.md
+  - Reference: reference/
