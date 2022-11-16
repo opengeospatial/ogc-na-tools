@@ -196,6 +196,21 @@
 
   
   
+  
+    <li class="md-nav__item">
+      <a href="../../../../tutorials/" class="md-nav__link">
+        Tutorials
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
     
   
   
@@ -203,18 +218,18 @@
     <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2" type="checkbox" id="__nav_2" checked>
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_3" type="checkbox" id="__nav_3" checked>
       
       
       
       
-        <label class="md-nav__link" for="__nav_2">
+        <label class="md-nav__link" for="__nav_3">
           Reference
           <span class="md-nav__icon md-icon"></span>
         </label>
       
       <nav class="md-nav" aria-label="Reference" data-md-level="1">
-        <label class="md-nav__title" for="__nav_2">
+        <label class="md-nav__title" for="__nav_3">
           <span class="md-nav__icon md-icon"></span>
           Reference
         </label>
@@ -231,7 +246,7 @@
     <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_1" type="checkbox" id="__nav_2_1" checked>
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_3_1" type="checkbox" id="__nav_3_1" checked>
       
       
       
@@ -241,14 +256,14 @@
         <div class="md-nav__link md-nav__link--index ">
           <a href="../../">ogc</a>
           
-            <label for="__nav_2_1">
+            <label for="__nav_3_1">
               <span class="md-nav__icon md-icon"></span>
             </label>
           
         </div>
       
       <nav class="md-nav" aria-label="ogc" data-md-level="2">
-        <label class="md-nav__title" for="__nav_2_1">
+        <label class="md-nav__title" for="__nav_3_1">
           <span class="md-nav__icon md-icon"></span>
           ogc
         </label>
@@ -265,7 +280,7 @@
     <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_1_1" type="checkbox" id="__nav_2_1_1" checked>
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_3_1_1" type="checkbox" id="__nav_3_1_1" checked>
       
       
       
@@ -275,14 +290,14 @@
         <div class="md-nav__link md-nav__link--index ">
           <a href="../">na</a>
           
-            <label for="__nav_2_1_1">
+            <label for="__nav_3_1_1">
               <span class="md-nav__icon md-icon"></span>
             </label>
           
         </div>
       
       <nav class="md-nav" aria-label="na" data-md-level="3">
-        <label class="md-nav__title" for="__nav_2_1_1">
+        <label class="md-nav__title" for="__nav_3_1_1">
           <span class="md-nav__icon md-icon"></span>
           na
         </label>
@@ -833,9 +848,49 @@ which will be used for glob-matching operations.</p>
 
   <div class="doc doc-contents ">
   
-      <p>Tries to find the YAML context file for a given JSON file.
-:param filename: the filename of the JSON document
-:return: its corresponding YAML context file, or None</p>
+      <p>Tries to find the YAML context file for a given JSON file.</p>
+
+  <p><strong>Parameters:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Description</th>
+        <th>Default</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td><code>filename</code></td>
+          <td>
+                <code><span title="typing.Union">Union</span>[<span title="pathlib.Path">Path</span>, str]</code>
+          </td>
+          <td><p>the filename of the JSON document</p></td>
+          <td>
+              <em>required</em>
+          </td>
+        </tr>
+    </tbody>
+  </table>
+
+  <p><strong>Returns:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td>
+                <code><span title="typing.Optional">Optional</span>[str]</code>
+          </td>
+          <td><p>its corresponding YAML context file, or None</p></td>
+        </tr>
+    </tbody>
+  </table>
 
       <details class="quote">
         <summary>Source code in <code>ogc/na/ingest_json.py</code></summary>
@@ -878,9 +933,49 @@ which will be used for glob-matching operations.</p>
 
   <div class="doc doc-contents ">
   
-      <p>Tries to find a list of JSON/JSON-LD files for a given YAML context definition filename.
-:param contextfn: YAML context definition filename
-:return: corresponding JSON/JSON-LD filenames, if found</p>
+      <p>Tries to find a list of JSON/JSON-LD files for a given YAML context definition filename.</p>
+
+  <p><strong>Parameters:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Description</th>
+        <th>Default</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td><code>contextfn</code></td>
+          <td>
+                <code><span title="typing.Union">Union</span>[<span title="pathlib.Path">Path</span>, str]</code>
+          </td>
+          <td><p>YAML context definition filename</p></td>
+          <td>
+              <em>required</em>
+          </td>
+        </tr>
+    </tbody>
+  </table>
+
+  <p><strong>Returns:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td>
+                <code><span title="typing.List">List</span>[str]</code>
+          </td>
+          <td><p>corresponding JSON/JSON-LD filenames, if found</p></td>
+        </tr>
+    </tbody>
+  </table>
 
       <details class="quote">
         <summary>Source code in <code>ogc/na/ingest_json.py</code></summary>
@@ -1041,18 +1136,63 @@ which will be used for glob-matching operations.</p>
 
   <div class="doc doc-contents ">
   
-      <p>Tries to find a JSON/JSON-LD file from a given YAML context definition filename.</p>
+      <p>Tries to find a JSON/JSON-LD file from a given YAML context definition filename.
+Priority:
+  1. Context file in registry (if registry present)
+  2. Context file with same name as JSON doc (e.g. test.yml/test.json)
+  3. Context file in directory (_json-context.yml or _json-context.yaml)</p>
 
-<details class="priority">
-  <summary>Priority</summary>
-  <ol>
-<li>Context file in registry (if registry present)</li>
-<li>Context file with same name as JSON doc (e.g. test.yml/test.json)</li>
-<li>Context file in directory (_json-context.yml or _json-context.yaml)</li>
-</ol>
-</details>      <p>:param contextfn: YAML context definition filename
-:param registry: dict of jsonFile:yamlContextFile mappings
-:return: corresponding JSON/JSON-LD filename, if found</p>
+  <p><strong>Parameters:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Description</th>
+        <th>Default</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td><code>contextfn</code></td>
+          <td>
+                <code>str</code>
+          </td>
+          <td><p>YAML context definition filename</p></td>
+          <td>
+              <em>required</em>
+          </td>
+        </tr>
+        <tr>
+          <td><code>registry</code></td>
+          <td>
+                <code><span title="typing.Optional">Optional</span>[<span title="ogc.na.ingest_json.IContextRegistry">IContextRegistry</span>]</code>
+          </td>
+          <td><p>dict of jsonFile:yamlContextFile mappings</p></td>
+          <td>
+              <em>required</em>
+          </td>
+        </tr>
+    </tbody>
+  </table>
+
+  <p><strong>Returns:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td>
+                <code><span title="typing.Optional">Optional</span>[<span title="typing.List">List</span>[str]]</code>
+          </td>
+          <td><p>corresponding JSON/JSON-LD filename, if found</p></td>
+        </tr>
+    </tbody>
+  </table>
 
       <details class="quote">
         <summary>Source code in <code>ogc/na/ingest_json.py</code></summary>
@@ -1156,10 +1296,58 @@ which will be used for glob-matching operations.</p>
       <p>Find the YAML context file for a given filename, with the following precedence:
     1. Search in registry (if provided)
     2. Search file with same base name but with yaml/yml extension.
-    3. Find _json-context.yml/yaml file in same directory
-:param filename: the filename for which to find the context
-:param registry: an optional filename:yamlContextFile mapping
-:return: the YAML context definition filename</p>
+    3. Find _json-context.yml/yaml file in same directory</p>
+
+  <p><strong>Parameters:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Description</th>
+        <th>Default</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td><code>filename</code></td>
+          <td>
+          </td>
+          <td><p>the filename for which to find the context</p></td>
+          <td>
+              <em>required</em>
+          </td>
+        </tr>
+        <tr>
+          <td><code>registry</code></td>
+          <td>
+                <code><span title="typing.Optional">Optional</span>[<span title="ogc.na.ingest_json.IContextRegistry">IContextRegistry</span>]</code>
+          </td>
+          <td><p>an optional filename:yamlContextFile mapping</p></td>
+          <td>
+              <em>required</em>
+          </td>
+        </tr>
+    </tbody>
+  </table>
+
+  <p><strong>Returns:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td>
+                <code><span title="typing.Optional">Optional</span>[str]</code>
+          </td>
+          <td><p>the YAML context definition filename</p></td>
+        </tr>
+    </tbody>
+  </table>
 
       <details class="quote">
         <summary>Source code in <code>ogc/na/ingest_json.py</code></summary>
@@ -1245,10 +1433,66 @@ which will be used for glob-matching operations.</p>
   <div class="doc doc-contents ">
   
       <p>Create a graph from an input JSON document and a YAML context definition file.</p>
-<p>:param inputfn: input filename
-:param contextfn: YAML context definition filename
-:param base: base URI for JSON-LD context
-:return: a tuple with the resulting RDFLib Graph and the JSON-LD enriched file</p>
+
+  <p><strong>Parameters:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Description</th>
+        <th>Default</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td><code>inputfn</code></td>
+          <td>
+          </td>
+          <td><p>input filename</p></td>
+          <td>
+              <em>required</em>
+          </td>
+        </tr>
+        <tr>
+          <td><code>contextfn</code></td>
+          <td>
+          </td>
+          <td><p>YAML context definition filename</p></td>
+          <td>
+              <em>required</em>
+          </td>
+        </tr>
+        <tr>
+          <td><code>base</code></td>
+          <td>
+                <code><span title="typing.Optional">Optional</span>[str]</code>
+          </td>
+          <td><p>base URI for JSON-LD context</p></td>
+          <td>
+                <code>None</code>
+          </td>
+        </tr>
+    </tbody>
+  </table>
+
+  <p><strong>Returns:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td>
+                <code><span title="typing.Tuple">Tuple</span>[<a class="autorefs autorefs-external" title="rdflib.Graph" href="https://rdflib.readthedocs.io/en/stable/apidocs/rdflib.html#rdflib.Graph">Graph</a>, str]</code>
+          </td>
+          <td><p>a tuple with the resulting RDFLib Graph and the JSON-LD enriched file</p></td>
+        </tr>
+    </tbody>
+  </table>
 
       <details class="quote">
         <summary>Source code in <code>ogc/na/ingest_json.py</code></summary>
@@ -1324,7 +1568,24 @@ which will be used for glob-matching operations.</p>
   <div class="doc doc-contents ">
   
       <p>Creates an empty graph with some standard prefixes.</p>
-<p>:return: an empty RDFLib Graph with some prefixes</p>
+
+  <p><strong>Returns:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td>
+                <code><a class="autorefs autorefs-external" title="rdflib.Graph" href="https://rdflib.readthedocs.io/en/stable/apidocs/rdflib.html#rdflib.Graph">Graph</a></code>
+          </td>
+          <td><p>an empty RDFLib Graph with some prefixes</p></td>
+        </tr>
+    </tbody>
+  </table>
 
       <details class="quote">
         <summary>Source code in <code>ogc/na/ingest_json.py</code></summary>
@@ -1368,19 +1629,108 @@ which will be used for glob-matching operations.</p>
   <div class="doc doc-contents ">
   
       <p>Process input file and generate output RDF files.</p>
-<p>:param inputfn: input filename
-:param jsonldfn: output JSON-lD filename (None for automatic).
-    If False, no JSON-LD output will be generated
-:param ttlfn: output Turtle filename (None for automatic).
-    If False, no Turtle output will be generated.
-:param contextfn: YAML context filename. If None, will be autodetected:
-    1. From a file with the same name but yml/yaml extension (test.json -&gt; test.yml)
-    2. From a _json-context.yml/_json-context.yaml file in the same directory
-:param context_registry: dict with filename:yamlContextFilename mappings. Will be ignored
-    if contextfn is provided
-:param base: base URI for JSON-LD
-:param skip_on_missing_context: whether to silently fail if no context file is found
-:return: List of output files created</p>
+
+  <p><strong>Parameters:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Description</th>
+        <th>Default</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td><code>inputfn</code></td>
+          <td>
+                <code>str</code>
+          </td>
+          <td><p>input filename</p></td>
+          <td>
+              <em>required</em>
+          </td>
+        </tr>
+        <tr>
+          <td><code>jsonldfn</code></td>
+          <td>
+                <code><span title="typing.Optional">Optional</span>[<span title="typing.Union">Union</span>[bool, str]]</code>
+          </td>
+          <td><p>output JSON-lD filename (None for automatic). If False, no JSON-LD output will be generated</p></td>
+          <td>
+                <code>False</code>
+          </td>
+        </tr>
+        <tr>
+          <td><code>ttlfn</code></td>
+          <td>
+                <code><span title="typing.Optional">Optional</span>[<span title="typing.Union">Union</span>[bool, str]]</code>
+          </td>
+          <td><p>output Turtle filename (None for automatic). If False, no Turtle output will be generated.</p></td>
+          <td>
+                <code>False</code>
+          </td>
+        </tr>
+        <tr>
+          <td><code>contextfn</code></td>
+          <td>
+                <code><span title="typing.Optional">Optional</span>[str]</code>
+          </td>
+          <td><p>YAML context filename. If None, will be autodetected: 1. From a file with the same name but yml/yaml extension (test.json -&gt; test.yml) 2. From a _json-context.yml/_json-context.yaml file in the same directory</p></td>
+          <td>
+                <code>None</code>
+          </td>
+        </tr>
+        <tr>
+          <td><code>context_registry</code></td>
+          <td>
+                <code><span title="typing.Optional">Optional</span>[<span title="ogc.na.ingest_json.IContextRegistry">IContextRegistry</span>]</code>
+          </td>
+          <td><p>dict with filename:yamlContextFilename mappings. Will be ignored if contextfn is provided</p></td>
+          <td>
+                <code>None</code>
+          </td>
+        </tr>
+        <tr>
+          <td><code>base</code></td>
+          <td>
+                <code><span title="typing.Optional">Optional</span>[str]</code>
+          </td>
+          <td><p>base URI for JSON-LD</p></td>
+          <td>
+                <code>None</code>
+          </td>
+        </tr>
+        <tr>
+          <td><code>skip_on_missing_context</code></td>
+          <td>
+                <code>bool</code>
+          </td>
+          <td><p>whether to silently fail if no context file is found</p></td>
+          <td>
+                <code>False</code>
+          </td>
+        </tr>
+    </tbody>
+  </table>
+
+  <p><strong>Returns:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td>
+                <code><span title="typing.List">List</span>[str]</code>
+          </td>
+          <td><p>List of output files created</p></td>
+        </tr>
+    </tbody>
+  </table>
 
       <details class="quote">
         <summary>Source code in <code>ogc/na/ingest_json.py</code></summary>
@@ -1546,9 +1896,58 @@ which will be used for glob-matching operations.</p>
       <p>Transform a JSON document loaded in a dict, and embed JSON-LD context into it.</p>
 <p>WARNING: This function modifies the input dict. If that is not desired, make a copy
 before invoking.</p>
-<p>:param data: the JSON document in dict format
-:param context: YAML context definition
-:return: the transformed and JSON-LD-enriched data</p>
+
+  <p><strong>Parameters:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Description</th>
+        <th>Default</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td><code>data</code></td>
+          <td>
+                <code>dict</code>
+          </td>
+          <td><p>the JSON document in dict format</p></td>
+          <td>
+              <em>required</em>
+          </td>
+        </tr>
+        <tr>
+          <td><code>context</code></td>
+          <td>
+                <code>dict</code>
+          </td>
+          <td><p>YAML context definition</p></td>
+          <td>
+              <em>required</em>
+          </td>
+        </tr>
+    </tbody>
+  </table>
+
+  <p><strong>Returns:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td>
+                <code>dict</code>
+          </td>
+          <td><p>the transformed and JSON-LD-enriched data</p></td>
+        </tr>
+    </tbody>
+  </table>
 
       <details class="quote">
         <summary>Source code in <code>ogc/na/ingest_json.py</code></summary>

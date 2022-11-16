@@ -196,6 +196,21 @@
 
   
   
+  
+    <li class="md-nav__item">
+      <a href="../../../../tutorials/" class="md-nav__link">
+        Tutorials
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
     
   
   
@@ -203,18 +218,18 @@
     <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2" type="checkbox" id="__nav_2" checked>
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_3" type="checkbox" id="__nav_3" checked>
       
       
       
       
-        <label class="md-nav__link" for="__nav_2">
+        <label class="md-nav__link" for="__nav_3">
           Reference
           <span class="md-nav__icon md-icon"></span>
         </label>
       
       <nav class="md-nav" aria-label="Reference" data-md-level="1">
-        <label class="md-nav__title" for="__nav_2">
+        <label class="md-nav__title" for="__nav_3">
           <span class="md-nav__icon md-icon"></span>
           Reference
         </label>
@@ -231,7 +246,7 @@
     <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_1" type="checkbox" id="__nav_2_1" checked>
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_3_1" type="checkbox" id="__nav_3_1" checked>
       
       
       
@@ -241,14 +256,14 @@
         <div class="md-nav__link md-nav__link--index ">
           <a href="../../">ogc</a>
           
-            <label for="__nav_2_1">
+            <label for="__nav_3_1">
               <span class="md-nav__icon md-icon"></span>
             </label>
           
         </div>
       
       <nav class="md-nav" aria-label="ogc" data-md-level="2">
-        <label class="md-nav__title" for="__nav_2_1">
+        <label class="md-nav__title" for="__nav_3_1">
           <span class="md-nav__icon md-icon"></span>
           ogc
         </label>
@@ -265,7 +280,7 @@
     <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_2_1_1" type="checkbox" id="__nav_2_1_1" checked>
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_3_1_1" type="checkbox" id="__nav_3_1_1" checked>
       
       
       
@@ -275,14 +290,14 @@
         <div class="md-nav__link md-nav__link--index ">
           <a href="../">na</a>
           
-            <label for="__nav_2_1_1">
+            <label for="__nav_3_1_1">
               <span class="md-nav__icon md-icon"></span>
             </label>
           
         </div>
       
       <nav class="md-nav" aria-label="na" data-md-level="3">
-        <label class="md-nav__title" for="__nav_2_1_1">
+        <label class="md-nav__title" for="__nav_3_1_1">
           <span class="md-nav__icon md-icon"></span>
           na
         </label>
@@ -373,8 +388,29 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#ogc.na.update_vocabs.get_entailed_path" class="md-nav__link">
+    get_entailed_path()
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#ogc.na.update_vocabs.get_graph_uri_for_vocab" class="md-nav__link">
     get_graph_uri_for_vocab()
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ogc.na.update_vocabs.load_vocab" class="md-nav__link">
+    load_vocab()
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ogc.na.update_vocabs.make_rdf" class="md-nav__link">
+    make_rdf()
   </a>
   
 </li>
@@ -475,8 +511,29 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#ogc.na.update_vocabs.get_entailed_path" class="md-nav__link">
+    get_entailed_path()
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#ogc.na.update_vocabs.get_graph_uri_for_vocab" class="md-nav__link">
     get_graph_uri_for_vocab()
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ogc.na.update_vocabs.load_vocab" class="md-nav__link">
+    load_vocab()
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ogc.na.update_vocabs.make_rdf" class="md-nav__link">
+    make_rdf()
   </a>
   
 </li>
@@ -510,6 +567,18 @@
 
 <a id="ogc.na.update_vocabs"></a>
   <div class="doc doc-contents first">
+  
+      <p>Implements an entailment + validation workflow.</p>
+<p><code>update_vocabs</code> starts by loading one or more
+<a class="autorefs autorefs-internal" href="../domain_config/#ogc.na.domain_config.DomainConfiguration">DomainConfiguration's</a> from
+RDF files and/or SPARQL endpoints, and a series of profile definitions
+(also from a list of RDF files and/or SPARQL endpoints).
+From there, individual or batch processing of files can be done,
+as well as uploading the results to a target triplestore.</p>
+<p>This script can be used as a library, or run directly from the cli;
+please refer to the
+<a href="https://github.com/opengeospatial/NamingAuthority">OGC NamingAuthority repository</a>
+for usage details on the latter.</p>
 
   
 
@@ -527,6 +596,163 @@
 
 
 
+<h2 id="ogc.na.update_vocabs.get_entailed_path" class="doc doc-heading">
+<code class="highlight language-python"><span class="n">get_entailed_path</span><span class="p">(</span><span class="n">f</span><span class="p">,</span> <span class="n">g</span><span class="p">,</span> <span class="n">extension</span><span class="p">,</span> <span class="n">rootpattern</span><span class="o">=</span><span class="s1">&#39;/def/&#39;</span><span class="p">,</span> <span class="n">entailed_dir</span><span class="o">=</span><span class="n">DEFAULT_ENTAILED_DIR</span><span class="p">)</span></code>
+
+</h2>
+
+
+  <div class="doc doc-contents ">
+  
+      <p>Tries to find the output file path for an entailed version of a source Graph.</p>
+
+  <p><strong>Parameters:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Description</th>
+        <th>Default</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td><code>f</code></td>
+          <td>
+                <code><span title="pathlib.Path">Path</span></code>
+          </td>
+          <td><p>the original path of the source file</p></td>
+          <td>
+              <em>required</em>
+          </td>
+        </tr>
+        <tr>
+          <td><code>g</code></td>
+          <td>
+                <code><a class="autorefs autorefs-external" title="rdflib.Graph" href="https://rdflib.readthedocs.io/en/stable/apidocs/rdflib.html#rdflib.Graph">Graph</a></code>
+          </td>
+          <td><p>the <a class="autorefs autorefs-external" href="https://rdflib.readthedocs.io/en/stable/apidocs/rdflib.html#rdflib.Graph">Graph</a> loaded from the source file</p></td>
+          <td>
+              <em>required</em>
+          </td>
+        </tr>
+        <tr>
+          <td><code>extension</code></td>
+          <td>
+                <code>str</code>
+          </td>
+          <td><p>a filename extension (e.g., 'ttl' for Turtle)</p></td>
+          <td>
+              <em>required</em>
+          </td>
+        </tr>
+        <tr>
+          <td><code>rootpattern</code></td>
+          <td>
+                <code>str</code>
+          </td>
+          <td><p>a root pattern to filter candidate URIs</p></td>
+          <td>
+                <code>&#39;/def/&#39;</code>
+          </td>
+        </tr>
+        <tr>
+          <td><code>entailed_dir</code></td>
+          <td>
+                <code>str</code>
+          </td>
+          <td><p>the name of the base entailed files directory</p></td>
+          <td>
+                <code>DEFAULT_ENTAILED_DIR</code>
+          </td>
+        </tr>
+    </tbody>
+  </table>
+
+      <details class="quote">
+        <summary>Source code in <code>ogc/na/update_vocabs.py</code></summary>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">118</span>
+<span class="normal">119</span>
+<span class="normal">120</span>
+<span class="normal">121</span>
+<span class="normal">122</span>
+<span class="normal">123</span>
+<span class="normal">124</span>
+<span class="normal">125</span>
+<span class="normal">126</span>
+<span class="normal">127</span>
+<span class="normal">128</span>
+<span class="normal">129</span>
+<span class="normal">130</span>
+<span class="normal">131</span>
+<span class="normal">132</span>
+<span class="normal">133</span>
+<span class="normal">134</span>
+<span class="normal">135</span>
+<span class="normal">136</span>
+<span class="normal">137</span>
+<span class="normal">138</span>
+<span class="normal">139</span>
+<span class="normal">140</span>
+<span class="normal">141</span>
+<span class="normal">142</span>
+<span class="normal">143</span>
+<span class="normal">144</span>
+<span class="normal">145</span>
+<span class="normal">146</span>
+<span class="normal">147</span>
+<span class="normal">148</span>
+<span class="normal">149</span>
+<span class="normal">150</span>
+<span class="normal">151</span>
+<span class="normal">152</span>
+<span class="normal">153</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">get_entailed_path</span><span class="p">(</span><span class="n">f</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">g</span><span class="p">:</span> <span class="n">Graph</span><span class="p">,</span> <span class="n">extension</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">rootpattern</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;/def/&#39;</span><span class="p">,</span>
+                      <span class="n">entailed_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">DEFAULT_ENTAILED_DIR</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tries to find the output file path for an entailed version of a source Graph.</span>
+
+<span class="sd">    :param f: the original path of the source file</span>
+<span class="sd">    :param g: the [Graph][rdflib.Graph] loaded from the source file</span>
+<span class="sd">    :param extension: a filename extension (e.g., &#39;ttl&#39; for Turtle)</span>
+<span class="sd">    :param rootpattern: a root pattern to filter candidate URIs</span>
+<span class="sd">    :param entailed_dir: the name of the base entailed files directory</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">rootpattern</span><span class="p">:</span>
+        <span class="c1"># just assume filename is going to be fine</span>
+        <span class="k">return</span> <span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="n">entailed_dir</span> <span class="o">/</span> <span class="n">f</span><span class="o">.</span><span class="n">with_suffix</span><span class="p">(</span><span class="s1">&#39;.&#39;</span> <span class="o">+</span> <span class="n">extension</span><span class="p">)</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">get_graph_uri_for_vocab</span><span class="p">(</span><span class="n">g</span><span class="p">))</span>
+
+    <span class="n">canonical_filename</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">conceptscheme</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">for</span> <span class="n">graphuri</span> <span class="ow">in</span> <span class="n">get_graph_uri_for_vocab</span><span class="p">(</span><span class="n">g</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">canonical_filename</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;File </span><span class="si">%s</span><span class="s2"> contains multiple concept schemes&quot;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">f</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="n">rootpattern</span> <span class="ow">in</span> <span class="n">graphuri</span><span class="p">:</span>
+            <span class="n">canonical_filename</span> <span class="o">=</span> <span class="n">graphuri</span><span class="o">.</span><span class="n">rsplit</span><span class="p">(</span><span class="n">rootpattern</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+            <span class="n">conceptscheme</span> <span class="o">=</span> <span class="n">graphuri</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;File </span><span class="si">%s</span><span class="s1">: ignoring concept scheme </span><span class="si">%s</span><span class="s1"> not matching domain path </span><span class="si">%s</span><span class="s1">&#39;</span><span class="p">,</span>
+                        <span class="nb">str</span><span class="p">(</span><span class="n">f</span><span class="p">),</span> <span class="n">graphuri</span><span class="p">,</span> <span class="n">rootpattern</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">canonical_filename</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s1">&#39;File </span><span class="si">%s</span><span class="s1"> contains no concept schemes matching domain path </span><span class="si">%s</span><span class="s1">; using filename&#39;</span><span class="p">,</span>
+                       <span class="nb">str</span><span class="p">(</span><span class="n">f</span><span class="p">),</span> <span class="n">rootpattern</span><span class="p">)</span>
+        <span class="n">canonical_filename</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">name</span>
+
+    <span class="k">return</span> <span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">parent</span> <span class="o">/</span> <span class="n">entailed_dir</span> <span class="o">/</span> <span class="n">Path</span><span class="p">(</span><span class="n">canonical_filename</span><span class="p">)</span><span class="o">.</span><span class="n">with_suffix</span><span class="p">(</span><span class="s1">&#39;.&#39;</span> <span class="o">+</span> <span class="n">extension</span><span class="p">),</span>
+            <span class="n">canonical_filename</span><span class="p">,</span> <span class="n">conceptscheme</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+      </details>
+  </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+
 <h2 id="ogc.na.update_vocabs.get_graph_uri_for_vocab" class="doc doc-heading">
 <code class="highlight language-python"><span class="n">get_graph_uri_for_vocab</span><span class="p">(</span><span class="n">g</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
@@ -535,24 +761,400 @@
 
   <div class="doc doc-contents ">
   
-      <p>We can get the Graph URI for a vocab using assumption that
-the ConceptScheme is declared in the graph being processed.</p>
+      <p>Find a target graph URI in a vocabulary <a class="autorefs autorefs-external" href="https://rdflib.readthedocs.io/en/stable/apidocs/rdflib.html#rdflib.Graph">Graph</a>.</p>
+<p>In effect, this function merely looks for
+<a href="https://www.w3.org/TR/2008/WD-skos-reference-20080829/skos.html#ConceptScheme">SKOS ConceptScheme's</a>.</p>
+
+  <p><strong>Parameters:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Description</th>
+        <th>Default</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td><code>g</code></td>
+          <td>
+                <code><a class="autorefs autorefs-external" title="rdflib.Graph" href="https://rdflib.readthedocs.io/en/stable/apidocs/rdflib.html#rdflib.Graph">Graph</a></code>
+          </td>
+          <td><p>the <a class="autorefs autorefs-external" href="https://rdflib.readthedocs.io/en/stable/apidocs/rdflib.html#rdflib.Graph">Graph</a> for which to find the target URI</p></td>
+          <td>
+                <code>None</code>
+          </td>
+        </tr>
+    </tbody>
+  </table>
+
+  <p><strong>Returns:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td>
+                <code><span title="typing.Generator">Generator</span>[str, None, None]</code>
+          </td>
+          <td><p>a [Node][rdflib.Node] generator</p></td>
+        </tr>
+    </tbody>
+  </table>
 
       <details class="quote">
         <summary>Source code in <code>ogc/na/update_vocabs.py</code></summary>
-        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">87</span>
-<span class="normal">88</span>
-<span class="normal">89</span>
-<span class="normal">90</span>
-<span class="normal">91</span>
-<span class="normal">92</span>
-<span class="normal">93</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">get_graph_uri_for_vocab</span><span class="p">(</span><span class="n">g</span><span class="p">:</span> <span class="n">Graph</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Generator</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">]:</span>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">104</span>
+<span class="normal">105</span>
+<span class="normal">106</span>
+<span class="normal">107</span>
+<span class="normal">108</span>
+<span class="normal">109</span>
+<span class="normal">110</span>
+<span class="normal">111</span>
+<span class="normal">112</span>
+<span class="normal">113</span>
+<span class="normal">114</span>
+<span class="normal">115</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">get_graph_uri_for_vocab</span><span class="p">(</span><span class="n">g</span><span class="p">:</span> <span class="n">Graph</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Generator</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">]:</span>
     <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    We can get the Graph URI for a vocab using assumption that</span>
-<span class="sd">    the ConceptScheme is declared in the graph being processed.</span>
+<span class="sd">    Find a target graph URI in a vocabulary [Graph][rdflib.Graph].</span>
+
+<span class="sd">    In effect, this function merely looks for</span>
+<span class="sd">    [SKOS ConceptScheme&#39;s](https://www.w3.org/TR/2008/WD-skos-reference-20080829/skos.html#ConceptScheme).</span>
+
+<span class="sd">    :param g: the [Graph][rdflib.Graph] for which to find the target URI</span>
+<span class="sd">    :return: a [Node][rdflib.Node] generator</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">g</span><span class="o">.</span><span class="n">subjects</span><span class="p">(</span><span class="n">predicate</span><span class="o">=</span><span class="n">RDF</span><span class="o">.</span><span class="n">type</span><span class="p">,</span> <span class="nb">object</span><span class="o">=</span><span class="n">SKOS</span><span class="o">.</span><span class="n">ConceptScheme</span><span class="p">):</span>
         <span class="k">yield</span> <span class="nb">str</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+      </details>
+  </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+
+<h2 id="ogc.na.update_vocabs.load_vocab" class="doc doc-heading">
+<code class="highlight language-python"><span class="n">load_vocab</span><span class="p">(</span><span class="n">vocab</span><span class="p">,</span> <span class="n">graph_uri</span><span class="p">,</span> <span class="n">graph_store</span><span class="p">,</span> <span class="n">authdetails</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+</h2>
+
+
+  <div class="doc doc-contents ">
+  
+      <p>Loads a vocabulary onto a triplestore using the <a href="https://www.w3.org/TR/sparql11-http-rdf-update/">SPARQL Graph Store
+protocol</a>.</p>
+
+  <p><strong>Parameters:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Description</th>
+        <th>Default</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td><code>vocab</code></td>
+          <td>
+                <code><span title="typing.Union">Union</span>[<a class="autorefs autorefs-external" title="rdflib.Graph" href="https://rdflib.readthedocs.io/en/stable/apidocs/rdflib.html#rdflib.Graph">Graph</a>, str, <span title="pathlib.Path">Path</span>]</code>
+          </td>
+          <td><p>the file or Graph to load</p></td>
+          <td>
+              <em>required</em>
+          </td>
+        </tr>
+        <tr>
+          <td><code>graph_uri</code></td>
+          <td>
+                <code>str</code>
+          </td>
+          <td><p>a target graph URI</p></td>
+          <td>
+              <em>required</em>
+          </td>
+        </tr>
+        <tr>
+          <td><code>graph_store</code></td>
+          <td>
+                <code>str</code>
+          </td>
+          <td><p>the target SPARQL Graph Store protocol URL</p></td>
+          <td>
+              <em>required</em>
+          </td>
+        </tr>
+        <tr>
+          <td><code>authdetails</code></td>
+          <td>
+                <code>tuple[str]</code>
+          </td>
+          <td><p>a <code>(username, password)</code> tuple for authentication</p></td>
+          <td>
+                <code>None</code>
+          </td>
+        </tr>
+    </tbody>
+  </table>
+
+  <p><strong>Returns:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td>
+                <code>None</code>
+          </td>
+          <td></td>
+        </tr>
+    </tbody>
+  </table>
+
+      <details class="quote">
+        <summary>Source code in <code>ogc/na/update_vocabs.py</code></summary>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 68</span>
+<span class="normal"> 69</span>
+<span class="normal"> 70</span>
+<span class="normal"> 71</span>
+<span class="normal"> 72</span>
+<span class="normal"> 73</span>
+<span class="normal"> 74</span>
+<span class="normal"> 75</span>
+<span class="normal"> 76</span>
+<span class="normal"> 77</span>
+<span class="normal"> 78</span>
+<span class="normal"> 79</span>
+<span class="normal"> 80</span>
+<span class="normal"> 81</span>
+<span class="normal"> 82</span>
+<span class="normal"> 83</span>
+<span class="normal"> 84</span>
+<span class="normal"> 85</span>
+<span class="normal"> 86</span>
+<span class="normal"> 87</span>
+<span class="normal"> 88</span>
+<span class="normal"> 89</span>
+<span class="normal"> 90</span>
+<span class="normal"> 91</span>
+<span class="normal"> 92</span>
+<span class="normal"> 93</span>
+<span class="normal"> 94</span>
+<span class="normal"> 95</span>
+<span class="normal"> 96</span>
+<span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span>
+<span class="normal">101</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">load_vocab</span><span class="p">(</span><span class="n">vocab</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Graph</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="n">Path</span><span class="p">],</span> <span class="n">graph_uri</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+               <span class="n">graph_store</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">authdetails</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Loads a vocabulary onto a triplestore using the [SPARQL Graph Store</span>
+<span class="sd">    protocol](https://www.w3.org/TR/sparql11-http-rdf-update/).</span>
+
+<span class="sd">    :param vocab: the file or Graph to load</span>
+<span class="sd">    :param graph_uri: a target graph URI</span>
+<span class="sd">    :param graph_store: the target SPARQL Graph Store protocol URL</span>
+<span class="sd">    :param authdetails: a `(username, password)` tuple for authentication</span>
+<span class="sd">    :return:</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># PUT is equivalent to DROP GRAPH + INSERT DATA</span>
+    <span class="c1"># Graph is automatically created per Graph Store spec</span>
+
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">vocab</span><span class="p">,</span> <span class="n">Graph</span><span class="p">):</span>
+        <span class="n">content</span> <span class="o">=</span> <span class="n">vocab</span><span class="o">.</span><span class="n">serialize</span><span class="p">(</span><span class="nb">format</span><span class="o">=</span><span class="s1">&#39;Turtle&#39;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">vocab</span><span class="p">,</span> <span class="s1">&#39;rb&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">content</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+
+    <span class="n">r</span> <span class="o">=</span> <span class="n">httpx</span><span class="o">.</span><span class="n">put</span><span class="p">(</span>
+        <span class="n">graph_store</span><span class="p">,</span>
+        <span class="n">params</span><span class="o">=</span><span class="p">{</span>
+            <span class="s1">&#39;graph&#39;</span><span class="p">:</span> <span class="n">graph_uri</span><span class="p">,</span>
+        <span class="p">},</span>
+        <span class="n">auth</span><span class="o">=</span><span class="n">authdetails</span><span class="p">,</span>
+        <span class="n">headers</span><span class="o">=</span><span class="p">{</span>
+            <span class="s1">&#39;Content-type&#39;</span><span class="p">:</span> <span class="s1">&#39;text/turtle&#39;</span><span class="p">,</span>
+        <span class="p">},</span>
+        <span class="n">content</span><span class="o">=</span><span class="n">content</span>
+    <span class="p">)</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s1">&#39;HTTP status code: </span><span class="si">%d</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">r</span><span class="o">.</span><span class="n">status_code</span><span class="p">)</span>
+    <span class="n">r</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span>
+</code></pre></div></td></tr></table></div>
+      </details>
+  </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+
+<h2 id="ogc.na.update_vocabs.make_rdf" class="doc doc-heading">
+<code class="highlight language-python"><span class="n">make_rdf</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">g</span><span class="p">,</span> <span class="n">rootpath</span><span class="o">=</span><span class="s1">&#39;/def/&#39;</span><span class="p">,</span> <span class="n">entailment_directory</span><span class="o">=</span><span class="n">DEFAULT_ENTAILED_DIR</span><span class="p">)</span></code>
+
+</h2>
+
+
+  <div class="doc doc-contents ">
+  
+      <p>Serializes entailed RDF graphs in several output formats for a given input
+graph.</p>
+
+  <p><strong>Parameters:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Description</th>
+        <th>Default</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td><code>filename</code></td>
+          <td>
+                <code><span title="typing.Union">Union</span>[str, <span title="pathlib.Path">Path</span>]</code>
+          </td>
+          <td><p>the original source filename</p></td>
+          <td>
+              <em>required</em>
+          </td>
+        </tr>
+        <tr>
+          <td><code>g</code></td>
+          <td>
+                <code><a class="autorefs autorefs-external" title="rdflib.Graph" href="https://rdflib.readthedocs.io/en/stable/apidocs/rdflib.html#rdflib.Graph">Graph</a></code>
+          </td>
+          <td><p><a class="autorefs autorefs-external" href="https://rdflib.readthedocs.io/en/stable/apidocs/rdflib.html#rdflib.Graph">Graph</a> loaded from the source file</p></td>
+          <td>
+              <em>required</em>
+          </td>
+        </tr>
+        <tr>
+          <td><code>rootpath</code></td>
+          <td>
+          </td>
+          <td><p>a path to filter concept schemes inside the Graph and infer the main one</p></td>
+          <td>
+                <code>&#39;/def/&#39;</code>
+          </td>
+        </tr>
+        <tr>
+          <td><code>entailment_directory</code></td>
+          <td>
+                <code><span title="typing.Union">Union</span>[str, <span title="pathlib.Path">Path</span>]</code>
+          </td>
+          <td><p>name for the output subdirectory for entailed files</p></td>
+          <td>
+                <code>DEFAULT_ENTAILED_DIR</code>
+          </td>
+        </tr>
+    </tbody>
+  </table>
+
+  <p><strong>Returns:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td>
+                <code><span title="pathlib.Path">Path</span></code>
+          </td>
+          <td><p>the output path for the Turtle version of the entailed files</p></td>
+        </tr>
+    </tbody>
+  </table>
+
+      <details class="quote">
+        <summary>Source code in <code>ogc/na/update_vocabs.py</code></summary>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">156</span>
+<span class="normal">157</span>
+<span class="normal">158</span>
+<span class="normal">159</span>
+<span class="normal">160</span>
+<span class="normal">161</span>
+<span class="normal">162</span>
+<span class="normal">163</span>
+<span class="normal">164</span>
+<span class="normal">165</span>
+<span class="normal">166</span>
+<span class="normal">167</span>
+<span class="normal">168</span>
+<span class="normal">169</span>
+<span class="normal">170</span>
+<span class="normal">171</span>
+<span class="normal">172</span>
+<span class="normal">173</span>
+<span class="normal">174</span>
+<span class="normal">175</span>
+<span class="normal">176</span>
+<span class="normal">177</span>
+<span class="normal">178</span>
+<span class="normal">179</span>
+<span class="normal">180</span>
+<span class="normal">181</span>
+<span class="normal">182</span>
+<span class="normal">183</span>
+<span class="normal">184</span>
+<span class="normal">185</span>
+<span class="normal">186</span>
+<span class="normal">187</span>
+<span class="normal">188</span>
+<span class="normal">189</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">make_rdf</span><span class="p">(</span><span class="n">filename</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Path</span><span class="p">],</span> <span class="n">g</span><span class="p">:</span> <span class="n">Graph</span><span class="p">,</span> <span class="n">rootpath</span><span class="o">=</span><span class="s1">&#39;/def/&#39;</span><span class="p">,</span>
+             <span class="n">entailment_directory</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Path</span><span class="p">]</span> <span class="o">=</span> <span class="n">DEFAULT_ENTAILED_DIR</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Serializes entailed RDF graphs in several output formats for a given input</span>
+<span class="sd">    graph.</span>
+
+<span class="sd">    :param filename: the original source filename</span>
+<span class="sd">    :param g: [Graph][rdflib.Graph] loaded from the source file</span>
+<span class="sd">    :param rootpath: a path to filter concept schemes inside the Graph and infer the main one</span>
+<span class="sd">    :param entailment_directory: name for the output subdirectory for entailed files</span>
+<span class="sd">    :return: the output path for the Turtle version of the entailed files</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">Path</span><span class="p">):</span>
+        <span class="n">filename</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span>
+    <span class="n">filename</span> <span class="o">=</span> <span class="n">filename</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span>
+
+    <span class="n">loadable_ttl</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">canonical_filename</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">conceptschemeuri</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="k">for</span> <span class="n">extension</span><span class="p">,</span> <span class="n">fmt</span> <span class="ow">in</span> <span class="n">ENTAILED_FORMATS</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">newpath</span><span class="p">,</span> <span class="n">canonical_filename</span><span class="p">,</span> <span class="n">conceptschemeuri</span> <span class="o">=</span> \
+            <span class="n">get_entailed_path</span><span class="p">(</span><span class="n">filename</span><span class="p">,</span> <span class="n">g</span><span class="p">,</span> <span class="n">extension</span><span class="p">,</span> <span class="n">rootpath</span><span class="p">,</span> <span class="n">entailment_directory</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">newpath</span><span class="p">:</span>
+            <span class="n">newpath</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">g</span><span class="o">.</span><span class="n">serialize</span><span class="p">(</span><span class="n">destination</span><span class="o">=</span><span class="n">newpath</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="n">fmt</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">fmt</span> <span class="o">==</span> <span class="s1">&#39;ttl&#39;</span><span class="p">:</span>
+                <span class="n">loadable_ttl</span> <span class="o">=</span> <span class="n">newpath</span>
+
+    <span class="k">if</span> <span class="n">filename</span><span class="o">.</span><span class="n">stem</span> <span class="o">!=</span> <span class="n">canonical_filename</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;New file name </span><span class="si">%s</span><span class="s2"> -&gt; </span><span class="si">%s</span><span class="s2"> for </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+                    <span class="n">filename</span><span class="o">.</span><span class="n">stem</span><span class="p">,</span> <span class="n">canonical_filename</span><span class="p">,</span> <span class="n">conceptschemeuri</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">loadable_ttl</span>
 </code></pre></div></td></tr></table></div>
       </details>
   </div>
@@ -572,19 +1174,35 @@ the ConceptScheme is declared in the graph being processed.</p>
   <div class="doc doc-contents ">
   
       <p>Sets up logging level and handlers (logs WARNING and ERROR
-to stderr)</p>
-<p>:param debug: whether to set DEBUG level</p>
+to stderr).</p>
+
+  <p><strong>Parameters:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Description</th>
+        <th>Default</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td><code>debug</code></td>
+          <td>
+                <code>bool</code>
+          </td>
+          <td><p>whether to set DEBUG level</p></td>
+          <td>
+                <code>False</code>
+          </td>
+        </tr>
+    </tbody>
+  </table>
 
       <details class="quote">
         <summary>Source code in <code>ogc/na/update_vocabs.py</code></summary>
-        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">36</span>
-<span class="normal">37</span>
-<span class="normal">38</span>
-<span class="normal">39</span>
-<span class="normal">40</span>
-<span class="normal">41</span>
-<span class="normal">42</span>
-<span class="normal">43</span>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">43</span>
 <span class="normal">44</span>
 <span class="normal">45</span>
 <span class="normal">46</span>
@@ -599,10 +1217,17 @@ to stderr)</p>
 <span class="normal">55</span>
 <span class="normal">56</span>
 <span class="normal">57</span>
-<span class="normal">58</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">setup_logging</span><span class="p">(</span><span class="n">debug</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">setup_logging</span><span class="p">(</span><span class="n">debug</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Sets up logging level and handlers (logs WARNING and ERROR</span>
-<span class="sd">    to stderr)</span>
+<span class="sd">    to stderr).</span>
 
 <span class="sd">    :param debug: whether to set DEBUG level</span>
 <span class="sd">    &quot;&quot;&quot;</span>
