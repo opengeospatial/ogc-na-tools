@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import itertools
+import logging
 import re
 from typing import Union, Sequence, Optional, Generator, Any, cast
 from rdflib import Graph, RDF, PROF, OWL, URIRef, DCTERMS, Namespace
@@ -44,11 +46,14 @@ PROFILES_QUERY = re.sub(r' {2,}|\n', ' ', """
                 FILTER(?role IN (profrole:entailment, 
                                  profrole:validation,
                                  profrole:entailment-closure,
-                                 profrole:validation-closure))
+                                 profrole:validation-closure,
+                                 profrole:annotation))
             }
         }
     }
 """)
+
+logger = logging.getLogger('domain_config')
 
 
 def find_profiles(g: Graph) -> Generator[URIRef, Any, None]:
@@ -72,8 +77,10 @@ class Profile:
 class ProfileRegistry:
 
     def __init__(self, srcs: Union[str, Path, Sequence[Union[str, Path]]],
-                 local_artifact_mappings: dict[str, Union[str, Path]] = None):
+                 local_artifact_mappings: dict[str, Union[str, Path]] = None,
+                 ignore_artifact_errors = False):
 
+        assert srcs is not None
         if isinstance(srcs, str) or not isinstance(srcs, Sequence):
             self._srcs = (srcs,)
         else:
@@ -84,6 +91,8 @@ class ProfileRegistry:
         self._load_profiles()
         # Cache of { profile: { role: Graph } }
         self._graphs: dict[URIRef, dict[URIRef, Graph]] = {}
+
+        self.ignore_artifact_errors = ignore_artifact_errors
 
     def _load_profiles(self):
         g: Graph = Graph()
@@ -111,8 +120,8 @@ class ProfileRegistry:
             profile = Profile(token, profile_of)
 
             for resource_ref in g.objects(profile_ref, PROF.hasResource):
+                role_ref = g.value(resource_ref, PROF.hasRole)
                 for artifact_ref in g.objects(resource_ref, PROF.hasArtifact):
-                    role_ref = g.value(artifact_ref, PROF.hasRole)
                     profile.add_artifact(role_ref, cast(URIRef, artifact_ref))
 
             self._profiles[profile_ref] = profile
@@ -135,6 +144,15 @@ class ProfileRegistry:
                 matchedlocal, matchedpath = l, Path(str(p) + uri[len(l):])
         return str(matchedpath)
 
+    def get_artifacts(self, profile: URIRef, role: URIRef) -> Optional[list[Union[str, Path]]]:
+        if profile not in self._profiles:
+            return None
+
+        result = []
+        for artifact_ref in self._profiles[profile].get_artifacts(role):
+            result.append(self._apply_mappings(artifact_ref))
+        return result
+
     def get_graph(self, profile: URIRef, role: URIRef) -> Optional[Graph]:
         if profile not in self._profiles:
             return None
@@ -143,8 +161,16 @@ class ProfileRegistry:
         g = prof_graphs.get(role)
         if not g:
             g = Graph()
-            for artifact_ref in self._profiles[profile].get_artifacts(role):
-                g.parse(self._apply_mappings(artifact_ref))
+            for artifact in self.get_artifacts(profile, role):
+                try:
+                    g.parse(artifact)
+                except Exception as e:
+                    if self.ignore_artifact_errors:
+                        logger.warning("Error when retrieving or parsing artifact %s: %s",
+                                       artifact, str(e))
+                    else:
+                        raise Exception(f"Error when retrieving or parsing artifact {artifact}") from e
+
             prof_graphs[role] = g
         return g
 
@@ -160,14 +186,33 @@ class ProfileRegistry:
 
         return g
 
-    def validate(self, g: Graph, profiles: Optional[Sequence[URIRef]] = None) -> ProfilesValidationReport:
+    def validate(self, g: Graph,
+                 additional_profiles: Optional[Sequence[URIRef]] = None) -> ProfilesValidationReport:
         result = ProfilesValidationReport()
-        for profile_ref in profiles or find_profiles(g):
+        profiles = find_profiles(g)
+        if additional_profiles:
+            profiles = itertools.chain(profiles, additional_profiles)
+        for profile_ref in profiles:
+            logger.debug("Validating with %s", str(profile_ref))
             profile = self._profiles.get(profile_ref)
             if not profile:
+                logger.warning("Profile %s not found", profile_ref)
                 # should we fail?
                 continue
             rules = self.get_graph(profile_ref, PROFROLE.validation)
             extra = self.get_graph(profile_ref, PROFROLE['validation-closure'])
             result.add(ProfileValidationReport(profile_ref, profile.token, util.validate(g, rules, extra)))
+            logger.debug("Adding validation results for %s", profile_ref)
         return result
+
+    def get_annotations(self, g: Graph, additional_profiles: Optional[Sequence[URIRef]] = None) -> dict[Path, Graph]:
+        result = {}
+        profiles = find_profiles(g)
+        if additional_profiles:
+            profiles = itertools.chain(profiles, additional_profiles)
+        for profile_ref in profiles:
+            artifacts = self.get_artifacts(profile_ref, PROFROLE.annotation)
+            for artifact in artifacts:
+                result[artifact] = Graph().parse(artifact)
+        return result
+

@@ -12,6 +12,7 @@ from rdflib import Graph, URIRef, RDF, SKOS
 
 from ogc.na import util
 from ogc.na.profile import ProfileRegistry
+from ogc.na.domain_config import DomainConfiguration, DomainConfigurationEntry
 
 logger = logging.getLogger('update_vocabs')
 
@@ -61,7 +62,6 @@ def setup_logging(debug: bool = False):
 
 def load_vocab(vocab: Union[Graph, str, Path], graph_uri: str,
                graph_store: str, authdetails: tuple[str] = None) -> None:
-
     # PUT is equivalent to DROP GRAPH + INSERT DATA
     # Graph is automatically created per Graph Store spec
 
@@ -97,7 +97,6 @@ def get_graph_uri_for_vocab(g: Graph = None) -> Generator[str, None, None]:
 
 def get_entailed_path(f: Path, g: Graph, extension, rootpattern='/def/',
                       entailed_dir=DEFAULT_ENTAILED_DIR):
-
     if not rootpattern:
         # just assume filename is going to be fine
         return (f.parent / entailed_dir / f.with_suffix('.' + extension).name,
@@ -127,7 +126,6 @@ def get_entailed_path(f: Path, g: Graph, extension, rootpattern='/def/',
 
 def make_rdf(filename: Union[str, Path], g: Graph, rootpath='/def/',
              entailment_directory: Union[str, Path] = DEFAULT_ENTAILED_DIR) -> Path:
-
     if not isinstance(filename, Path):
         filename = Path(filename)
     filename = filename.resolve()
@@ -155,9 +153,18 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "profile_source",
-        nargs="+",
+        "-p",
+        "--profile-source",
+        nargs="*",
+        default=[],
         help="Profile source (can be a local or remote RDF file, or a SPARQL endpoint in the form 'sparql:http://example.org/sparql')",
+    )
+
+    parser.add_argument(
+        "domain_cfg",
+        metavar="domain-cfg",
+        nargs="+",
+        help="Domain configuration (can be a local or remote RDF file, or a SPARQL endpoint in the form 'sparql:http://example.org/sparql')",
     )
 
     parser.add_argument(
@@ -269,8 +276,21 @@ if __name__ == "__main__":
         dellist = args.removed.split(',')
         logger.info("Removed: %s", dellist)
 
-    profile_registry = ProfileRegistry(args.profile_source)
+    domaincfg = DomainConfiguration(args.working_directory)
+    for dcfg in args.domain_cfg:
+        domaincfg.load(dcfg, domain=args.domain)
+    if not len(domaincfg):
+        if args.domain:
+            logger.warning('No configuration found in %s for domain %s, exiting',
+                           args.domaincfg, args.domain)
+        else:
+            logger.warning('No configuration found in %s exiting', args.domaincfg)
+        sys.exit(1)
 
+    profile_registry = ProfileRegistry(args.profile_source, ignore_artifact_errors=True)
+
+    modified: dict[Path, DomainConfigurationEntry]
+    added: dict[Path, DomainConfigurationEntry]
     if args.batch:
         modified = domaincfg.find_all()
         added = {}
@@ -285,24 +305,22 @@ if __name__ == "__main__":
         report_cat = 'modified' if collection == modified else 'added'
         for doc, cfg in collection.items():
             origg = Graph().parse(doc)
-            newg = perform_entailments(origg,
-                                       cfg.rules,
-                                       extra=cfg.extra_ontology)
-            validation_result = validate(newg, cfg)
+            newg = profile_registry.entail(origg, cfg.conforms_to)
+            validation_result = profile_registry.validate(newg, cfg.conforms_to)
 
             docrelpath = Path(os.path.relpath(doc, args.working_directory))
             if output_path:
                 output_doc = output_path / docrelpath
-                entailment_dir = (output_doc.parent / DEFAULT_ENTAILED_DIR).resolve()
+                entailment_dir = (output_doc.parent / args.entailment_directory).resolve()
             else:
-                entailment_dir = DEFAULT_ENTAILED_DIR
+                entailment_dir = args.entailment_directory
                 output_doc = doc
 
             os.makedirs(output_doc.parent, exist_ok=True)
             os.makedirs(entailment_dir, exist_ok=True)
 
             with open(output_doc.with_suffix('.txt'), 'w') as validation_file:
-                validation_file.write(validation_result[2])
+                validation_file.write(validation_result.text)
 
             loadable_path = make_rdf(doc, newg, cfg.uri_root_filter,
                                      entailment_dir)
@@ -311,8 +329,9 @@ if __name__ == "__main__":
                 loadables = {
                     loadable_path: loadable_path
                 }
-                if cfg.annotation:
-                    loadables[cfg.annotation_path] = cfg.annotation
+                for p, g in profile_registry.get_annotations(newg).items():
+                    if p != loadable_path:
+                        loadables[p] = g
 
                 graphname = next(get_graph_uri_for_vocab(newg), None)
                 if not graphname:
@@ -329,11 +348,11 @@ if __name__ == "__main__":
                         load_vocab(loadable, versioned_gname,
                                    args.graph_store, authdetails)
                         logging.info("Uploaded %s for %s to SPARQL graph store",
-                                      str(path), str(doc))
+                                     str(path), str(doc))
                     except Exception as e:
                         logging.error("Failed to upload %s for %s: %s",
                                       str(path), str(doc), str(e))
-                    versioned_gname = f'{graphname}{n+1}'
+                    versioned_gname = f'{graphname}{n + 1}'
 
             report.setdefault(os.path.relpath(cfg.localpath), {}) \
                 .setdefault(report_cat, []).append(os.path.relpath(doc))

@@ -21,7 +21,7 @@ class ProfileValidationReport:
 
 class ProfilesValidationReport:
 
-    def __init(self, profile_reports: list[ProfileValidationReport] = None):
+    def __init__(self, profile_reports: list[ProfileValidationReport] = None):
         self.reports = []
         self.result = True
         self.graph = Graph()
@@ -37,4 +37,4 @@ class ProfilesValidationReport:
         if profile_report.report.text:
             if self.text:
                 self.text += '\n'
-            self.text += profile_report.report.text
+            self.text += f"=== {profile_report.profile_token} ({profile_report.profile_uri}) ===\n{profile_report.report.text}"

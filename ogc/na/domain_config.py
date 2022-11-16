@@ -1,84 +1,96 @@
 #!/usr/bin/env python3
-import os
-from pathlib import Path
-from typing import Union, Optional
-from typing.io import IO
-from rdflib import Graph, Namespace, RDF, RDFS
-from rdflib.term import Node
-from pyshacl import validate
-from importlib.resources import open_binary
 import logging
+import os
+import re
+from pathlib import Path
+from typing import Union, Optional, Sequence, cast
 
-DOMAINCFG = Namespace('urn:ogc:na/domaincfg#')
-with open_binary('ogc.na', 'domaincfg.shacl.ttl') as shacl_file:
-    SHACL_VALIDATOR = Graph().parse(shacl_file)
+from rdflib import Graph, Namespace, URIRef, RDF, DCTERMS
+from typing.io import IO
+
+DCFG = Namespace('http://www.example.org/ogc/domain-cfg#')
+
+DOMAIN_CFG_QUERY = re.sub(r' {2,}|\n', ' ', """
+    PREFIX dcfg: <http://www.example.org/ogc/domain-cfg#>
+    PREFIX dct: <http://purl.org/dc/terms/>
+    CONSTRUCT {
+        ?domainCfg a dcfg:DomainConfiguration ;
+            dcfg:localPath ?localPath ;
+            dcfg:glob ?glob ;
+            dcfg:uriRootFilter ?uriRootFilter ;
+            dct:conformsTo ?profile ;
+    } WHERE {
+        __SERVICE__ {
+            ?domainCfg dcfg:localPath ?localPath ;
+                dcfg:glob ?glob .
+            OPTIONAL {
+                ?domainCfg dcfg:uriRootFilter ?uriRootFilter .
+            }
+            OPTIONAL {
+                ?domainCfg dct:conformsTo ?profile
+            }
+        }
+  }
+""")
+
 logger = logging.getLogger('domain_config')
+
 
 class DomainConfiguration:
 
-    def __init__(self,
-                 working_directory: Union[str, Path] = None):
+    def __init__(self, working_directory: Union[str, Path] = None):
         self.working_directory = (Path(working_directory) if working_directory else Path()).resolve()
         logger.debug("Working directory: %s", self.working_directory)
-        self.entries: dict[str, list[DomainConfigurationEntry]] = {}
+        self.entries: dict[Path, list[DomainConfigurationEntry]] = {}
 
     def clear(self):
         self.entries = {}
 
-    def _load_rule_collection(self, g: Graph, n: Node, seen: set = None) -> list[str]:
-        if seen is None:
-            seen = set((n,))
-        rules = list(g.objects(n, DOMAINCFG.hasFile))
-        for imp in g.objects(n, DOMAINCFG.imports):
-            if imp in seen:
-                raise Exception(f'Recursive import detected: {imp}')
-            rules.extend(self._load_rule_collection(g, imp, seen))
-            seen.add(imp)
-        return rules
-
     def load(self, source: Union[Graph, str, IO], domain: Union[str, Path] = None):
-        '''
+        """
         Load from a Graph or Turtle document.
         :param source: Graph or Turtle file to load
         :param domain: Domain path filter
         :return:
-        '''
-        if not isinstance(source, Graph):
+        """
+        service = ''
+        if isinstance(source, Graph):
+            g = source
+        elif isinstance(source, str) and source.startswith('sparql:'):
+            service = source[len('sparql:'):]
+            g = Graph()
+        else:
             g = Graph().parse(source)
-
-        validresult = validate(g, shacl_graph=SHACL_VALIDATOR)
-        if not validresult[0]:
-            raise Exception('Domain Configuration graph not valid: %s', validresult[2])
 
         domain = None if not domain else Path(domain).resolve()
 
-        for cfg in g.subjects(RDF.type, DOMAINCFG.DomainConfiguration):
-            localpath = Path(str(g.value(cfg, DOMAINCFG.path)))
-            path = (self.working_directory / localpath).resolve()
-            if domain is not None and path != domain:
-                continue
-            entry = DomainConfigurationEntry(
-                localpath=localpath,
-                working_directory=self.working_directory,
-                path=path,
-                comment=str(g.value(cfg, RDFS.comment)),
-                glob=str(g.value(cfg, DOMAINCFG.glob)),
-                uri_root_filter=str(g.value(cfg, DOMAINCFG.uriRootFilter)),
-            )
-            for r in g.objects(cfg, DOMAINCFG.rules):
-                entry.rules.extend(self._load_rule_collection(g, r))
-            for r in g.objects(cfg, DOMAINCFG.validator):
-                entry.validator.extend(self._load_rule_collection(g, r))
-            for r in g.objects(cfg, DOMAINCFG.extraOntology):
-                entry.extra_ontology.extend(self._load_rule_collection(g, r))
-            for r in g.objects(cfg, DOMAINCFG.annotation):
-                entry.annotation.extend(self._load_rule_collection(g, r))
-            self.entries.setdefault(path, []).append(entry)
+        cfggraph = g.query(DOMAIN_CFG_QUERY.replace('__SERVICE__', service)).graph
+
+        for cfg_ref in cfggraph.subjects(RDF.type, DCFG.DomainConfiguration):
+
+            globs = [str(g) for g in cfggraph.objects(cfg_ref, DCFG.glob)]
+            uri_root_filter = cfggraph.value(cfg_ref, DCFG.uriRootFilter)
+            profile_refs = cast(list[URIRef], list(cfggraph.objects(cfg_ref, DCTERMS.conformsTo)))
+
+            for localpath in cfggraph.objects(cfg_ref, DCFG.localPath):
+                localpath = Path(str(localpath))
+                path = (self.working_directory / localpath).resolve()
+                if domain is not None and path != domain:
+                    continue
+
+                entry = DomainConfigurationEntry(
+                    working_directory=self.working_directory,
+                    localpath=localpath,
+                    glob=globs,
+                    uri_root_filter=uri_root_filter,
+                    conforms_to=profile_refs,
+                )
+                self.entries.setdefault(path, []).append(entry)
 
         if domain:
             logger.info("Found %d domain configuration entries for domain %s:\n - %s",
                         len(self.entries), domain,
-                        '\n - '.join([e.glob for entries in self.entries.values() for e in entries]))
+                        '\n - '.join([g for entries in self.entries.values() for e in entries for g in e.glob]))
         else:
             logger.info("Found %d domain configurations:\n - %s",
                         len(self.entries), '\n - '.join([os.path.relpath(p) for p in self.entries.keys()]))
@@ -90,7 +102,7 @@ class DomainConfiguration:
         for entryList in self.entries.values():
             for entry in entryList:
                 if entry.matches(fn):
-                    return entry.load()
+                    return entry
 
     def find_files(self, fns: list[Union[str, Path]]) -> 'dict[Path, DomainConfigurationEntry]':
         result = {}
@@ -107,13 +119,13 @@ class DomainConfiguration:
         path = path.resolve()
         for domain, entries in self.entries.items():
             if domain == path:
-                return [entry.load() for entry in entries]
+                return entries
 
     def find_all(self) -> 'dict[Path, DomainConfigurationEntry]':
         r = {}
         for entryList in self.entries.values():
             for entry in entryList:
-                r.update({p: entry for p in entry.load().find_all()})
+                r.update({p: entry for p in entry.find_all()})
         return r
 
     def __len__(self):
@@ -124,45 +136,23 @@ class DomainConfigurationEntry:
 
     def __init__(self,
                  working_directory: Path,
-                 rules: Union[list[Union[str, Path]], Graph] = None,
-                 validator: Union[list[Union[str, Path]], Graph] = None,
-                 extra_ontology: Union[list[Union[str, Path]], Graph] = None,
-                 annotation: Union[list[Union[str, Path]], Graph] = None,
-                 **kwargs):
+                 localpath: Path,
+                 glob: Sequence[str],
+                 uri_root_filter: Optional[str] = None,
+                 conforms_to: Optional[Sequence[URIRef]] = None):
         self.working_directory = working_directory
-        self.rules = rules or []
-        self.validator = validator or []
-        self.extra_ontology = extra_ontology or []
-        self.annotation = annotation or []
-        for arg in ('localpath', 'path', 'comment', 'glob', 'uri_root_filter'):
-            setattr(self, arg, kwargs.get(arg))
-        self.path = self.path.resolve()
-        self._loaded = False
-
-    def load(self):
-        if not self._loaded:
-
-            for prop in ('rules', 'validator', 'extra_ontology', 'annotation'):
-                val = getattr(self, prop)
-                if isinstance(val, Graph):
-                    setattr(self, f'{prop}_path', None)
-                g = Graph()
-                for fn in val:
-                    g.parse(self.working_directory / fn)
-                setattr(self, prop, g)
-                setattr(self, f'{prop}_path', val)
-
-            self._loaded = True
-
-        return self
+        self.localpath = localpath
+        self.path = (working_directory / localpath).resolve()
+        self.glob = glob if not isinstance(glob, str) else [glob]
+        self.uri_root_filter = uri_root_filter
+        self.conforms_to = [conforms_to] if isinstance(conforms_to, str) else conforms_to
 
     def find_all(self):
-        return list(self.path.glob(self.glob))
+        return [item for g in self.glob for item in self.path.glob(g)]
 
     def matches(self, fn: Union[str, Path]):
         if not isinstance(fn, Path):
             fn = Path(fn)
         if self.path != fn.parent.resolve():
             return False
-        return fn.match(self.glob)
-
+        return any(fn.match(g) for g in self.glob)
