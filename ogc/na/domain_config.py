@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+"""
+This module contains classes to load RDF domain configuration files (DCAT-like catalogs)
+defining how to find and select files for processing.
+"""
+
 import logging
 import os
 import re
@@ -37,21 +42,44 @@ logger = logging.getLogger('domain_config')
 
 
 class DomainConfiguration:
+    """
+    The DomainConfiguration class can load a collection of DomainConfigurationEntry's
+    detailing which files need to be processed and where they can be found, as well
+    as including a list of profiles for entailment, validation, and (potentially)
+    other operations.
+
+    Domain configurations use the `http://www.example.org/ogc/domain-cfg#` (dcfg) prefix.
+
+    A domain configuration must include, at least, a `dcfg:localPath` (a base directory, relative
+    to the working directory) and a `dcfg:glob` (glob expression to find/filter files inside
+    the base directory). If present, a `dcfg:uriRootFilter` will be used to determine which is
+    the main concept scheme in the file (if more than one is found). Profiles for
+    validation, entailment, etc. can be specified using `dcterms:conformsTo`.
+    """
 
     def __init__(self, working_directory: Union[str, Path] = None):
+        """
+        Creates a new DomainConfiguration, optionally specifying the working directory.
+
+        :param working_directory: the working directory to use for local paths (cwd by default)
+        """
         self.working_directory = (Path(working_directory) if working_directory else Path()).resolve()
         logger.debug("Working directory: %s", self.working_directory)
         self.entries: dict[Path, list[DomainConfigurationEntry]] = {}
 
     def clear(self):
+        """
+        Removes all configuration entries.
+        """
         self.entries = {}
 
     def load(self, source: Union[Graph, str, IO], domain: Union[str, Path] = None):
         """
-        Load from a Graph or Turtle document.
+        Load entries from a Graph or Turtle document.
+
         :param source: Graph or Turtle file to load
         :param domain: Domain path filter
-        :return:
+        :return: this DomainConfiguration instance
         """
         service = ''
         if isinstance(source, Graph):
@@ -96,7 +124,13 @@ class DomainConfiguration:
                         len(self.entries), '\n - '.join([os.path.relpath(p) for p in self.entries.keys()]))
         return self
 
-    def find_file(self, fn: Union[str, Path]) -> 'DomainConfigurationEntry':
+    def find_file(self, fn: Union[str, Path]) -> Optional['DomainConfigurationEntry']:
+        """
+        Find the DomainConfigurationEntry that corresponds to a file, if any.
+
+        :param fn: the file name
+        :return: a DomainConfigurationEntry, or None if none is found
+        """
         if not isinstance(fn, Path):
             fn = Path(fn)
         for entryList in self.entries.values():
@@ -105,6 +139,14 @@ class DomainConfiguration:
                     return entry
 
     def find_files(self, fns: list[Union[str, Path]]) -> 'dict[Path, DomainConfigurationEntry]':
+        """
+        Find the DomainConfigurationEntry's associated to a lis of files. Similar
+        to [find_file()][ogc.na.domain_config.DomainConfiguration.find_file]
+        but with a list of files.
+
+        :param fns: a list of files to find
+        :return: a path \u2192 DomainConfigurationEntry dict for each file that is found
+        """
         result = {}
         for fn in fns:
             p = Path(fn).resolve()
@@ -113,15 +155,13 @@ class DomainConfiguration:
                 result[p] = e
         return result
 
-    def find_domain_entries(self, path: Union[str, Path]) -> 'list[DomainConfigurationEntry]':
-        if not isinstance(path, Path):
-            path = Path(path)
-        path = path.resolve()
-        for domain, entries in self.entries.items():
-            if domain == path:
-                return entries
-
     def find_all(self) -> 'dict[Path, DomainConfigurationEntry]':
+        """
+        Find all the files referenced by this DomainConfiguration, including
+        their DomainConfigurationEntry.
+
+        :return: a path \u2192 DomainConfigurationEntry dict including all files
+        """
         r = {}
         for entryList in self.entries.values():
             for entry in entryList:

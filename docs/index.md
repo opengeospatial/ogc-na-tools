@@ -1,17 +1,14 @@
-# Welcome to MkDocs
+# OGC Naming Authority tools
 
-For full documentation visit [mkdocs.org](https://www.mkdocs.org).
+## Purpose
+This repository contains tools used to maintain controlled vocabularies and knowledge assets managed by the OGC Naming Authority. Such tools may have wider general applicability and be refactored into tool specific repositories.
 
-## Commands
+## Scope
+The tools here manage ETL processes for ingesting source data into a dynamic knowledge graph. Whilst this is quite a generic scope, this provides examples of how to use a range of resources that others may reuse to achieve similar results.
 
-* `mkdocs new [dir-name]` - Create a new project.
-* `mkdocs serve` - Start the live-reloading docs server.
-* `mkdocs build` - Build the documentation site.
-* `mkdocs -h` - Print help message and exit.
+## Highlights
 
-## Project layout
-
-    mkdocs.yml    # The configuration file.
-    docs/
-        index.md  # The documentation homepage.
-        ...       # Other markdown pages, images and other files.
+* JSON ingest and conversion to RDF using semantic annotations and conversions to a target model schema.
+* entailment and validation pipeline for RDF resources.
+* specific scripts to convert OGC source material into a form compatible with the OGC Linked Data environment
+* tutorial for docker deployment and testing of available tools.

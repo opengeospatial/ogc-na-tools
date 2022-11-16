@@ -1,12 +1,12 @@
 # ogc-na-tools
 
-# Purpose
+## Purpose
 This repository contains tools used to maintain controlled vocabularies and knowledge assets managed by the OGC Naming Authority. Such tools may have wider general applicability and be refactored into tool specific repositories.
 
-# Scope
+## Scope
 The tools here manage ETL processes for ingesting source data into a dynamic knowledge graph. Whilst this is quite a generic scope, this provides examples of how to use a range of resources that others may reuse to achieve similar results.
 
-# Highlights
+## Highlights
 
 * JSON ingest and conversion to RDF using semantic annotations and conversions to a target model schema.
 * entailment and validation pipeline for RDF resources.

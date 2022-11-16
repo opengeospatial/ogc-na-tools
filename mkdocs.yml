@@ -12,10 +12,17 @@ plugins:
       nav_file: SUMMARY.md
   - section-index
   - mkdocstrings:
+      handlers:
+        python:
+          import:
+            - https://rdflib.readthedocs.io/en/stable/objects.inv
+          options:
+            docstring_style: sphinx
 
 watch:
   - ogc
 
 nav:
   - Overview: index.md
+  - Tutorials: tutorials.md
   - Reference: reference/

@@ -1,4 +1,20 @@
 #!/usr/bin/env python3
+"""
+Implements an entailment + validation workflow.
+
+`update_vocabs` starts by loading one or more
+[DomainConfiguration's][ogc.na.domain_config.DomainConfiguration] from
+RDF files and/or SPARQL endpoints, and a series of profile definitions
+(also from a list of RDF files and/or SPARQL endpoints).
+From there, individual or batch processing of files can be done,
+as well as uploading the results to a target triplestore.
+
+This script can be used as a library, or run directly from the cli;
+please refer to the
+[OGC NamingAuthority repository](https://github.com/opengeospatial/NamingAuthority)
+for usage details on the latter.
+"""
+
 import argparse
 import logging
 import os
@@ -24,19 +40,10 @@ ENTAILED_FORMATS = {
 DEFAULT_ENTAILED_DIR = 'entailed'
 
 
-def get_profiles(src: Union[str, Path]):
-    if isinstance(src, Path) or not src.startswith('sparql'):
-        # file
-        pass
-    else:
-        # SPARQL endpoint
-        pass
-
-
 def setup_logging(debug: bool = False):
     """
     Sets up logging level and handlers (logs WARNING and ERROR
-    to stderr)
+    to stderr).
 
     :param debug: whether to set DEBUG level
     """
@@ -60,6 +67,16 @@ def setup_logging(debug: bool = False):
 
 def load_vocab(vocab: Union[Graph, str, Path], graph_uri: str,
                graph_store: str, authdetails: tuple[str] = None) -> None:
+    """
+    Loads a vocabulary onto a triplestore using the [SPARQL Graph Store
+    protocol](https://www.w3.org/TR/sparql11-http-rdf-update/).
+
+    :param vocab: the file or Graph to load
+    :param graph_uri: a target graph URI
+    :param graph_store: the target SPARQL Graph Store protocol URL
+    :param authdetails: a `(username, password)` tuple for authentication
+    :return:
+    """
     # PUT is equivalent to DROP GRAPH + INSERT DATA
     # Graph is automatically created per Graph Store spec
 
@@ -86,15 +103,29 @@ def load_vocab(vocab: Union[Graph, str, Path], graph_uri: str,
 
 def get_graph_uri_for_vocab(g: Graph = None) -> Generator[str, None, None]:
     """
-    We can get the Graph URI for a vocab using assumption that
-    the ConceptScheme is declared in the graph being processed.
+    Find a target graph URI in a vocabulary [Graph][rdflib.Graph].
+
+    In effect, this function merely looks for
+    [SKOS ConceptScheme's](https://www.w3.org/TR/2008/WD-skos-reference-20080829/skos.html#ConceptScheme).
+
+    :param g: the [Graph][rdflib.Graph] for which to find the target URI
+    :return: a [Node][rdflib.Node] generator
     """
     for s in g.subjects(predicate=RDF.type, object=SKOS.ConceptScheme):
         yield str(s)
 
 
-def get_entailed_path(f: Path, g: Graph, extension, rootpattern='/def/',
-                      entailed_dir=DEFAULT_ENTAILED_DIR):
+def get_entailed_path(f: Path, g: Graph, extension: str, rootpattern: str = '/def/',
+                      entailed_dir: str = DEFAULT_ENTAILED_DIR):
+    """
+    Tries to find the output file path for an entailed version of a source Graph.
+
+    :param f: the original path of the source file
+    :param g: the [Graph][rdflib.Graph] loaded from the source file
+    :param extension: a filename extension (e.g., 'ttl' for Turtle)
+    :param rootpattern: a root pattern to filter candidate URIs
+    :param entailed_dir: the name of the base entailed files directory
+    """
     if not rootpattern:
         # just assume filename is going to be fine
         return (f.parent / entailed_dir / f.with_suffix('.' + extension).name,
@@ -124,6 +155,16 @@ def get_entailed_path(f: Path, g: Graph, extension, rootpattern='/def/',
 
 def make_rdf(filename: Union[str, Path], g: Graph, rootpath='/def/',
              entailment_directory: Union[str, Path] = DEFAULT_ENTAILED_DIR) -> Path:
+    """
+    Serializes entailed RDF graphs in several output formats for a given input
+    graph.
+
+    :param filename: the original source filename
+    :param g: [Graph][rdflib.Graph] loaded from the source file
+    :param rootpath: a path to filter concept schemes inside the Graph and infer the main one
+    :param entailment_directory: name for the output subdirectory for entailed files
+    :return: the output path for the Turtle version of the entailed files
+    """
     if not isinstance(filename, Path):
         filename = Path(filename)
     filename = filename.resolve()
