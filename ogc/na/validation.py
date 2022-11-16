@@ -37,4 +37,6 @@ class ProfilesValidationReport:
         if profile_report.report.text:
             if self.text:
                 self.text += '\n'
-            self.text += f"=== {profile_report.profile_token} ({profile_report.profile_uri}) ===\n{profile_report.report.text}"
+            self.text += (f"=== {profile_report.profile_token} "
+                          f"({profile_report.profile_uri}) ===\n"
+                          f"{profile_report.report.text}")

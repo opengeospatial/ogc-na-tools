@@ -78,7 +78,7 @@ class ProfileRegistry:
 
     def __init__(self, srcs: Union[str, Path, Sequence[Union[str, Path]]],
                  local_artifact_mappings: dict[str, Union[str, Path]] = None,
-                 ignore_artifact_errors = False):
+                 ignore_artifact_errors=False):
 
         assert srcs is not None
         if isinstance(srcs, str) or not isinstance(srcs, Sequence):
@@ -215,4 +215,3 @@ class ProfileRegistry:
             for artifact in artifacts:
                 result[artifact] = Graph().parse(artifact)
         return result
-

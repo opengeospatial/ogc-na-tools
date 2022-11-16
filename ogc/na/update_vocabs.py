@@ -4,15 +4,13 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Optional, Union, Generator
+from typing import Union, Generator
 
 import httpx
-from pyshacl import validate as shacl_validate
-from rdflib import Graph, URIRef, RDF, SKOS
+from rdflib import Graph, RDF, SKOS
 
-from ogc.na import util
-from ogc.na.profile import ProfileRegistry
 from ogc.na.domain_config import DomainConfiguration, DomainConfigurationEntry
+from ogc.na.profile import ProfileRegistry
 
 logger = logging.getLogger('update_vocabs')
 
@@ -36,12 +34,12 @@ def get_profiles(src: Union[str, Path]):
 
 
 def setup_logging(debug: bool = False):
-    '''
+    """
     Sets up logging level and handlers (logs WARNING and ERROR
     to stderr)
 
     :param debug: whether to set DEBUG level
-    '''
+    """
     rootlogger = logging.getLogger()
     rootlogger.setLevel(logging.DEBUG if debug else logging.INFO)
 
@@ -131,6 +129,8 @@ def make_rdf(filename: Union[str, Path], g: Graph, rootpath='/def/',
     filename = filename.resolve()
 
     loadable_ttl = None
+    canonical_filename = None
+    conceptschemeuri = None
     for extension, fmt in ENTAILED_FORMATS.items():
         newpath, canonical_filename, conceptschemeuri = \
             get_entailed_path(filename, g, extension, rootpath, entailment_directory)
@@ -148,8 +148,7 @@ def make_rdf(filename: Union[str, Path], g: Graph, rootpath='/def/',
     return loadable_ttl
 
 
-if __name__ == "__main__":
-
+def _main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
@@ -157,14 +156,16 @@ if __name__ == "__main__":
         "--profile-source",
         nargs="*",
         default=[],
-        help="Profile source (can be a local or remote RDF file, or a SPARQL endpoint in the form 'sparql:http://example.org/sparql')",
+        help=("Profile source (can be a local or remote RDF file, "
+              "or a SPARQL endpoint in the form 'sparql:http://example.org/sparql')"),
     )
 
     parser.add_argument(
         "domain_cfg",
         metavar="domain-cfg",
         nargs="+",
-        help="Domain configuration (can be a local or remote RDF file, or a SPARQL endpoint in the form 'sparql:http://example.org/sparql')",
+        help=("Domain configuration (can be a local or remote RDF file, "
+              "or a SPARQL endpoint in the form 'sparql:http://example.org/sparql')"),
     )
 
     parser.add_argument(
@@ -360,3 +361,7 @@ if __name__ == "__main__":
     for scope, scopereport in report.items():
         logger.info("Scope: %s\n  added: %s\n  modified: %s",
                     scope, scopereport.get('added', []), scopereport.get('modified', []))
+
+
+if __name__ == "__main__":
+    _main()
