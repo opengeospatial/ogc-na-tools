@@ -10,22 +10,28 @@ import re
 from pathlib import Path
 from typing import Union, Optional, Sequence, cast
 
-from rdflib import Graph, Namespace, URIRef, RDF, DCTERMS
+from rdflib import Graph, Namespace, URIRef, RDF, DCTERMS, DCAT
 from typing.io import IO
 
 DCFG = Namespace('http://www.example.org/ogc/domain-cfg#')
 
 DOMAIN_CFG_QUERY = re.sub(r' {2,}|\n', ' ', """
+    PREFIX dcat: <http://www.w3.org/ns/dcat#>
     PREFIX dcfg: <http://www.example.org/ogc/domain-cfg#>
     PREFIX dct: <http://purl.org/dc/terms/>
     CONSTRUCT {
+        ?catalog dcat:dataset ?domainCfg ;
+            dcfg:localArtifactMapping ?mapping .
         ?domainCfg a dcfg:DomainConfiguration ;
             dcfg:localPath ?localPath ;
             dcfg:glob ?glob ;
             dcfg:uriRootFilter ?uriRootFilter ;
-            dct:conformsTo ?profile ;
+            dct:conformsTo ?profile .
+        ?mapping dcfg:baseURI ?mappingBaseURI ;
+            dcfg:localPath ?mappingLocalPath .
     } WHERE {
         __SERVICE__ {
+            ?catalog dcat:dataset ?domainCfg .
             ?domainCfg dcfg:localPath ?localPath ;
                 dcfg:glob ?glob .
             OPTIONAL {
@@ -33,6 +39,11 @@ DOMAIN_CFG_QUERY = re.sub(r' {2,}|\n', ' ', """
             }
             OPTIONAL {
                 ?domainCfg dct:conformsTo ?profile
+            }
+            OPTIONAL {
+                ?catalog dcfg:localArtifactMapping ?mapping .
+                ?mapping dcfg:baseURI ?mappingBaseURI ;
+                    dcfg:localPath ?mappingLocalPath .
             }
         }
   }
@@ -66,6 +77,7 @@ class DomainConfiguration:
         self.working_directory = (Path(working_directory) if working_directory else Path()).resolve()
         logger.debug("Working directory: %s", self.working_directory)
         self.entries: dict[Path, list[DomainConfigurationEntry]] = {}
+        self.local_artifacts_mapping = {}
 
     def clear(self):
         """
@@ -93,6 +105,14 @@ class DomainConfiguration:
         domain = None if not domain else Path(domain).resolve()
 
         cfggraph = g.query(DOMAIN_CFG_QUERY.replace('__SERVICE__', service)).graph
+
+        for catalog_ref in cfggraph.subjects(DCAT.dataset):
+            logger.debug("Found catalog %s", catalog_ref)
+            for mapping_ref in cfggraph.objects(catalog_ref, DCFG.localArtifactMapping):
+                base_uri = str(cfggraph.value(mapping_ref, DCFG.baseURI))
+                local_path = Path(str(cfggraph.value(mapping_ref, DCFG.localPath)))
+                logger.debug("Found local artifact mapping: %s -> %s", base_uri, local_path)
+                self.local_artifacts_mapping[base_uri] = local_path
 
         for cfg_ref in cfggraph.subjects(RDF.type, DCFG.DomainConfiguration):
 

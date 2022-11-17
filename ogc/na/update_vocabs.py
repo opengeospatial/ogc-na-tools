@@ -270,7 +270,14 @@ def _main():
         "-e",
         "--entailment-directory",
         default=DEFAULT_ENTAILED_DIR,
-        help="Name of the subdirectory that entailed files will be written to"
+        help="Name of the subdirectory that entailed files will be written to",
+    )
+
+    parser.add_argument(
+        "-l",
+        "--local-artifact-mappings",
+        nargs="*",
+        help="Local path artifact mappings in the form baseURL=localPath",
     )
 
     parser.add_argument(
@@ -329,7 +336,17 @@ def _main():
             logger.warning('No configuration found in %s exiting', args.domaincfg)
         sys.exit(1)
 
-    profile_registry = ProfileRegistry(args.profile_source, ignore_artifact_errors=True)
+    artifact_mappings = dict(domaincfg.local_artifacts_mapping)
+    if args.local_artifact_mappings:
+        for mappingstr in args.local_artifact_mappings:
+            mapping = mappingstr.split('=', 1)
+            if len(mapping < 2):
+                raise Exception(f"Invalid local artifact mapping: {mappingstr}")
+            artifact_mappings[mapping[0]] = mapping[1]
+
+    profile_registry = ProfileRegistry(args.profile_source,
+                                       local_artifact_mappings=artifact_mappings,
+                                       ignore_artifact_errors=True)
 
     modified: dict[Path, DomainConfigurationEntry]
     added: dict[Path, DomainConfigurationEntry]
@@ -346,6 +363,7 @@ def _main():
     for collection in (modified, added):
         report_cat = 'modified' if collection == modified else 'added'
         for doc, cfg in collection.items():
+            logger.info("Processing %s", doc)
             origg = Graph().parse(doc)
             newg = profile_registry.entail(origg, cfg.conforms_to)
             validation_result = profile_registry.validate(newg, cfg.conforms_to)

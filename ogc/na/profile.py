@@ -86,7 +86,10 @@ class ProfileRegistry:
         else:
             self._srcs = srcs
 
-        self._local_artifact_mappings: dict[str, Union[str, Path]] = local_artifact_mappings or {}
+        self._local_artifact_mappings: dict[str, Union[str, Path]] = {}
+        if local_artifact_mappings:
+            self._local_artifact_mappings = {u: Path(p) for u, p in local_artifact_mappings.items()}
+        logger.debug("Using local artifact mappings: %s", self._local_artifact_mappings)
         self._profiles: dict[URIRef, Profile] = {}
         self._load_profiles()
         # Cache of { profile: { role: Graph } }
@@ -141,7 +144,7 @@ class ProfileRegistry:
         matchedpath = uri
         for l, p in self._local_artifact_mappings.items():
             if uri.startswith(l) and (matchedlocal is None or len(matchedlocal) < len(l)):
-                matchedlocal, matchedpath = l, Path(str(p) + uri[len(l):])
+                matchedlocal, matchedpath = l, p / uri[len(l):]
         return str(matchedpath)
 
     def get_artifacts(self, profile: URIRef, role: URIRef) -> Optional[list[Union[str, Path]]]:
