@@ -253,6 +253,13 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#sample-json-ld-uplifting-context" class="md-nav__link">
+    Sample JSON-LD uplifting context
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -306,7 +313,7 @@
         
         
         <div class="md-nav__link md-nav__link--index ">
-          <a href="../reference/ogc/">ogc</a>
+          <a href="../reference/ogc/na/">ogc.na</a>
           
             <label for="__nav_4_1">
               <span class="md-nav__icon md-icon"></span>
@@ -314,42 +321,10 @@
           
         </div>
       
-      <nav class="md-nav" aria-label="ogc" data-md-level="2">
+      <nav class="md-nav" aria-label="ogc.na" data-md-level="2">
         <label class="md-nav__title" for="__nav_4_1">
           <span class="md-nav__icon md-icon"></span>
-          ogc
-        </label>
-        <ul class="md-nav__list" data-md-scrollfix>
-          
-            
-              
-  
-  
-  
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-      
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_4_1_1" type="checkbox" id="__nav_4_1_1" >
-      
-      
-      
-      
-        
-        
-        <div class="md-nav__link md-nav__link--index ">
-          <a href="../reference/ogc/na/">na</a>
-          
-            <label for="__nav_4_1_1">
-              <span class="md-nav__icon md-icon"></span>
-            </label>
-          
-        </div>
-      
-      <nav class="md-nav" aria-label="na" data-md-level="3">
-        <label class="md-nav__title" for="__nav_4_1_1">
-          <span class="md-nav__icon md-icon"></span>
-          na
+          ogc.na
         </label>
         <ul class="md-nav__list" data-md-scrollfix>
           
@@ -449,13 +424,6 @@
     </li>
   
 
-            
-          
-        </ul>
-      </nav>
-    </li>
-  
-
     
   </ul>
 </nav>
@@ -486,6 +454,13 @@
         <li class="md-nav__item">
   <a href="#sample-domain-configuration" class="md-nav__link">
     Sample domain configuration
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sample-json-ld-uplifting-context" class="md-nav__link">
+    Sample JSON-LD uplifting context
   </a>
   
 </li>
@@ -547,6 +522,60 @@ _:conceptSchemes a dcat:Dataset, dcfg:DomainConfiguration ;
   dct:conformsTo profiles:vocprez_ogc, profiles:skos_conceptscheme ;
 .
 </code></pre>
+<h2 id="sample-json-ld-uplifting-context">Sample JSON-LD uplifting context</h2>
+<pre><code class="language-yaml"># Sample single-file JSON-LD context
+# Processing order is transform -&gt; types -&gt; context
+
+# `transform` uses jq expressions for light data transformations
+#   see: https://pypi.org/project/jq/
+#   see: https://stedolan.github.io/jq/manual/
+# This `transform` converts `&quot;key&quot;: { ...value }` objects into an array
+#   with `[{ &quot;@id&quot; : &quot;#key&quot;, ...value }, ...]` items, and also adds
+#   types `MyType` and `skos:Concept` to each of them
+transform: '[to_entries[]|.value+{&quot;@id&quot;:(&quot;#&quot;+.key),&quot;@type&quot;:[&quot;MyType&quot;, &quot;skos:Concept&quot;]}]'
+
+# `types` adds @type annotations to nodes represented by a jsonpath-ng expression
+# (note: expressions are matched against *transformed* data)
+#   see: https://pypi.org/project/jsonpath-ng/
+types:
+  '$[?type=&quot;IS&quot;]': [AddedClass, ISClass]
+  '$[?type=&quot;DP&quot;]': [AddedClass, DPClass]
+
+# `base-uri` sets the base uri that will be used for JSON-LD.
+#  This is sometimes necessary since pyld ignores the @base in the root @context
+#   see: https://github.com/digitalbazaar/pyld/issues/143
+base-uri: http://example.org/vocab#
+
+# `context` adds JSON-LD @context to the root element (empty key, '.' or '$')
+# or to specific elements using jsonpath-ng expressions (note: expressions are
+# matched against *transformed* data
+#   see: https://pypi.org/project/jsonpath-ng/
+context:
+  # global context
+  '$': [
+    # dcterms profile
+    &quot;http://defs-dev.opengis.net/ogc-na/definitions/profiles/resources/dcterms.jsonld&quot;,
+    # skos profile
+    &quot;http://defs-dev.opengis.net/ogc-na/definitions/profiles/resources/skos.jsonld&quot;,
+
+    # custom context for bibliography
+    {
+      &quot;skos&quot;: &quot;http://www.w3.org/2004/02/skos/core#&quot;,
+      &quot;@vocab&quot;: &quot;http://example.org/vocab#&quot;,
+      &quot;type&quot;: &quot;http://www.opengis.net/def/metamodel/ogc-na/doctype&quot;,
+      &quot;alternative&quot;: &quot;skos:altLabel&quot;,
+      &quot;title&quot;: &quot;skos:definition&quot;,
+      &quot;description&quot;: &quot;rdfs:comment&quot;,
+      &quot;date&quot;: &quot;dct:created&quot;,
+      &quot;URL&quot;: &quot;rdfs:seeAlso&quot;
+    }
+  ]
+
+  # local context for elements with type = &quot;IS&quot;
+  '$[?type=&quot;IS&quot;]': {
+    &quot;@vocab&quot;: &quot;http://example.org/vocab3#&quot;
+  }
+</code></pre>
 
 
 
@@ -583,13 +612,13 @@ _:conceptSchemes a dcat:Dataset, dcfg:DomainConfiguration ;
       
       
         
-        <a href="../reference/ogc/" class="md-footer__link md-footer__link--next" aria-label="Next: ogc" rel="next">
+        <a href="../reference/ogc/na/" class="md-footer__link md-footer__link--next" aria-label="Next: ogc.na" rel="next">
           <div class="md-footer__title">
             <div class="md-ellipsis">
               <span class="md-footer__direction">
                 Next
               </span>
-              ogc
+              ogc.na
             </div>
           </div>
           <div class="md-footer__button md-icon">

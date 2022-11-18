@@ -269,7 +269,7 @@
         
         
         <div class="md-nav__link md-nav__link--index ">
-          <a href="../../">ogc</a>
+          <a href="../">ogc.na</a>
           
             <label for="__nav_4_1">
               <span class="md-nav__icon md-icon"></span>
@@ -277,44 +277,10 @@
           
         </div>
       
-      <nav class="md-nav" aria-label="ogc" data-md-level="2">
+      <nav class="md-nav" aria-label="ogc.na" data-md-level="2">
         <label class="md-nav__title" for="__nav_4_1">
           <span class="md-nav__icon md-icon"></span>
-          ogc
-        </label>
-        <ul class="md-nav__list" data-md-scrollfix>
-          
-            
-              
-  
-  
-    
-  
-  
-    
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
-      
-      
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_4_1_1" type="checkbox" id="__nav_4_1_1" checked>
-      
-      
-      
-      
-        
-        
-        <div class="md-nav__link md-nav__link--index ">
-          <a href="../">na</a>
-          
-            <label for="__nav_4_1_1">
-              <span class="md-nav__icon md-icon"></span>
-            </label>
-          
-        </div>
-      
-      <nav class="md-nav" aria-label="na" data-md-level="3">
-        <label class="md-nav__title" for="__nav_4_1_1">
-          <span class="md-nav__icon md-icon"></span>
-          na
+          ogc.na
         </label>
         <ul class="md-nav__list" data-md-scrollfix>
           
@@ -469,13 +435,6 @@
       <a href="../validation/" class="md-nav__link">
         validation
       </a>
-    </li>
-  
-
-            
-          
-        </ul>
-      </nav>
     </li>
   
 
@@ -817,7 +776,7 @@ for usage details on the latter.</p>
           <td>
                 <code><span title="typing.Generator">Generator</span>[str, None, None]</code>
           </td>
-          <td><p>a [Node][rdflib.Node] generator</p></td>
+          <td><p>a <a class="autorefs autorefs-external" href="https://rdflib.readthedocs.io/en/stable/apidocs/rdflib.html#rdflib.term.Node">Node</a> generator</p></td>
         </tr>
     </tbody>
   </table>
@@ -843,7 +802,7 @@ for usage details on the latter.</p>
 <span class="sd">    [SKOS ConceptScheme&#39;s](https://www.w3.org/TR/2008/WD-skos-reference-20080829/skos.html#ConceptScheme).</span>
 
 <span class="sd">    :param g: the [Graph][rdflib.Graph] for which to find the target URI</span>
-<span class="sd">    :return: a [Node][rdflib.Node] generator</span>
+<span class="sd">    :return: a [Node][rdflib.term.Node] generator</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">g</span><span class="o">.</span><span class="n">subjects</span><span class="p">(</span><span class="n">predicate</span><span class="o">=</span><span class="n">RDF</span><span class="o">.</span><span class="n">type</span><span class="p">,</span> <span class="nb">object</span><span class="o">=</span><span class="n">SKOS</span><span class="o">.</span><span class="n">ConceptScheme</span><span class="p">):</span>
         <span class="k">yield</span> <span class="nb">str</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
