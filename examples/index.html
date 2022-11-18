@@ -514,19 +514,37 @@
 @prefix rdfs: &lt;http://www.w3.org/2000/01/rdf-schema#&gt; .
 @prefix profiles: &lt;http://www.opengis.net/def/metamodel/profiles/&gt; .
 
-_:OGC-NA-Catalog a dcat:Catalog, dcfg:DomainConfiguration ;
+_:OGC-NA-Catalog a dcat:Catalog ;
   dct:title &quot;OGC Naming Authority catalog&quot; ;
   rdfs:label &quot;OGC Naming Authority catalog&quot; ;
-  dcat:dataset _:entities ;
+
+  # Map http://defs-dev.opengis.net/ogc-na/x/y/z.ttl to 
+  # ./x/y/z.ttl
+  dcfg:localArtifactMapping [
+    dcfg:baseURI &quot;http://defs-dev.opengis.net/ogc-na/&quot; ;
+    dcfg:localPath &quot;./&quot; ;
+  ] ;
+
+  # Link to enabled DomainConfiguration's
+  dcat:dataset _:conceptSchemes ;
 .
 
-_:entities a dcat:Dataset, dcfg:DomainConfiguration ;
-  dct:title &quot;Entities&quot; ;
-  rdfs:label &quot;Entities&quot; ;
-  dcfg:localPath &quot;entities/&quot; ;
+_:conceptSchemes a dcat:Dataset, dcfg:DomainConfiguration ;
+  dct:description &quot;Set of terms registered with OGC NA not covered by specialised domains&quot; ;
+
+  # Where (from the working directory) to look for source files
+  dcfg:localPath &quot;definitions/conceptschemes&quot; ;
+
+  # Which files to include
   dcfg:glob &quot;*.ttl&quot; ;
+
+  # URI root filter for detecting the main ConceptScheme in
+  # the source files
   dcfg:uriRootFilter &quot;/def/&quot; ;
-  dct:conformsTo profiles:skos_shared, profiles:vocprez_ogc ;
+
+  # Profiles conformance can optionally be declated in the DomainConfiguration
+  # as well as in the source data itself
+  dct:conformsTo profiles:vocprez_ogc, profiles:skos_conceptscheme ;
 .
 </code></pre>
 
