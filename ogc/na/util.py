@@ -2,7 +2,7 @@
 """
 General utilities module.
 """
-
+from pathlib import Path
 from typing import Optional, Union
 from rdflib import Graph
 from pyshacl import validate as shacl_validate
@@ -111,3 +111,20 @@ def isurl(url: str, http_only: bool = False) -> bool:
         return False
 
     return True
+
+
+def load_yaml(fn: Union[str, Path]) -> dict:
+    """
+    Loads a YAML file.
+
+    :param fn: YAML document file name
+    :return: a dict with the loaded data
+    """
+    # Load YAML context file
+    from yaml import load
+    try:
+        from yaml import CLoader as Loader
+    except ImportError:
+        from yaml import Loader
+    with open(fn, 'r') as f:
+        return load(f, Loader=Loader)

@@ -69,7 +69,7 @@ class IContextRegistry:
     """
     Base interface for YAML context definitions.
     """
-    def get_filenames(self, contextfn: Union[Path, str]) -> List[str]:
+    def get_filenames(self, contextfn: Union[Path, str]) -> List[Path]:
         """
         Obtain a list of filenames that this context
         :param contextfn:
@@ -77,7 +77,7 @@ class IContextRegistry:
         """
         pass
 
-    def get_context(self, filename: Union[Path, str]) -> Optional[str]:
+    def get_context(self, filename: Union[Path, str]) -> Optional[Path]:
         pass
 
     def has_context(self, contextfn: Union[Path, str]) -> bool:
@@ -93,7 +93,7 @@ class IContextRegistry:
 class ContextRegistry(IContextRegistry):
     """
     Support class for context registry operations. A context registry
-    is a yamlContextFilename:[listOfFilenameGlobs] mapping contained
+    is a `yamlContextFilename:[listOfFilenameGlobs]` mapping contained
     in a dict or a JSON document.
     The context registry has a root directory (implicit or explicit)
     which will be used for glob-matching operations.
@@ -102,11 +102,20 @@ class ContextRegistry(IContextRegistry):
     registry: dict
     root_dir: Path
 
-    def __init__(self, source: Union[str, dict], root_dir: Union[Path, str] = None):
-        if isinstance(source, str):
+    def __init__(self, source: Union[str, Path, dict], root_dir: Union[Path, str] = None):
+        """
+        Creates a context registry from a collection of YAML-context-definition-to-list-of-globs
+        mappings.
+
+        :param source: a dict or JSON file name with the mappings
+        :param root_dir: the base directory to use for relative path matching. If `None`,
+               an implicit one will be used (the current working directory for dict
+               mappings, or the parent directory of the JSON filename otherwise)
+        """
+        if isinstance(source, str) or isinstance(source, Path):
             # load from file
             with open(source, 'r') as f:
-                entries = json.load(f)
+                entries: dict[str, list[str]] = json.load(f)
             self.root_dir = Path(root_dir) if root_dir else Path(source).parent
         else:
             # take as is
@@ -114,14 +123,14 @@ class ContextRegistry(IContextRegistry):
             self.root_dir = Path(root_dir) if root_dir else Path()
 
         # Resolve context filename paths
-        self.registry = {}
+        self.registry: dict[Path, list[str]] = {}
         for ctx, globs in entries.items():
             p = Path(ctx)
             if not p.is_absolute():
                 p = self.root_dir / p
             self.registry[p.resolve()] = globs
 
-    def get_filenames(self, contextfn: Union[Path, str]) -> List[str]:
+    def get_filenames(self, contextfn: Union[Path, str]) -> List[Path]:
         """
         Tries to find a list of JSON/JSON-LD files for a given YAML context definition filename.
         :param contextfn: YAML context definition filename
@@ -133,9 +142,9 @@ class ContextRegistry(IContextRegistry):
         globs = self.registry.get(contextfn.resolve())
         if not globs:
             return []
-        return [str(fn) for g in globs for fn in self.root_dir.glob(g)]
+        return [fn for g in globs for fn in self.root_dir.glob(g)]
 
-    def get_context(self, filename: Union[Path, str]) -> Optional[str]:
+    def get_context(self, filename: Union[Path, str]) -> Optional[Path]:
         """
         Tries to find the YAML context file for a given JSON file.
         :param filename: the filename of the JSON document
@@ -162,7 +171,7 @@ class ContextRegistry(IContextRegistry):
 
 class ContextRegistryList(IContextRegistry):
     """
-    Support class for aggregating ContextRegistry's.
+    Support class for aggregating [ContextRegistry][ogc.na.ingest_json.ContextRegistry]'s.
     """
 
     def __init__(self, *args: ContextRegistry):
@@ -171,10 +180,10 @@ class ContextRegistryList(IContextRegistry):
     def add(self, registry: ContextRegistry):
         self.registries.append(registry)
 
-    def get_filenames(self, contextfn: Union[Path, str]) -> List[str]:
+    def get_filenames(self, contextfn: Union[Path, str]) -> List[Path]:
         return [fn for registry in self.registries for fn in registry.get_filenames(contextfn)]
 
-    def get_context(self, filename: Union[Path, str]) -> Optional[str]:
+    def get_context(self, filename: Union[Path, str]) -> Optional[Path]:
         return next(
             filter(lambda x: x,
                    (registry.get_context(filename) for registry in self.registries)),
@@ -191,17 +200,6 @@ class ContextRegistryList(IContextRegistry):
 
     def __str__(self):
         return f"ContextRegistryList[{','.join(str(r) for r in self.registries)}]"
-
-
-def load_yaml(fn: Union[str, Path]) -> dict:
-    # Load YAML context file
-    from yaml import load
-    try:
-        from yaml import CLoader as Loader
-    except ImportError:
-        from yaml import Loader
-    with open(fn, 'r') as f:
-        return load(f, Loader=Loader)
 
 
 def init_graph(namespaces: Optional[dict[str, Union[Namespace, DefinedNamespace, str]]]) -> Graph:
@@ -374,7 +372,7 @@ def process_file(inputfn: str,
     return createdfiles
 
 
-def find_context_filename(filename, registry: Optional[IContextRegistry]) -> Optional[str]:
+def find_context_filename(filename, registry: Optional[IContextRegistry]) -> Optional[Path]:
     """
     Find the YAML context file for a given filename, with the following precedence:
         1. Search in registry (if provided)
@@ -405,10 +403,11 @@ def find_context_filename(filename, registry: Optional[IContextRegistry]) -> Opt
     ]:
         if path.isfile(cfn):
             logger.info(f'Autodetected context {cfn} for file {filename}')
-            return cfn
+            return Path(cfn)
 
 
-def filenames_from_context(contextfn: str, registry: Optional[IContextRegistry]) -> Optional[List[str]]:
+def filenames_from_context(contextfn: Union[str, Path],
+                           registry: Optional[IContextRegistry]) -> Optional[List[Path]]:
     """
     Tries to find a JSON/JSON-LD file from a given YAML context definition filename.
     Priority:
@@ -457,7 +456,24 @@ def process(inputfiles: str,
             ttlfn: Optional[Union[bool, str]] = False,
             batch: bool = False,
             base: str = None,
-            skip_on_missing_context: bool = False):
+            skip_on_missing_context: bool = False) -> list[Path]:
+    """
+    Performs the JSON-LD uplift process.
+
+    :param inputfiles: list of input, plain JSON files
+    :param context_registry: context registry to use, if any
+    :param contextfn: used to force the YAML context file name for the uplift. If `None`,
+           it will be autodetected
+    :param jsonldfn: output file name for the JSON-LD content. If it is `False`, no JSON-LD
+           output will be generated. If it is `None`, output will be written to stdout.
+    :param ttlfn: output file name for the Turtle RDF content. If it is `False`, no Turtle
+           output will be generated. If it is `None`, output will be written to stdout.
+    :param batch: in batch mode, all JSON input files are obtained from the context registry
+           and processed
+    :param base: base URI to employ
+    :param skip_on_missing_context: whether to silently fail if no context file is found
+    :return: a list of JSON-LD and/or Turtle output files
+    """
     result = []
     if batch:
         logger.info("Input files: %s", inputfiles)
