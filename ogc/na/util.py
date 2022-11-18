@@ -1,3 +1,8 @@
+#!/usr/bin/env python3
+"""
+General utilities module.
+"""
+
 from typing import Optional, Union
 from rdflib import Graph
 from pyshacl import validate as shacl_validate
@@ -7,6 +12,14 @@ from ogc.na.validation import ValidationReport
 
 
 def copy_triples(src: Graph, dst: Optional[Graph] = None) -> Graph:
+    """
+    Copies all triples from one graph onto another (or a new, empty [Graph][rdflib.Graph]
+    if none is provided).
+
+    :param src: the source Graph
+    :param dst: the destination Graph (or `None` to create a new one)
+    :return: the destination Graph
+    """
     if dst is None:
         dst = Graph()
     for triple in src:
@@ -15,6 +28,12 @@ def copy_triples(src: Graph, dst: Optional[Graph] = None) -> Graph:
 
 
 def parse_resources(src: Union[str, Graph, list[Union[str, Graph]]]) -> Graph:
+    """
+    Join one or more RDF documents or [Graph][rdflib.Graph]'s together into
+    a new Graph.
+    :param src: a path or [Graph][rdflib.Graph], or list thereof
+    :return: a union Graph
+    """
     if not isinstance(src, list):
         src = [src]
 
@@ -31,6 +50,16 @@ def entail(g: Graph,
            rules: Graph,
            extra: Optional[Graph] = None,
            inplace: bool = True) -> Graph:
+    """
+    Performs SHACL entailments on a data [Graph][rdflib.Graph].
+
+    :param g: input data Graph
+    :param rules: SHACL Graph for entailments
+    :param extra: Graph with additional ontological information for entailment
+    :param inplace: if `True`, the source Graph will be modified, otherwise a new
+           Graph will be created
+    :return: the resulting Graph
+    """
     entailed_extra = None
     if extra:
         entailed_extra = copy_triples(extra)
@@ -48,6 +77,14 @@ def entail(g: Graph,
 
 
 def validate(g: Graph, shacl_graph: Graph, extra: Optional[Graph] = None) -> ValidationReport:
+    """
+    Perform SHACL validation on a data [Graph][rdflib.Graph].
+
+    :param g: input data Graph
+    :param shacl_graph: SHACL graph for validation
+    :param extra: Graph with additional ontological information for validation
+    :return: the resulting [][ogc.na.validation.ValidationReport]
+    """
     return ValidationReport(shacl_validate(data_graph=g,
                                            shacl_graph=shacl_graph,
                                            ont_graph=extra,
@@ -56,6 +93,13 @@ def validate(g: Graph, shacl_graph: Graph, extra: Optional[Graph] = None) -> Val
 
 
 def isurl(url: str, http_only: bool = False) -> bool:
+    """
+    Checks whether a string is a valid URL.
+
+    :param url: the input string
+    :param http_only: whether to only accept HTTP and HTTPS URL's as valid
+    :return: `True` if this is a valid URL, otherwise `False`
+    """
     if not url:
         return False
 

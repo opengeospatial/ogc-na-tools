@@ -109,7 +109,7 @@ def get_graph_uri_for_vocab(g: Graph = None) -> Generator[str, None, None]:
     [SKOS ConceptScheme's](https://www.w3.org/TR/2008/WD-skos-reference-20080829/skos.html#ConceptScheme).
 
     :param g: the [Graph][rdflib.Graph] for which to find the target URI
-    :return: a [Node][rdflib.Node] generator
+    :return: a [Node][rdflib.term.Node] generator
     """
     for s in g.subjects(predicate=RDF.type, object=SKOS.ConceptScheme):
         yield str(s)

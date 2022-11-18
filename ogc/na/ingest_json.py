@@ -1,4 +1,32 @@
 #!/usr/bin/env python3
+"""
+This module contains classes to perform JSON-LD uplifting operations, facilitating
+the converstion of standard JSON into JSON-LD.
+
+JSON-LD uplifting is done in 4 steps:
+
+* Initial transformation using [jq](https://stedolan.github.io/jq/manual/) expressions.
+* Class annotation (adding `@type` to the root object and/or to specific nodes, using
+  [jsongpath-ng](https://pypi.org/project/jsonpath-ng/) expressions).
+* Defining a base URI (`@base`).
+* Injecting custom JSON-LD `@context` either globally or inside specific nodes (using
+  [jsongpath-ng](https://pypi.org/project/jsonpath-ng/) expressions.
+
+The details for each of these operations are declared inside context definition files,
+which are YAML documents containing specifications for the uplift workflow. For each input
+JSON file, its corresponding YAML context definition is detected at runtime:
+
+1. A [context definition registry][ogc.na.ingest_json.ContextRegistry] can be defined,
+which is a JSON document with `{ "yamlContextFile.yml": ["glob/1/*.json", "glob2/g*.json", ... ], ... }`
+mappings. If a given input JSON file matches any of the globs, its corresponding YAML context definition
+will be used.
+2. If no registry is used or the input file is not in the registry, a file with the same
+name but `.yml` extension will be used, if it exists.
+3. Otherwise, a `_json-context.yml` file in the same directory will be used, if it exists.
+
+If no context definition file is found after performing the previous 3 steps, then the file will
+be skipped.
+"""
 # from __future__ import print_function
 import json
 import logging
@@ -38,7 +66,15 @@ DEFAULT_NAMESPACES: dict[str, Union[str, DefinedNamespace]] = {
 
 
 class IContextRegistry:
+    """
+    Base interface for YAML context definitions.
+    """
     def get_filenames(self, contextfn: Union[Path, str]) -> List[str]:
+        """
+        Obtain a list of filenames that this context
+        :param contextfn:
+        :return:
+        """
         pass
 
     def get_context(self, filename: Union[Path, str]) -> Optional[str]:
@@ -240,8 +276,8 @@ def generate_graph(inputdata: dict, context: dict, base: Optional[str] = None) -
     """
     Create a graph from an input JSON document and a YAML context definition file.
 
-    :param inputfn: input filename
-    :param contextfn: YAML context definition filename
+    :param inputdata: input JSON data in dict format
+    :param context: YAML context definition in dict format
     :param base: base URI for JSON-LD context
     :return: a tuple with the resulting RDFLib Graph and the JSON-LD enriched file
     """

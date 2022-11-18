@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+"""
+This module defines auxiliary classes to represent [pySHACL](https://github.com/RDFLib/pySHACL)
+validation reports.
+"""
 
 from rdflib import URIRef, Graph
 
@@ -6,22 +10,53 @@ from ogc.na import util
 
 
 class ValidationReport:
+    """
+    Validation report from a single validation result.
+
+    Structures a pySHACL tuple report into `result`, `graph` and `text`
+    fields.
+    """
 
     def __init__(self, pyshacl_result: tuple):
+        """
+        :param pyshacl_result: result from executing [pyshacl.validate]
+        """
         self.result, self.graph, self.text = pyshacl_result
 
 
 class ProfileValidationReport:
+    """
+    Validation report for a given [profile](https://www.w3.org/TR/dx-prof/).
+    """
 
     def __init__(self, profile_uri: URIRef, profile_token: str, report: ValidationReport):
+        """
+        :param profile_uri: URI for the profile
+        :param profile_token: Token for the profile
+        :param report: [ValidationReport][ogc.na.validation.ValidationReport]
+        """
         self.profile_uri = profile_uri
         self.profile_token = profile_token
         self.report = report
 
 
 class ProfilesValidationReport:
+    """
+    Class to aggregate several [ProfileValidationReport][ogc.na.validation.ProfileValidationReport]'s
+    coming from different profiles.
+
+    Results are exposed through the following fields:
+
+    * `reports`: list of [validation reports][ogc.na.validation.ProfileValidationReport]
+    * `result`: `True` if all validations passed, otherwise `False`
+    * `graph`: union of all SHACL validation report [Graph][rdflib.Graph]s
+    * `text`: full report text coming from all validation results (separated by profile)
+    """
 
     def __init__(self, profile_reports: list[ProfileValidationReport] = None):
+        """
+        :param profile_reports: list of initial [validation reports][ogc.na.validation.ProfileValidationReport]
+        """
         self.reports = []
         self.result = True
         self.graph = Graph()
@@ -31,6 +66,11 @@ class ProfilesValidationReport:
                 self.add(profile_report)
 
     def add(self, profile_report: ProfileValidationReport):
+        """
+        Add a new [validation report][ogc.na.validation.ProfileValidationReport].
+
+        :param profile_report:
+        """
         self.reports.append(profile_report)
         self.result &= profile_report.report.result
         util.copy_triples(profile_report.report.graph, self.graph)

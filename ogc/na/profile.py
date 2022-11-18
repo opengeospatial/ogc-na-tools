@@ -1,4 +1,22 @@
 #!/usr/bin/env python3
+"""
+This is a support module for parsing [profile](https://www.w3.org/TR/dx-prof/)
+metadata and applying entailment, validation and annotation operations
+to RDF graphs.
+
+Conformance to a given profile is declared by using
+[`dcterms:conformsTo`](https://www.dublincore.org/specifications/dublin-core/dcmi-terms/#http://purl.org/dc/terms/conformsTo).
+
+This module uses the following [resource roles](https://www.w3.org/TR/dx-prof/#Class:ResourceRole)
+(where the `profrole` prefix is [http://www.w3.org/ns/dx/prof/role/](http://www.w3.org/ns/dx/prof/role/)):
+
+* `profrole:entailment` for entailment operations (needs to conform to SHACL).
+* `profrole:entailment-closure` is used as extra ontological information for entailment.
+* `profrole:validation` for validation operations (needs to conform to SHACL).
+* `profrole:validation-closure` is used as extra ontological information for validation.
+* `profrole:annotation` is loaded as additional ontological annotation data.
+
+"""
 import itertools
 import logging
 import re
@@ -44,8 +62,12 @@ PROFILES_QUERY = re.sub(r' {2,}|\n', ' ', """
                     prof:hasArtifact ?artifact ;
                     .
                 FILTER(?role IN (profrole:entailment, 
-                                 profrole:validation,
-                                 profrole:entailment-closure,
+                                 profrole:validation))
+            }OPTIONAL {
+                ?resource prof:hasRole ?role ;
+                    prof:hasArtifact ?artifact ;
+                    .
+                FILTER(?role IN (profrole:entailment-closure,
                                  profrole:validation-closure,
                                  profrole:annotation))
             }
