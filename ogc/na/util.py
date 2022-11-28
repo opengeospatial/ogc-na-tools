@@ -113,18 +113,25 @@ def isurl(url: str, http_only: bool = False) -> bool:
     return True
 
 
-def load_yaml(fn: Union[str, Path]) -> dict:
+def load_yaml(filename: Union[str, Path] = None, content: str = None) -> dict:
     """
-    Loads a YAML file.
+    Loads a YAML file either from a file or from a string.
 
-    :param fn: YAML document file name
+    :param filename: YAML document file name
+    :param content: str with YAML contents
     :return: a dict with the loaded data
     """
-    # Load YAML context file
+
+    if bool(filename) == bool(content):
+        raise ValueError("One (and only one) of filename or contents required")
+
     from yaml import load
     try:
         from yaml import CLoader as Loader
     except ImportError:
         from yaml import Loader
-    with open(fn, 'r') as f:
-        return load(f, Loader=Loader)
+    if filename:
+        with open(filename, 'r') as f:
+            return load(f, Loader=Loader)
+    else:
+        return load(content, Loader=Loader)

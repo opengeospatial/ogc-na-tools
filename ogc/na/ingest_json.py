@@ -45,6 +45,8 @@ import jq
 from os import path, scandir
 from jsonpath_ng.ext import parse as jsonpathparse
 from wcmatch.glob import globmatch
+from jsonschema import validate as json_validate
+from ogc.na import util
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +64,37 @@ DEFAULT_NAMESPACES: dict[str, Union[str, DefinedNamespace]] = {
     "specrel": "http://www.opengis.net/def/ont/specrel/",
     "na": "http://www.opengis.net/def/metamodel/ogc-na/",
     "prov": "http://www.w3.org/ns/prov#"
+}
+
+UPLIFT_CONTEXT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "transform": {
+            "anyOf": [
+                {
+                    "type": "string",
+                },
+                {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                    },
+                },
+            ],
+        },
+        "types": {
+            "type": "object",
+            "patternProperties": {
+                ".+": { "type": "string" },
+            },
+        },
+        "base-uri": {
+            "type": "string",
+        },
+        "context": {
+            "type": "object",
+        },
+    },
 }
 
 
@@ -190,7 +223,7 @@ class ContextRegistryList(IContextRegistry):
             None)
 
     def has_context(self, contextfn: Union[Path, str]) -> bool:
-        return any(r.has_context(contextfn) for r in self.registries)
+        return any(r.has_contexjq.compilet(contextfn) for r in self.registries)
 
     def has_filename(self, filename: Union[Path, str]) -> bool:
         return any(r.has_filename(filename) for r in self.registries)
@@ -202,7 +235,19 @@ class ContextRegistryList(IContextRegistry):
         return f"ContextRegistryList[{','.join(str(r) for r in self.registries)}]"
 
 
-def init_graph(namespaces: Optional[dict[str, Union[Namespace, DefinedNamespace, str]]]) -> Graph:
+class ValidationError(Exception):
+
+    def __init__(self, cause: Exception = None, msg: str = None,
+                 property: str = None, value: str = None,
+                 index: int = None):
+        self.cause = cause
+        self.msg = msg
+        self.property = property
+        self.value = value
+        self.index = index
+
+
+def init_graph(namespaces: Optional[dict[str, Union[Namespace, DefinedNamespace, str]]] = None) -> Graph:
     """
     Creates an empty graph with some standard prefixes.
 
@@ -213,6 +258,47 @@ def init_graph(namespaces: Optional[dict[str, Union[Namespace, DefinedNamespace,
     for pref, ns in namespaces.items() if namespaces else DEFAULT_NAMESPACES.items():
         g.bind(pref, ns)
     return g
+
+
+def validate_context(context: Union[dict, str] = None, filename: Union[str, Path] = None) -> dict:
+    if not context and not filename:
+        return {}
+    if bool(context) == bool(filename):
+        raise ValueError("Only one of context or filename required")
+
+    if not isinstance(context, dict):
+        context = util.load_yaml(filename=filename, content=context)
+
+    try:
+        json_validate(context, UPLIFT_CONTEXT_SCHEMA)
+    except Exception as e:
+        raise ValidationError(cause=e)
+
+    transform = context.get('transform', [])
+    if isinstance(transform, str):
+        transform = [str]
+    for i, t in enumerate(transform):
+        try:
+            jq.compile(t)
+        except Exception:
+            raise ValidationError(cause=e,
+                                  message=f"Error compiling jq expression for transform at index {i}",
+                                  property="transform",
+                                  value=t,
+                                  index=i)
+
+    for path in context.get('types', {}).keys():
+        if path in ('.', '$'):
+            continue
+        try:
+            jsonpathparse(path)
+        except e:
+            raise ValidationError(cause=e,
+                                  message=f"Error parsing jsonpathng path '{path}' in types",
+                                  property="types",
+                                  value=path)
+
+    return context
 
 
 def uplift_json(data: dict, context: dict) -> dict:
@@ -226,6 +312,10 @@ def uplift_json(data: dict, context: dict) -> dict:
     :param context: YAML context definition
     :return: the transformed and JSON-LD-enriched data
     """
+
+    jsonld.set_document_loader(jsonld.requests_document_loader(timeout=5000))
+
+    validate_context(context)
 
     # Check if pre-transform necessary
     transform = context.get('transform')
@@ -277,12 +367,10 @@ def generate_graph(inputdata: dict, context: dict, base: Optional[str] = None) -
     :param inputdata: input JSON data in dict format
     :param context: YAML context definition in dict format
     :param base: base URI for JSON-LD context
-    :return: a tuple with the resulting RDFLib Graph and the JSON-LD enriched file
+    :return: a tuple with the resulting RDFLib Graph and the JSON-LD enriched file name
     """
 
     g = init_graph()
-
-    jsonld.set_document_loader(jsonld.requests_document_loader(timeout=5000))
 
     jdocld = uplift_json(inputdata, context)
 
@@ -293,10 +381,10 @@ def generate_graph(inputdata: dict, context: dict, base: Optional[str] = None) -
         options['base'] = context['base-uri']
     elif '@context' in jdocld and jdocld['@context'].get('@base'):
         options['base'] = jdocld['@context']['@base']
-    output = json.dumps(jsonld.expand(jdocld, options), indent=2)
-    g.parse(data=output, format='json-ld')
+    expanded = json.dumps(jsonld.expand(jdocld, options), indent=2)
+    g.parse(data=expanded, format='json-ld')
 
-    return g, output
+    return g, expanded, jdocld
 
 
 def process_file(inputfn: str,
@@ -305,7 +393,8 @@ def process_file(inputfn: str,
                  contextfn: Optional[str] = None,
                  context_registry: Optional[IContextRegistry] = None,
                  base: Optional[str] = None,
-                 skip_on_missing_context: bool = False) -> List[str]:
+                 skip_on_missing_context: bool = False,
+                 provenance: bool = True) -> List[str]:
     """
     Process input file and generate output RDF files.
 
@@ -321,6 +410,7 @@ def process_file(inputfn: str,
         if contextfn is provided
     :param base: base URI for JSON-LD
     :param skip_on_missing_context: whether to silently fail if no context file is found
+    :param provenance: whether to add provenance metadata to the resulting RDF
     :return: List of output files created
     """
 
@@ -456,7 +546,8 @@ def process(inputfiles: str,
             ttlfn: Optional[Union[bool, str]] = False,
             batch: bool = False,
             base: str = None,
-            skip_on_missing_context: bool = False) -> list[Path]:
+            skip_on_missing_context: bool = False,
+            provenance: bool = True) -> list[Path]:
     """
     Performs the JSON-LD uplift process.
 
@@ -472,6 +563,7 @@ def process(inputfiles: str,
            and processed
     :param base: base URI to employ
     :param skip_on_missing_context: whether to silently fail if no context file is found
+    :param provenance: whether to add provenance metadata to the resulting RDF
     :return: a list of JSON-LD and/or Turtle output files
     """
     result = []
@@ -499,7 +591,8 @@ def process(inputfiles: str,
                     contextfn=None,
                     context_registry=context_registry,
                     base=base,
-                    skip_on_missing_context=True
+                    skip_on_missing_context=True,
+                    provenance=provenance,
                 )
             except Exception as e:
                 logger.warning("Error processing JSON/JSON-LD file, skipping: %s", str(e))
@@ -512,6 +605,7 @@ def process(inputfiles: str,
             context_registry=context_registry,
             base=base,
             skip_on_missing_context=skip_on_missing_context,
+            provenance=provenance,
         )
 
     return result
@@ -586,6 +680,12 @@ def _process_cmdln():
         help='JSON context registry file containing an object of jsonFile:yamlContextFile pairs'
     )
 
+    parser.add_argument(
+        '--no-provenance',
+        action='store_true',
+        help='Do not add provenance metadata to the output RDF'
+    )
+
     args = parser.parse_args()
 
     context_registry = ContextRegistryList(*(ContextRegistry(c) for c in args.context_registry))
@@ -597,7 +697,8 @@ def _process_cmdln():
                           ttlfn=args.ttl_file if args.ttl else False,
                           batch=args.batch,
                           base=args.base_uri,
-                          skip_on_missing_context=args.skip_on_missing_context)
+                          skip_on_missing_context=args.skip_on_missing_context,
+                          provenance=not args.no_provenance)
 
     if args.fs:
         print(args.fs.join(outputfiles))
