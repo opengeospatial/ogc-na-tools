@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 from typing import Union, Generator
 
-import httpx
+import requests
 from rdflib import Graph, RDF, SKOS
 
 from ogc.na.domain_config import DomainConfiguration, DomainConfigurationEntry
@@ -81,12 +81,12 @@ def load_vocab(vocab: Union[Graph, str, Path], graph_uri: str,
     # Graph is automatically created per Graph Store spec
 
     if isinstance(vocab, Graph):
-        content = vocab.serialize(format='Turtle')
+        content = vocab.serialize(format='ttl')
     else:
         with open(vocab, 'rb') as f:
             content = f.read()
 
-    r = httpx.put(
+    r = requests.put(
         graph_store,
         params={
             'graph': graph_uri,
@@ -95,7 +95,7 @@ def load_vocab(vocab: Union[Graph, str, Path], graph_uri: str,
         headers={
             'Content-type': 'text/turtle',
         },
-        content=content
+        data=content
     )
     logger.debug('HTTP status code: %d', r.status_code)
     r.raise_for_status()

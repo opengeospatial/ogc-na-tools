@@ -1,5 +1,4 @@
 pyshacl>=0.19
-httpx
 rdflib>=6.0.1
 html5lib
 jq
