@@ -85,7 +85,12 @@ UPLIFT_CONTEXT_SCHEMA = {
         "types": {
             "type": "object",
             "patternProperties": {
-                ".+": { "type": "string" },
+                ".+": {
+                    "anyOf": [
+                        { "type": "string"},
+                        { "type": "array", "items": { "type": "string" } }
+                    ],
+                },
             },
         },
         "base-uri": {
@@ -280,9 +285,9 @@ def validate_context(context: Union[dict, str] = None, filename: Union[str, Path
     for i, t in enumerate(transform):
         try:
             jq.compile(t)
-        except Exception:
+        except Exception as e:
             raise ValidationError(cause=e,
-                                  message=f"Error compiling jq expression for transform at index {i}",
+                                  msg=f"Error compiling jq expression for transform at index {i}",
                                   property="transform",
                                   value=t,
                                   index=i)
@@ -292,9 +297,9 @@ def validate_context(context: Union[dict, str] = None, filename: Union[str, Path
             continue
         try:
             jsonpathparse(path)
-        except e:
+        except Exception as e:
             raise ValidationError(cause=e,
-                                  message=f"Error parsing jsonpathng path '{path}' in types",
+                                  msg=f"Error parsing jsonpathng path '{path}' in types",
                                   property="types",
                                   value=path)
 
