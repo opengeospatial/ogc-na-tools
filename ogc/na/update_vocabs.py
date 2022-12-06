@@ -115,26 +115,27 @@ def get_graph_uri_for_vocab(g: Graph = None) -> Generator[str, None, None]:
         yield str(s)
 
 
-def get_entailed_path(f: Path, g: Graph, extension: str, rootpattern: str = '/def/',
-                      entailed_dir: str = DEFAULT_ENTAILED_DIR):
+def get_entailed_base_path(f: Path, g: Graph, rootpattern: str = '/def/',
+                      entailed_dir: str = DEFAULT_ENTAILED_DIR) -> tuple:
     """
-    Tries to find the output file path for an entailed version of a source Graph.
+    Tries to find the base output file path for an entailed version of a source Graph.
 
     :param f: the original path of the source file
     :param g: the [Graph][rdflib.Graph] loaded from the source file
-    :param extension: a filename extension (e.g., 'ttl' for Turtle)
     :param rootpattern: a root pattern to filter candidate URIs
     :param entailed_dir: the name of the base entailed files directory
     """
     if not rootpattern:
         # just assume filename is going to be fine
-        return (f.parent / entailed_dir / f.with_suffix('.' + extension).name,
+        return (f.parent / entailed_dir / f,
                 f.name, get_graph_uri_for_vocab(g))
 
     canonical_filename = None
     conceptscheme = None
+    multiple_cs_warning = True
     for graphuri in get_graph_uri_for_vocab(g):
-        if canonical_filename:
+        if canonical_filename and multiple_cs_warning:
+            multiple_cs_warning = False
             logger.warning("File %s contains multiple concept schemes", str(f))
 
         if rootpattern in graphuri:
@@ -149,7 +150,7 @@ def get_entailed_path(f: Path, g: Graph, extension: str, rootpattern: str = '/de
                        str(f), rootpattern)
         canonical_filename = f.name
 
-    return (f.parent / entailed_dir / Path(canonical_filename).with_suffix('.' + extension),
+    return (f.parent / entailed_dir / Path(canonical_filename),
             canonical_filename, conceptscheme)
 
 
@@ -170,14 +171,13 @@ def make_rdf(filename: Union[str, Path], g: Graph, rootpath='/def/',
     filename = filename.resolve()
 
     loadable_ttl = None
-    canonical_filename = None
-    conceptschemeuri = None
+    newbasepath, canonical_filename, conceptschemeuri = \
+        get_entailed_base_path(filename, g, rootpath, entailment_directory)
+    if newbasepath:
+        newbasepath.parent.mkdir(parents=True, exist_ok=True)
     for extension, fmt in ENTAILED_FORMATS.items():
-        newpath, canonical_filename, conceptschemeuri = \
-            get_entailed_path(filename, g, extension, rootpath, entailment_directory)
-
-        if newpath:
-            newpath.parent.mkdir(parents=True, exist_ok=True)
+        if newbasepath:
+            newpath = newbasepath.with_suffix('.' + extension)
             g.serialize(destination=newpath, format=fmt)
             if fmt == 'ttl':
                 loadable_ttl = newpath

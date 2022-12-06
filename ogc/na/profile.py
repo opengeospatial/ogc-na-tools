@@ -231,8 +231,12 @@ class ProfileRegistry:
         profiles = deque(find_profiles(g))
         if additional_profiles:
             profiles.extend(additional_profiles)
+        seen = set()
         while profiles:
             profile_ref = profiles.popleft()
+            if profile_ref in seen:
+                continue
+            seen.add(profile_ref)
             logger.debug("Validating with %s", str(profile_ref))
             profile = self._profiles.get(profile_ref)
             if not profile:
