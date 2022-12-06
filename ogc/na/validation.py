@@ -80,3 +80,6 @@ class ProfilesValidationReport:
             self.text += (f"=== {profile_report.profile_token} "
                           f"({profile_report.profile_uri}) ===\n"
                           f"{profile_report.report.text}")
+
+    def __contains__(self, item) -> bool:
+        return any(r.profile_uri == item for r in self.reports)

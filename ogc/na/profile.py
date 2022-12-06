@@ -19,6 +19,7 @@ This module uses the following [resource roles](https://www.w3.org/TR/dx-prof/#C
 """
 import itertools
 import logging
+from collections import deque
 from typing import Union, Sequence, Optional, Generator, Any, cast
 from rdflib import Graph, RDF, PROF, OWL, URIRef, DCTERMS, Namespace
 
@@ -199,25 +200,39 @@ class ProfileRegistry:
             prof_graphs[role] = g
         return g
 
-    def entail(self, g: Graph, profiles: Optional[Sequence[URIRef]] = None,
-               inplace: bool = True) -> Graph:
+    def entail(self, g: Graph,
+               additional_profiles: Optional[Sequence[URIRef]] = None,
+               inplace: bool = True,
+               recursive: bool = True) -> Graph:
         if not inplace:
             g = util.copy_triples(g)
 
-        for profile in profiles or find_profiles(g):
-            rules = self.get_graph(profile, PROFROLE.entailment)
-            extra = self.get_graph(profile, PROFROLE['entailment-closure'])
+        profiles = deque(find_profiles(g))
+        if additional_profiles:
+            profiles.extend(additional_profiles)
+        seen = set()
+        while profiles:
+            profile_ref = profiles.popleft()
+            rules = self.get_graph(profile_ref, PROFROLE.entailment)
+            extra = self.get_graph(profile_ref, PROFROLE['entailment-closure'])
             g = util.entail(g, rules, extra or None, True)
+            seen.add(profile_ref)
+
+            profile = self._profiles.get(profile_ref)
+            if recursive and profile and profile.profile_of:
+                profiles.extend(profile.profile_of)
 
         return g
 
     def validate(self, g: Graph,
-                 additional_profiles: Optional[Sequence[URIRef]] = None) -> ProfilesValidationReport:
+                 additional_profiles: Optional[Sequence[URIRef]] = None,
+                 recursive: bool = True) -> ProfilesValidationReport:
         result = ProfilesValidationReport()
-        profiles = find_profiles(g)
+        profiles = deque(find_profiles(g))
         if additional_profiles:
-            profiles = itertools.chain(profiles, additional_profiles)
-        for profile_ref in profiles:
+            profiles.extend(additional_profiles)
+        while profiles:
+            profile_ref = profiles.popleft()
             logger.debug("Validating with %s", str(profile_ref))
             profile = self._profiles.get(profile_ref)
             if not profile:
@@ -228,7 +243,12 @@ class ProfileRegistry:
             extra = self.get_graph(profile_ref, PROFROLE['validation-closure'])
             result.add(ProfileValidationReport(profile_ref, profile.token, util.validate(g, rules, extra)))
             logger.debug("Adding validation results for %s", profile_ref)
+
+            if recursive and profile.profile_of:
+                profiles.extend([pof for pof in profile.profile_of if pof not in result])
+
         return result
+
 
     def get_annotations(self, g: Graph, additional_profiles: Optional[Sequence[URIRef]] = None) -> dict[Path, Graph]:
         result = {}
