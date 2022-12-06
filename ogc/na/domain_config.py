@@ -6,7 +6,6 @@ defining how to find and select files for processing.
 
 import logging
 import os
-import re
 from pathlib import Path
 from typing import Union, Optional, Sequence, cast
 
@@ -15,7 +14,7 @@ from typing.io import IO
 
 DCFG = Namespace('http://www.example.org/ogc/domain-cfg#')
 
-DOMAIN_CFG_QUERY = re.sub(r' {2,}|\n', ' ', """
+DOMAIN_CFG_QUERY = """
     PREFIX dcat: <http://www.w3.org/ns/dcat#>
     PREFIX dcfg: <http://www.example.org/ogc/domain-cfg#>
     PREFIX dct: <http://purl.org/dc/terms/>
@@ -47,7 +46,7 @@ DOMAIN_CFG_QUERY = re.sub(r' {2,}|\n', ' ', """
             }
         }
   }
-""")
+"""
 
 logger = logging.getLogger('domain_config')
 

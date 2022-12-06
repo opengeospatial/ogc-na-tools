@@ -19,7 +19,6 @@ This module uses the following [resource roles](https://www.w3.org/TR/dx-prof/#C
 """
 import itertools
 import logging
-import re
 from typing import Union, Sequence, Optional, Generator, Any, cast
 from rdflib import Graph, RDF, PROF, OWL, URIRef, DCTERMS, Namespace
 
@@ -30,7 +29,7 @@ from ogc.na.validation import ProfileValidationReport, ProfilesValidationReport
 
 PROFROLE = Namespace('http://www.w3.org/ns/dx/prof/role/')
 
-PROFILES_QUERY = re.sub(r' {2,}|\n', ' ', """
+PROFILES_QUERY = """
     PREFIX prof: <http://www.w3.org/ns/dx/prof/>
     PREFIX profrole: <http://www.w3.org/ns/dx/prof/role/>
     PREFIX shacl: <http://www.w3.org/ns/shacl#>
@@ -63,7 +62,8 @@ PROFILES_QUERY = re.sub(r' {2,}|\n', ' ', """
                     .
                 FILTER(?role IN (profrole:entailment, 
                                  profrole:validation))
-            }OPTIONAL {
+            } 
+            OPTIONAL {
                 ?resource prof:hasRole ?role ;
                     prof:hasArtifact ?artifact ;
                     .
@@ -73,7 +73,7 @@ PROFILES_QUERY = re.sub(r' {2,}|\n', ' ', """
             }
         }
     }
-""")
+"""
 
 logger = logging.getLogger('domain_config')
 
