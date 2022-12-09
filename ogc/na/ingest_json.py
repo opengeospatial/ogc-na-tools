@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 This module contains classes to perform JSON-LD uplifting operations, facilitating
-the converstion of standard JSON into JSON-LD.
+the conversion of standard JSON into JSON-LD.
 
 JSON-LD uplifting is done in 4 steps:
 
@@ -27,26 +27,31 @@ name but `.yml` extension will be used, if it exists.
 If no context definition file is found after performing the previous 3 steps, then the file will
 be skipped.
 """
-# from __future__ import print_function
 import json
 import logging
 import argparse
+import os
 import re
 import sys
+import uuid
 from collections import deque
+from datetime import datetime
+from fileinput import filename
 from pathlib import Path
-from typing import Union, Optional, List, Tuple
+from typing import Union, Optional, List, Tuple, Sequence
 
-import rdflib
-from rdflib import Graph
-from rdflib.namespace import Namespace, DefinedNamespace, DC, DCTERMS, SKOS, OWL, RDF, RDFS, XSD, DCAT
+from rdflib import Graph, URIRef, BNode, Literal, DC, DCTERMS, SKOS, OWL, RDF, RDFS, XSD, DCAT, PROV
+from rdflib.namespace import Namespace, DefinedNamespace
 from pyld import jsonld
 import jq
 from os import path, scandir
 from jsonpath_ng.ext import parse as jsonpathparse
 from wcmatch.glob import globmatch
 from jsonschema import validate as json_validate
-from ogc.na import util
+from ogc.na import util, __version__, __url__
+import git
+
+from ogc.na.provenance import ProvenanceMetadata, FileProvenanceMetadata
 
 logger = logging.getLogger(__name__)
 
@@ -87,8 +92,8 @@ UPLIFT_CONTEXT_SCHEMA = {
             "patternProperties": {
                 ".+": {
                     "anyOf": [
-                        { "type": "string"},
-                        { "type": "array", "items": { "type": "string" } }
+                        {"type": "string"},
+                        {"type": "array", "items": {"type": "string"}}
                     ],
                 },
             },
@@ -107,6 +112,8 @@ class IContextRegistry:
     """
     Base interface for YAML context definitions.
     """
+    root_dir: Path = None
+
     def get_filenames(self, contextfn: Union[Path, str]) -> List[Path]:
         """
         Obtain a list of filenames that this context
@@ -138,7 +145,6 @@ class ContextRegistry(IContextRegistry):
     """
 
     registry: dict
-    root_dir: Path
 
     def __init__(self, source: Union[str, Path, dict], root_dir: Union[Path, str] = None):
         """
@@ -228,7 +234,7 @@ class ContextRegistryList(IContextRegistry):
             None)
 
     def has_context(self, contextfn: Union[Path, str]) -> bool:
-        return any(r.has_contexjq.compilet(contextfn) for r in self.registries)
+        return any(r.has_context(contextfn) for r in self.registries)
 
     def has_filename(self, filename: Union[Path, str]) -> bool:
         return any(r.has_filename(filename) for r in self.registries)
@@ -259,7 +265,7 @@ def init_graph(namespaces: Optional[dict[str, Union[Namespace, DefinedNamespace,
     :return: an empty RDFLib Graph with some prefixes
     """
 
-    g = rdflib.Graph()
+    g = Graph()
     for pref, ns in namespaces.items() if namespaces else DEFAULT_NAMESPACES.items():
         g.bind(pref, ns)
     return g
@@ -281,7 +287,7 @@ def validate_context(context: Union[dict, str] = None, filename: Union[str, Path
 
     transform = context.get('transform', [])
     if isinstance(transform, str):
-        transform = [str]
+        transform = [transform]
     for i, t in enumerate(transform):
         try:
             jq.compile(t)
@@ -304,6 +310,107 @@ def validate_context(context: Union[dict, str] = None, filename: Union[str, Path
                                   value=path)
 
     return context
+
+
+def _add_provenance_agent(g: Graph) -> URIRef:
+    agent = URIRef(__url__)
+    g.add((agent, RDF.type, PROV.Agent))
+    g.add((agent, RDF.type, URIRef('https://schema.org/SoftwareApplication')))
+    g.add((agent, RDFS.label, Literal("OGC-NA tools")))
+    g.add((agent, RDFS.comment, Literal("ogc.na.ingest.json version {}".format(__version__))))
+    g.add((agent, DCTERMS.hasVersion, Literal(__version__)))
+    return agent
+
+
+def _add_provenance_entity(g: Graph, metadata: FileProvenanceMetadata = None,
+                           root_directory: Optional[Union[str, Path]] = None,
+                           base_uri: Optional[str] = None) -> URIRef:
+    entity = None
+    if metadata:
+        if metadata.uri:
+            entity = URIRef(metadata.uri)
+        elif metadata.filename:
+            filename = Path(metadata.filename).resolve()
+            uri = None
+
+            if root_directory and base_uri:
+                root_directory = Path(root_directory).resolve()
+                if filename.is_relative_to(root_directory):
+                    rel = filename.relative_to(root_directory)
+                    uri = f"{base_uri}{'/' if '#' not in base_uri and not base_uri.endswith('/') else ''}{rel}"
+
+            entity = URIRef(uri if uri else filename.as_uri())
+
+            try:
+                git_repo = git.Repo(filename, search_parent_directories=True)
+                g.add((entity, DCTERMS.hasVersion, Literal(f"git:{git_repo.head.object.hexsha}")))
+            except (git.InvalidGitRepositoryError, git.NoSuchPathError):
+                pass
+
+    if not entity:
+        entity = BNode()
+
+    g.add((entity, RDF.type, PROV.Entity))
+
+    return entity
+
+
+def generate_provenance(g: Graph = None,
+                        metadata: ProvenanceMetadata = None) -> Graph:
+    if g is None:
+        g = Graph()
+
+    if not metadata:
+        metadata = ProvenanceMetadata()
+
+    agent = _add_provenance_agent(g)
+    context = _add_provenance_entity(g,
+                                     metadata=metadata.context,
+                                     root_directory=metadata.root_directory,
+                                     base_uri=metadata.base_uri)
+    doc = _add_provenance_entity(g,
+                                 metadata=metadata.doc,
+                                 root_directory=metadata.root_directory,
+                                 base_uri=metadata.base_uri)
+
+    output = _add_provenance_entity(g,
+                                    metadata=metadata.output,
+                                    root_directory=metadata.root_directory,
+                                    base_uri=metadata.base_uri)
+
+    activity = BNode()
+    g.add((activity, RDF.type, PROV.Activity))
+    g.add((activity, RDFS.label, Literal("JSON Uplift")))
+    if metadata.start:
+        g.add((activity, PROV.startedAtTime, Literal(metadata.start)))
+    if metadata.end:
+        g.add((activity, PROV.endedAtTime, Literal(metadata.end)))
+    if metadata.batch_activity_id:
+        batch_activity = BNode()
+        g.add((batch_activity, DCTERMS.identifier, Literal(metadata.batch_activity_id)))
+        g.add((activity, PROV.wasInformedBy, batch_activity))
+
+    g.add((context, DCTERMS.format, Literal('application/yaml')))
+    g.add((doc, DCTERMS.format, Literal('application/json')))
+    if metadata.doc and metadata.doc.mime_type:
+        g.add((output, DCTERMS.format, Literal(metadata.doc.mime_type)))
+
+    g.add((output, PROV.wasGeneratedBy, activity))
+    g.add((output, PROV.wasAttributedTo, agent))
+    g.add((activity, PROV.wasAssociatedWith, agent))
+    g.add((activity, PROV.used, context))
+    g.add((activity, PROV.used, doc))
+
+    return g
+
+
+def add_jsonld_provenance(json_doc: dict, metadata: ProvenanceMetadata = None) -> dict:
+    if not metadata:
+        return json_doc
+
+    g = generate_provenance(metadata=metadata)
+    prov = g.serialize(format='json-ld')
+    return json_doc.extend(prov)
 
 
 def uplift_json(data: dict, context: dict) -> dict:
@@ -344,7 +451,6 @@ def uplift_json(data: dict, context: dict) -> dict:
             else:
                 item.value['@type'].extend(typelist)
 
-
     # Add contexts
     context_list = context.get('context', {})
     global_context = None
@@ -365,7 +471,8 @@ def uplift_json(data: dict, context: dict) -> dict:
     return data
 
 
-def generate_graph(inputdata: dict, context: dict, base: Optional[str] = None) -> Tuple[Graph, str]:
+def generate_graph(inputdata: dict, context: dict,
+                   base: Optional[str] = None) -> Tuple[Graph, dict, dict]:
     """
     Create a graph from an input JSON document and a YAML context definition file.
 
@@ -386,8 +493,8 @@ def generate_graph(inputdata: dict, context: dict, base: Optional[str] = None) -
         options['base'] = context['base-uri']
     elif '@context' in jdocld and jdocld['@context'].get('@base'):
         options['base'] = jdocld['@context']['@base']
-    expanded = json.dumps(jsonld.expand(jdocld, options), indent=2)
-    g.parse(data=expanded, format='json-ld')
+    expanded = jsonld.expand(jdocld, options)
+    g.parse(data=json.dumps(expanded), format='json-ld')
 
     return g, expanded, jdocld
 
@@ -399,7 +506,8 @@ def process_file(inputfn: str,
                  context_registry: Optional[IContextRegistry] = None,
                  base: Optional[str] = None,
                  skip_on_missing_context: bool = False,
-                 provenance: bool = True) -> List[str]:
+                 provenance_base_uri: Optional[Union[str, bool]] = None,
+                 provenance_process_id: Optional[str] = None) -> List[Path]:
     """
     Process input file and generate output RDF files.
 
@@ -415,9 +523,10 @@ def process_file(inputfn: str,
         if contextfn is provided
     :param base: base URI for JSON-LD
     :param skip_on_missing_context: whether to silently fail if no context file is found
-    :param provenance: whether to add provenance metadata to the resulting RDF
     :return: List of output files created
     """
+
+    starttime = datetime.now()
 
     if not path.isfile(inputfn):
         raise IOError(f'Input is not a file ({inputfn})')
@@ -436,7 +545,22 @@ def process_file(inputfn: str,
     with open(inputfn, 'r') as j:
         inputdata = json.load(j)
 
-    g, jsonlddoc = generate_graph(inputdata, contextfn, base)
+    provenance_metadata: ProvenanceMetadata = None
+    if provenance_base_uri is not False:
+        provenance_metadata = ProvenanceMetadata(
+            context=FileProvenanceMetadata(filename=contextfn),
+            doc=FileProvenanceMetadata(filename=inputfn),
+            batch_activity_id=provenance_process_id,
+            base_uri=provenance_base_uri,
+            root_directory=os.getcwd(),
+            start=starttime,
+        )
+
+    g, jsonldexpanded, _ = generate_graph(inputdata, util.load_yaml(contextfn),
+                                     base)
+
+    if provenance_metadata:
+        provenance_metadata.end = datetime.now()
 
     createdfiles = []
     # False = do not generate
@@ -444,30 +568,45 @@ def process_file(inputfn: str,
     # - = stdout
     if ttlfn or ttlfn is None:
         if ttlfn == '-':
+            if provenance_metadata:
+                provenance_metadata.output = FileProvenanceMetadata(mime_type='text/turtle')
+                generate_provenance(g, provenance_metadata)
             print(g.serialize(format='ttl'))
         else:
             if not ttlfn:
                 ttlfn = f'{inputbase}.ttl' if inputext != '.ttl' else f'{inputfn}.ttl'
+            if provenance_metadata:
+                provenance_metadata.output = FileProvenanceMetadata(filename=ttlfn, mime_type='text/turtle')
+                generate_provenance(g, provenance_metadata)
             g.serialize(destination=ttlfn, format='ttl')
-            createdfiles.append(ttlfn)
+            createdfiles.append(Path(ttlfn))
 
     # False = do not generate
     # None = auto filename
     # "-" = stdout
     if jsonldfn or jsonldfn is None:
         if jsonldfn == '-':
-            print(jsonlddoc)
+            if provenance_metadata:
+                provenance_metadata.output = FileProvenanceMetadata(mime_type='application/ld+json')
+                jsonldexpanded = add_jsonld_provenance(jsonldexpanded, provenance_metadata)
+            print(json.dumps(jsonldexpanded))
         else:
             if not jsonldfn:
                 jsonldfn = f'{inputbase}.jsonld' if inputext != '.jsonld' else f'{inputfn}.jsonld'
+            if provenance_metadata:
+                provenance_metadata.output = FileProvenanceMetadata(
+                    filename=jsonldfn,
+                    mime_type='application/ld+json'
+                )
+                jsonldexpanded = add_jsonld_provenance(jsonldexpanded, provenance_metadata)
             with open(jsonldfn, 'w') as f:
-                f.write(jsonlddoc)
-            createdfiles.append(jsonldfn)
+                json.dump(jsonldexpanded, f, indent=2)
+            createdfiles.append(Path(jsonldfn))
 
     return createdfiles
 
 
-def find_context_filename(filename, registry: Optional[IContextRegistry]) -> Optional[Path]:
+def find_context_filename(filename, registry: Optional[IContextRegistry] = None) -> Optional[Path]:
     """
     Find the YAML context file for a given filename, with the following precedence:
         1. Search in registry (if provided)
@@ -530,7 +669,7 @@ def filenames_from_context(contextfn: Union[str, Path],
     for e in ('.json', '.jsonld', '.json-ld'):
         jsonfn = basefn + e
         if not registry.has_filename(jsonfn) and path.isfile(jsonfn):
-            return jsonfn
+            return [Path(jsonfn)]
 
     # 3. If directory context file, all .json files in directory
     # NOTE: no .jsonld or .json-ld files, since those could come
@@ -544,7 +683,7 @@ def filenames_from_context(contextfn: Union[str, Path],
                         and not registry.has_filename(x))]
 
 
-def process(inputfiles: str,
+def process(inputfiles: Union[str, Sequence],
             context_registry: Optional[IContextRegistry] = None,
             contextfn: Optional[str] = None,
             jsonldfn: Optional[Union[bool, str]] = False,
@@ -552,7 +691,7 @@ def process(inputfiles: str,
             batch: bool = False,
             base: str = None,
             skip_on_missing_context: bool = False,
-            provenance: bool = True) -> list[Path]:
+            provenance_base_uri: Optional[Union[str, bool]] = None) -> list[Path]:
     """
     Performs the JSON-LD uplift process.
 
@@ -568,13 +707,18 @@ def process(inputfiles: str,
            and processed
     :param base: base URI to employ
     :param skip_on_missing_context: whether to silently fail if no context file is found
-    :param provenance: whether to add provenance metadata to the resulting RDF
+    :param add_provenance: whether to add provenance metadata to the resulting RDF
     :return: a list of JSON-LD and/or Turtle output files
     """
     result = []
+    process_id = str(uuid.uuid4())
+    if isinstance(inputfiles, str):
+        inputfiles = (str,)
     if batch:
         logger.info("Input files: %s", inputfiles)
-        remaining_fn: deque = deque(inputfiles.split(','))
+        remaining_fn: deque = deque()
+        for inputfile in inputfiles:
+            remaining_fn.extend(inputfile.split(','))
         while remaining_fn:
             fn = remaining_fn.popleft()
 
@@ -597,21 +741,24 @@ def process(inputfiles: str,
                     context_registry=context_registry,
                     base=base,
                     skip_on_missing_context=True,
-                    provenance=provenance,
+                    provenance_base_uri=provenance_base_uri,
+                    provenance_process_id=process_id,
                 )
             except Exception as e:
                 logger.warning("Error processing JSON/JSON-LD file, skipping: %s", str(e))
     else:
-        result += process_file(
-            inputfiles,
-            jsonldfn=jsonldfn if jsonldfn is not None else '-',
-            ttlfn=ttlfn if ttlfn is not None else '-',
-            contextfn=contextfn,
-            context_registry=context_registry,
-            base=base,
-            skip_on_missing_context=skip_on_missing_context,
-            provenance=provenance,
-        )
+        for inputfile in inputfiles:
+            result += process_file(
+                inputfile,
+                jsonldfn=jsonldfn if jsonldfn is not None else '-',
+                ttlfn=ttlfn if ttlfn is not None else '-',
+                contextfn=contextfn,
+                context_registry=context_registry,
+                base=base,
+                skip_on_missing_context=skip_on_missing_context,
+                provenance_base_uri=provenance_base_uri,
+                provenance_process_id=process_id,
+            )
 
     return result
 
@@ -620,6 +767,7 @@ def _process_cmdln():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "input",
+        nargs='+',
         help="Source file (instead of service)",
     )
 
@@ -691,6 +839,11 @@ def _process_cmdln():
         help='Do not add provenance metadata to the output RDF'
     )
 
+    parser.add_argument(
+        '--provenance-base-uri',
+        help='Base URI to employ for provenance metadata generation (from working directory)'
+    )
+
     args = parser.parse_args()
 
     context_registry = ContextRegistryList(*(ContextRegistry(c) for c in args.context_registry))
@@ -703,7 +856,8 @@ def _process_cmdln():
                           batch=args.batch,
                           base=args.base_uri,
                           skip_on_missing_context=args.skip_on_missing_context,
-                          provenance=not args.no_provenance)
+                          provenance_base_uri=False if args.no_provenance else args.provenance_base_uri
+                          )
 
     if args.fs:
         print(args.fs.join(outputfiles))
