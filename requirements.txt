@@ -8,3 +8,4 @@ pyld
 wcmatch
 requests
 jsonschema
+GitPython==3.1.29
