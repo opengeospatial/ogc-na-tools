@@ -134,16 +134,20 @@ def get_entailed_base_path(f: Path, g: Graph, rootpattern: str = '/def/',
     conceptscheme = None
     multiple_cs_warning = True
     for graphuri in get_graph_uri_for_vocab(g):
-        if canonical_filename and multiple_cs_warning:
-            multiple_cs_warning = False
-            logger.warning("File %s contains multiple concept schemes", str(f))
 
         if rootpattern in graphuri:
-            canonical_filename = graphuri.rsplit(rootpattern)[1]
+            cs_filename = graphuri.rsplit(rootpattern)[1].split('#', 1)[0]
             conceptscheme = graphuri
         else:
             logger.info('File %s: ignoring concept scheme %s not matching domain path %s',
                         str(f), graphuri, rootpattern)
+            continue
+
+        if canonical_filename and canonical_filename != cs_filename and multiple_cs_warning:
+            multiple_cs_warning = False
+            logger.warning("File %s contains multiple concept schemes", str(f))
+
+        canonical_filename = cs_filename
 
     if not canonical_filename:
         logger.warning('File %s contains no concept schemes matching domain path %s; using filename',
