@@ -68,7 +68,8 @@ PROFILES_QUERY = """
                 ?resource prof:hasRole ?role ;
                     prof:hasArtifact ?artifact ;
                     .
-                FILTER(?role IN (profrole:entailment-closure,
+                FILTER(?role IN (profrole:entailment,
+                                 profrole:entailment-closure,
                                  profrole:validation-closure,
                                  profrole:annotation))
             }
@@ -125,6 +126,7 @@ class ProfileRegistry:
         for src in self._srcs:
             if isinstance(src, str) and src.startswith('sparql:'):
                 endpoint = src[len('sparql:'):]
+                logger.info("Fetching profiles from SPARQL endpoint %s", endpoint);
                 assert util.isurl(endpoint)
                 s = g.query(PROFILES_QUERY.replace('__SERVICE__', f"SERVICE <{endpoint}>")).graph
                 util.copy_triples(s, g)
@@ -184,18 +186,21 @@ class ProfileRegistry:
             return None
 
         prof_graphs = self._graphs.setdefault(profile, {})
-        g = prof_graphs.get(role)
-        if not g:
-            g = Graph()
-            for artifact in self.get_artifacts(profile, role):
-                try:
-                    g.parse(artifact)
-                except Exception as e:
-                    if self.ignore_artifact_errors:
-                        logger.warning("Error when retrieving or parsing artifact %s: %s",
-                                       artifact, str(e))
-                    else:
-                        raise Exception(f"Error when retrieving or parsing artifact {artifact}") from e
+
+        if role in prof_graphs:
+            return prof_graphs[role]
+
+        g = Graph()
+        for artifact in self.get_artifacts(profile, role):
+            try:
+                g.parse(artifact)
+            except Exception as e:
+                if self.ignore_artifact_errors:
+                    logger.warning("Error when retrieving or parsing artifact %s: %s",
+                                   artifact, str(e))
+                    g = None
+                else:
+                    raise Exception(f"Error when retrieving or parsing artifact {artifact}") from e
 
             prof_graphs[role] = g
         return g
