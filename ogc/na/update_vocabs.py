@@ -19,6 +19,8 @@ import argparse
 import logging
 import os
 import sys
+import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Union, Generator
 
@@ -27,15 +29,15 @@ from rdflib import Graph, RDF, SKOS
 
 from ogc.na.domain_config import DomainConfiguration, DomainConfigurationEntry
 from ogc.na.profile import ProfileRegistry
+from ogc.na.provenance import generate_provenance, ProvenanceMetadata, FileProvenanceMetadata
 
 logger = logging.getLogger('update_vocabs')
 
-# extension: rdflib format
-ENTAILED_FORMATS = {
-    'ttl': 'ttl',
-    'rdf': 'xml',
-    'jsonld': 'json-ld'
-}
+ENTAILED_FORMATS = [
+    {'extension': 'ttl', 'format': 'ttl', 'mime': 'text/turtle'},
+    {'extension': 'rdf', 'format': 'xml', 'mime': 'application/rdf+xml'},
+    {'extension': 'jsonld', 'format': 'json-ld', 'mime': 'application/ld+json'},
+]
 
 DEFAULT_ENTAILED_DIR = 'entailed'
 
@@ -159,7 +161,8 @@ def get_entailed_base_path(f: Path, g: Graph, rootpattern: str = '/def/',
 
 
 def make_rdf(filename: Union[str, Path], g: Graph, rootpath='/def/',
-             entailment_directory: Union[str, Path] = DEFAULT_ENTAILED_DIR) -> Path:
+             entailment_directory: Union[str, Path] = DEFAULT_ENTAILED_DIR,
+             provenance_metadata: ProvenanceMetadata = None,) -> Path:
     """
     Serializes entailed RDF graphs in several output formats for a given input
     graph.
@@ -167,6 +170,7 @@ def make_rdf(filename: Union[str, Path], g: Graph, rootpath='/def/',
     :param filename: the original source filename
     :param g: [Graph][rdflib.Graph] loaded from the source file
     :param rootpath: a path to filter concept schemes inside the Graph and infer the main one
+    :param provenance_metadata: provenance metadata (None to ignore)
     :param entailment_directory: name for the output subdirectory for entailed files
     :return: the output path for the Turtle version of the entailed files
     """
@@ -179,11 +183,15 @@ def make_rdf(filename: Union[str, Path], g: Graph, rootpath='/def/',
         get_entailed_base_path(filename, g, rootpath, entailment_directory)
     if newbasepath:
         newbasepath.parent.mkdir(parents=True, exist_ok=True)
-    for extension, fmt in ENTAILED_FORMATS.items():
+    for entailed_format in ENTAILED_FORMATS:
         if newbasepath:
-            newpath = newbasepath.with_suffix('.' + extension)
-            g.serialize(destination=newpath, format=fmt)
-            if fmt == 'ttl':
+            newpath = newbasepath.with_suffix('.' + entailed_format['extension'])
+            if provenance_metadata:
+                provenance_metadata.generated = FileProvenanceMetadata(filename=newpath,
+                                                                       mime_type=entailed_format['mime'])
+                g = generate_provenance(g + Graph(), provenance_metadata, 'ogc.na.update_vocabs')
+            g.serialize(destination=newpath, format=entailed_format['format'])
+            if entailed_format['format'] == 'ttl':
                 loadable_ttl = newpath
 
     if filename.stem != canonical_filename:
@@ -296,6 +304,17 @@ def _main():
         help='Output directory where new files will be generated',
     )
 
+    parser.add_argument(
+        '--no-provenance',
+        help='Do not add provenance metadata to output files',
+    )
+
+    parser.add_argument(
+        '--base-uri',
+        default='https://raw.githubusercontent.com/opengeospatial/NamingAuthority/master/',
+        help='Base URI for provenance metadata',
+    )
+
     args = parser.parse_args()
 
     setup_logging(args.debug)
@@ -364,10 +383,28 @@ def _main():
     output_path = Path(args.output_directory) if args.output_directory else None
 
     report = {}
+    activity_id = str(uuid.uuid4())
+    cmdline = 'python ogc.na.update_vocabs ' + " ".join(sys.argv[1:])
     for collection in (modified, added):
         report_cat = 'modified' if collection == modified else 'added'
         for doc, cfg in collection.items():
             logger.info("Processing %s", doc)
+
+            if args.no_provenance:
+                provenance_metadata = None
+            else:
+                provenance_metadata = ProvenanceMetadata(
+                    used=[FileProvenanceMetadata(filename=doc)] +
+                         [FileProvenanceMetadata(filename=c) for c in args.domain_cfg],
+                    start=datetime.now(),
+                    end_auto=True,
+                    root_directory=domaincfg.working_directory,
+                    batch_activity_id=activity_id,
+                    activity_label='Entailment and validation',
+                    comment=cmdline,
+                    base_uri=args.base_uri,
+                )
+
             origg = Graph().parse(doc)
             newg = profile_registry.entail(origg, cfg.conforms_to)
             validation_result = profile_registry.validate(newg, cfg.conforms_to)
@@ -387,7 +424,7 @@ def _main():
                 validation_file.write(validation_result.text)
 
             loadable_path = make_rdf(doc, newg, cfg.uri_root_filter,
-                                     entailment_dir)
+                                     entailment_dir, provenance_metadata)
 
             if args.update:
                 loadables = {

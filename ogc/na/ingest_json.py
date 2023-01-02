@@ -27,31 +27,29 @@ name but `.yml` extension will be used, if it exists.
 If no context definition file is found after performing the previous 3 steps, then the file will
 be skipped.
 """
+import argparse
 import json
 import logging
-import argparse
 import os
 import re
 import sys
 import uuid
 from collections import deque
 from datetime import datetime
-from fileinput import filename
+from os import path, scandir
 from pathlib import Path
 from typing import Union, Optional, List, Tuple, Sequence
 
-from rdflib import Graph, URIRef, BNode, Literal, DC, DCTERMS, SKOS, OWL, RDF, RDFS, XSD, DCAT, PROV
-from rdflib.namespace import Namespace, DefinedNamespace
-from pyld import jsonld
 import jq
-from os import path, scandir
 from jsonpath_ng.ext import parse as jsonpathparse
-from wcmatch.glob import globmatch
 from jsonschema import validate as json_validate
-from ogc.na import util, __version__, __url__
-import git
+from pyld import jsonld
+from rdflib import Graph, DC, DCTERMS, SKOS, OWL, RDF, RDFS, XSD, DCAT
+from rdflib.namespace import Namespace, DefinedNamespace
+from wcmatch.glob import globmatch
 
-from ogc.na.provenance import ProvenanceMetadata, FileProvenanceMetadata
+from ogc.na import util
+from ogc.na.provenance import ProvenanceMetadata, FileProvenanceMetadata, generate_provenance
 
 logger = logging.getLogger(__name__)
 
@@ -312,98 +310,6 @@ def validate_context(context: Union[dict, str] = None, filename: Union[str, Path
     return context
 
 
-def _add_provenance_agent(g: Graph) -> URIRef:
-    agent = URIRef(__url__)
-    g.add((agent, RDF.type, PROV.Agent))
-    g.add((agent, RDF.type, URIRef('https://schema.org/SoftwareApplication')))
-    g.add((agent, RDFS.label, Literal("OGC-NA tools")))
-    g.add((agent, RDFS.comment, Literal("ogc.na.ingest.json version {}".format(__version__))))
-    g.add((agent, DCTERMS.hasVersion, Literal(__version__)))
-    return agent
-
-
-def _add_provenance_entity(g: Graph, metadata: FileProvenanceMetadata = None,
-                           root_directory: Optional[Union[str, Path]] = None,
-                           base_uri: Optional[str] = None) -> URIRef:
-    entity = None
-    if metadata:
-        if metadata.uri:
-            entity = URIRef(metadata.uri)
-        elif metadata.filename:
-            filename = Path(metadata.filename).resolve()
-            uri = None
-
-            if root_directory and base_uri:
-                root_directory = Path(root_directory).resolve()
-                if filename.is_relative_to(root_directory):
-                    rel = filename.relative_to(root_directory)
-                    uri = f"{base_uri}{'/' if '#' not in base_uri and not base_uri.endswith('/') else ''}{rel}"
-
-            entity = URIRef(uri if uri else filename.as_uri())
-
-            try:
-                git_repo = git.Repo(filename, search_parent_directories=True)
-                g.add((entity, DCTERMS.hasVersion, Literal(f"git:{git_repo.head.object.hexsha}")))
-            except (git.InvalidGitRepositoryError, git.NoSuchPathError):
-                pass
-
-    if not entity:
-        entity = BNode()
-
-    g.add((entity, RDF.type, PROV.Entity))
-
-    return entity
-
-
-def generate_provenance(g: Graph = None,
-                        metadata: ProvenanceMetadata = None) -> Graph:
-    if g is None:
-        g = Graph()
-
-    if not metadata:
-        metadata = ProvenanceMetadata()
-
-    agent = _add_provenance_agent(g)
-    context = _add_provenance_entity(g,
-                                     metadata=metadata.context,
-                                     root_directory=metadata.root_directory,
-                                     base_uri=metadata.base_uri)
-    doc = _add_provenance_entity(g,
-                                 metadata=metadata.doc,
-                                 root_directory=metadata.root_directory,
-                                 base_uri=metadata.base_uri)
-
-    output = _add_provenance_entity(g,
-                                    metadata=metadata.output,
-                                    root_directory=metadata.root_directory,
-                                    base_uri=metadata.base_uri)
-
-    activity = BNode()
-    g.add((activity, RDF.type, PROV.Activity))
-    g.add((activity, RDFS.label, Literal("JSON Uplift")))
-    if metadata.start:
-        g.add((activity, PROV.startedAtTime, Literal(metadata.start)))
-    if metadata.end:
-        g.add((activity, PROV.endedAtTime, Literal(metadata.end)))
-    if metadata.batch_activity_id:
-        batch_activity = BNode()
-        g.add((batch_activity, DCTERMS.identifier, Literal(metadata.batch_activity_id)))
-        g.add((activity, PROV.wasInformedBy, batch_activity))
-
-    g.add((context, DCTERMS.format, Literal('application/yaml')))
-    g.add((doc, DCTERMS.format, Literal('application/json')))
-    if metadata.doc and metadata.doc.mime_type:
-        g.add((output, DCTERMS.format, Literal(metadata.doc.mime_type)))
-
-    g.add((output, PROV.wasGeneratedBy, activity))
-    g.add((output, PROV.wasAttributedTo, agent))
-    g.add((activity, PROV.wasAssociatedWith, agent))
-    g.add((activity, PROV.used, context))
-    g.add((activity, PROV.used, doc))
-
-    return g
-
-
 def add_jsonld_provenance(json_doc: dict, metadata: ProvenanceMetadata = None) -> dict:
     if not metadata:
         return json_doc
@@ -548,19 +454,19 @@ def process_file(inputfn: str,
     provenance_metadata: ProvenanceMetadata = None
     if provenance_base_uri is not False:
         provenance_metadata = ProvenanceMetadata(
-            context=FileProvenanceMetadata(filename=contextfn),
-            doc=FileProvenanceMetadata(filename=inputfn),
+            used=[
+                FileProvenanceMetadata(filename=contextfn, mime_type='application/yaml'),
+                FileProvenanceMetadata(filename=inputfn, mime_type='application/json'),
+            ],
             batch_activity_id=provenance_process_id,
             base_uri=provenance_base_uri,
             root_directory=os.getcwd(),
             start=starttime,
+            end_auto=True,
         )
 
     g, jsonldexpanded, _ = generate_graph(inputdata, util.load_yaml(contextfn),
                                      base)
-
-    if provenance_metadata:
-        provenance_metadata.end = datetime.now()
 
     createdfiles = []
     # False = do not generate
@@ -587,14 +493,14 @@ def process_file(inputfn: str,
     if jsonldfn or jsonldfn is None:
         if jsonldfn == '-':
             if provenance_metadata:
-                provenance_metadata.output = FileProvenanceMetadata(mime_type='application/ld+json')
+                provenance_metadata.generated = FileProvenanceMetadata(mime_type='application/ld+json')
                 jsonldexpanded = add_jsonld_provenance(jsonldexpanded, provenance_metadata)
             print(json.dumps(jsonldexpanded))
         else:
             if not jsonldfn:
                 jsonldfn = f'{inputbase}.jsonld' if inputext != '.jsonld' else f'{inputfn}.jsonld'
             if provenance_metadata:
-                provenance_metadata.output = FileProvenanceMetadata(
+                provenance_metadata.generated = FileProvenanceMetadata(
                     filename=jsonldfn,
                     mime_type='application/ld+json'
                 )
