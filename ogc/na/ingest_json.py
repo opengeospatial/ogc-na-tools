@@ -475,14 +475,14 @@ def process_file(inputfn: str,
     if ttlfn or ttlfn is None:
         if ttlfn == '-':
             if provenance_metadata:
-                provenance_metadata.output = FileProvenanceMetadata(mime_type='text/turtle')
+                provenance_metadata.output = FileProvenanceMetadata(mime_type='text/turtle', use_bnode=False)
                 generate_provenance(g, provenance_metadata)
             print(g.serialize(format='ttl'))
         else:
             if not ttlfn:
                 ttlfn = f'{inputbase}.ttl' if inputext != '.ttl' else f'{inputfn}.ttl'
             if provenance_metadata:
-                provenance_metadata.output = FileProvenanceMetadata(filename=ttlfn, mime_type='text/turtle')
+                provenance_metadata.output = FileProvenanceMetadata(filename=ttlfn, mime_type='text/turtle', use_bnode=False)
                 generate_provenance(g, provenance_metadata)
             g.serialize(destination=ttlfn, format='ttl')
             createdfiles.append(Path(ttlfn))
@@ -493,7 +493,7 @@ def process_file(inputfn: str,
     if jsonldfn or jsonldfn is None:
         if jsonldfn == '-':
             if provenance_metadata:
-                provenance_metadata.generated = FileProvenanceMetadata(mime_type='application/ld+json')
+                provenance_metadata.generated = FileProvenanceMetadata(mime_type='application/ld+json', use_bnode=False)
                 jsonldexpanded = add_jsonld_provenance(jsonldexpanded, provenance_metadata)
             print(json.dumps(jsonldexpanded))
         else:
@@ -502,7 +502,8 @@ def process_file(inputfn: str,
             if provenance_metadata:
                 provenance_metadata.generated = FileProvenanceMetadata(
                     filename=jsonldfn,
-                    mime_type='application/ld+json'
+                    mime_type='application/ld+json',
+                    use_bnode=False,
                 )
                 jsonldexpanded = add_jsonld_provenance(jsonldexpanded, provenance_metadata)
             with open(jsonldfn, 'w') as f:

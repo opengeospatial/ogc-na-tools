@@ -188,7 +188,8 @@ def make_rdf(filename: Union[str, Path], g: Graph, rootpath='/def/',
             newpath = newbasepath.with_suffix('.' + entailed_format['extension'])
             if provenance_metadata:
                 provenance_metadata.generated = FileProvenanceMetadata(filename=newpath,
-                                                                       mime_type=entailed_format['mime'])
+                                                                       mime_type=entailed_format['mime'],
+                                                                       use_bnode=False)
                 g = generate_provenance(g + Graph(), provenance_metadata, 'ogc.na.update_vocabs')
             g.serialize(destination=newpath, format=entailed_format['format'])
             if entailed_format['format'] == 'ttl':

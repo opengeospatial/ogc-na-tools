@@ -16,6 +16,7 @@ class FileProvenanceMetadata:
     filename: Union[str, Path] = None
     uri: str = None
     mime_type: str = None
+    use_bnode: bool = True
 
 
 @dataclass
@@ -52,8 +53,11 @@ def add_provenance_entity(g: Graph, metadata: FileProvenanceMetadata = None,
         mime = metadata.mime_type
 
         if metadata.uri:
-            entity = BNode()
-            g.add((entity, RDFS.seeAlso, URIRef(metadata.uri)))
+            if metadata.use_bnode:
+                entity = BNode()
+                g.add((entity, RDFS.seeAlso, URIRef(metadata.uri)))
+            else:
+                entity = URIRef(metadata.uri)
         elif metadata.filename:
             filename = Path(metadata.filename).resolve()
             uri = None
@@ -70,8 +74,12 @@ def add_provenance_entity(g: Graph, metadata: FileProvenanceMetadata = None,
                     rel = filename.relative_to(root_directory)
                     uri = f"{base_uri}{'/' if '#' not in base_uri and not base_uri.endswith('/') else ''}{rel}"
 
-            entity = BNode()
-            g.add((entity, RDFS.seeAlso, URIRef(uri if uri else filename.as_uri())))
+            uri = uri if uri else filename.as_uri()
+            if metadata.use_bnode:
+                entity = BNode()
+                g.add((entity, RDFS.seeAlso, URIRef(uri)))
+            else:
+                entity = URIRef(uri)
 
             try:
                 git_repo = git.Repo(filename, search_parent_directories=True)
