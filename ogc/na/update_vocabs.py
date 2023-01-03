@@ -30,6 +30,7 @@ from rdflib import Graph, RDF, SKOS
 from ogc.na.domain_config import DomainConfiguration, DomainConfigurationEntry
 from ogc.na.profile import ProfileRegistry
 from ogc.na.provenance import generate_provenance, ProvenanceMetadata, FileProvenanceMetadata
+from ogc.na.util import validate
 
 logger = logging.getLogger('update_vocabs')
 
@@ -407,8 +408,19 @@ def _main():
                 )
 
             origg = Graph().parse(doc)
-            newg = profile_registry.entail(origg, cfg.conforms_to)
+            newg, entail_artifacts = profile_registry.entail(origg, cfg.conforms_to)
             validation_result = profile_registry.validate(newg, cfg.conforms_to)
+
+            if provenance_metadata:
+                def add_artifact(a: Union[str, Path]):
+                    if isinstance(a, Path):
+                        provenance_metadata.used.append(FileProvenanceMetadata(filename=a))
+                    else:
+                        provenance_metadata.used.append(FileProvenanceMetadata(uri=a))
+                for ea in entail_artifacts or ():
+                    add_artifact(ea)
+                for res in validation_result.used_resources or ():
+                    add_artifact(res)
 
             docrelpath = Path(os.path.relpath(doc, args.working_directory))
             if output_path:

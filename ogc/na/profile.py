@@ -117,7 +117,7 @@ class ProfileRegistry:
         self._profiles: dict[URIRef, Profile] = {}
         self._load_profiles()
         # Cache of { profile: { role: Graph } }
-        self._graphs: dict[URIRef, dict[URIRef, Graph]] = {}
+        self._graphs: dict[URIRef, dict[URIRef, tuple[Graph, set[Union[str, Path]]]]] = {}
 
         self.ignore_artifact_errors = ignore_artifact_errors
 
@@ -126,7 +126,7 @@ class ProfileRegistry:
         for src in self._srcs:
             if isinstance(src, str) and src.startswith('sparql:'):
                 endpoint = src[len('sparql:'):]
-                logger.info("Fetching profiles from SPARQL endpoint %s", endpoint);
+                logger.info("Fetching profiles from SPARQL endpoint %s", endpoint)
                 assert util.isurl(endpoint)
                 s = g.query(PROFILES_QUERY.replace('__SERVICE__', f"SERVICE <{endpoint}>")).graph
                 util.copy_triples(s, g)
@@ -156,34 +156,31 @@ class ProfileRegistry:
             for same_as_ref in g.objects(profile_ref, OWL.sameAs):
                 self._profiles[cast(URIRef, same_as_ref)] = profile
 
-    def _apply_mappings(self, uri: str) -> str:
+    def _apply_mappings(self, uri: str) -> Union[Path, str]:
         """
         Returns the longest match in self._local_artifact_mappings (prefixes)
         for a given URI, or the URI itself if not found
         """
 
         if uri in self._local_artifact_mappings:
-            return str(self._local_artifact_mappings[uri])
+            return self._local_artifact_mappings[uri]
 
         matchedlocal = None
         matchedpath = uri
         for l, p in self._local_artifact_mappings.items():
             if uri.startswith(l) and (matchedlocal is None or len(matchedlocal) < len(l)):
                 matchedlocal, matchedpath = l, p / uri[len(l):]
-        return str(matchedpath)
+        return matchedpath
 
-    def get_artifacts(self, profile: URIRef, role: URIRef) -> Optional[list[Union[str, Path]]]:
+    def get_artifacts(self, profile: URIRef, role: URIRef) -> Optional[set[Union[str, Path]]]:
         if profile not in self._profiles:
             return None
 
-        result = []
-        for artifact_ref in self._profiles[profile].get_artifacts(role):
-            result.append(self._apply_mappings(artifact_ref))
-        return result
+        return set(self._apply_mappings(artifact_ref) for artifact_ref in self._profiles[profile].get_artifacts(role))
 
-    def get_graph(self, profile: URIRef, role: URIRef) -> Optional[Graph]:
+    def get_graph(self, profile: URIRef, role: URIRef) -> tuple[Optional[Graph], Optional[set[Union[str, Path]]]]:
         if profile not in self._profiles:
-            return None
+            return None, None
 
         prof_graphs = self._graphs.setdefault(profile, {})
 
@@ -191,24 +188,25 @@ class ProfileRegistry:
             return prof_graphs[role]
 
         g = Graph()
+        artifacts = set()
         for artifact in self.get_artifacts(profile, role):
             try:
                 g.parse(artifact)
+                artifacts.add(artifact)
             except Exception as e:
                 if self.ignore_artifact_errors:
                     logger.warning("Error when retrieving or parsing artifact %s: %s",
                                    artifact, str(e))
-                    g = None
                 else:
                     raise Exception(f"Error when retrieving or parsing artifact {artifact}") from e
 
-            prof_graphs[role] = g
-        return g
+            prof_graphs[role] = g, artifacts
+        return g, artifacts
 
     def entail(self, g: Graph,
                additional_profiles: Optional[Sequence[URIRef]] = None,
                inplace: bool = True,
-               recursive: bool = True) -> Graph:
+               recursive: bool = True) -> tuple[Graph, set[Union[str, Path]]]:
         if not inplace:
             g = util.copy_triples(g)
 
@@ -216,10 +214,15 @@ class ProfileRegistry:
         if additional_profiles:
             profiles.extend(additional_profiles)
         seen = set()
+        artifacts = set()
         while profiles:
             profile_ref = profiles.popleft()
-            rules = self.get_graph(profile_ref, PROFROLE.entailment)
-            extra = self.get_graph(profile_ref, PROFROLE['entailment-closure'])
+            rules, rules_artifacts = self.get_graph(profile_ref, PROFROLE.entailment)
+            extra, extra_artifacts = self.get_graph(profile_ref, PROFROLE['entailment-closure'])
+            if rules_artifacts:
+                artifacts.update(rules_artifacts)
+            if extra_artifacts:
+                artifacts.update(extra_artifacts)
             g = util.entail(g, rules, extra or None, True)
             seen.add(profile_ref)
 
@@ -227,7 +230,7 @@ class ProfileRegistry:
             if recursive and profile and profile.profile_of:
                 profiles.extend(profile.profile_of)
 
-        return g
+        return g, artifacts
 
     def validate(self, g: Graph,
                  additional_profiles: Optional[Sequence[URIRef]] = None,
@@ -248,16 +251,17 @@ class ProfileRegistry:
                 logger.warning("Profile %s not found", profile_ref)
                 # should we fail?
                 continue
-            rules = self.get_graph(profile_ref, PROFROLE.validation)
-            extra = self.get_graph(profile_ref, PROFROLE['validation-closure'])
-            result.add(ProfileValidationReport(profile_ref, profile.token, util.validate(g, rules, extra)))
+            rules, rules_artifacts = self.get_graph(profile_ref, PROFROLE.validation)
+            extra, extra_artifacts = self.get_graph(profile_ref, PROFROLE['validation-closure'])
+            prof_result = util.validate(g, rules, extra)
+            prof_result.used_resources = set(itertools.chain(rules_artifacts or [], extra_artifacts or []))
+            result.add(ProfileValidationReport(profile_ref, profile.token, prof_result))
             logger.debug("Adding validation results for %s", profile_ref)
 
             if recursive and profile.profile_of:
                 profiles.extend([pof for pof in profile.profile_of if pof not in result])
 
         return result
-
 
     def get_annotations(self, g: Graph, additional_profiles: Optional[Sequence[URIRef]] = None) -> dict[Path, Graph]:
         result = {}

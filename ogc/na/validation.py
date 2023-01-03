@@ -3,6 +3,8 @@
 This module defines auxiliary classes to represent [pySHACL](https://github.com/RDFLib/pySHACL)
 validation reports.
 """
+from pathlib import Path
+from typing import Union, Iterable
 
 from rdflib import URIRef, Graph
 
@@ -17,11 +19,13 @@ class ValidationReport:
     fields.
     """
 
-    def __init__(self, pyshacl_result: tuple):
+    def __init__(self, pyshacl_result: tuple,
+                 used_resources: Iterable[Union[str, Path]] = None):
         """
         :param pyshacl_result: result from executing [pyshacl.validate]
         """
         self.result, self.graph, self.text = pyshacl_result
+        self.used_resources: set[Union[str, Path]] = set(used_resources) if used_resources else set()
 
 
 class ProfileValidationReport:
@@ -38,6 +42,14 @@ class ProfileValidationReport:
         self.profile_uri = profile_uri
         self.profile_token = profile_token
         self.report = report
+
+    @property
+    def used_resources(self) -> set[Union[str, Path]]:
+        return self.report.used_resources
+
+    @used_resources.setter
+    def used_resources(self, ur: set[Union[str, Path]]):
+        self.used_resources = ur
 
 
 class ProfilesValidationReport:
@@ -57,7 +69,7 @@ class ProfilesValidationReport:
         """
         :param profile_reports: list of initial [validation reports][ogc.na.validation.ProfileValidationReport]
         """
-        self.reports = []
+        self.reports: list[ProfileValidationReport] = []
         self.result = True
         self.graph = Graph()
         self.text = ''
@@ -83,3 +95,7 @@ class ProfilesValidationReport:
 
     def __contains__(self, item) -> bool:
         return any(r.profile_uri == item for r in self.reports)
+
+    @property
+    def used_resources(self):
+        return set(r for report in self.reports for r in report.used_resources)
