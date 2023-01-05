@@ -620,14 +620,14 @@ def process(inputfiles: Union[str, Sequence],
     result = []
     process_id = str(uuid.uuid4())
     if isinstance(inputfiles, str):
-        inputfiles = (str,)
+        inputfiles = (inputfiles,)
     if batch:
         logger.info("Input files: %s", inputfiles)
         remaining_fn: deque = deque()
         for inputfile in inputfiles:
             remaining_fn.extend(inputfile.split(','))
         while remaining_fn:
-            fn = remaining_fn.popleft()
+            fn = str(remaining_fn.popleft())
 
             if re.match(r'.*\.ya?ml$', fn):
                 # Context file found, try to find corresponding JSON/JSON-LD file(s)
