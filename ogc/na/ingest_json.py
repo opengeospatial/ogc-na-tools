@@ -632,7 +632,7 @@ def process(inputfiles: Union[str, Sequence],
             if re.match(r'.*\.ya?ml$', fn):
                 # Context file found, try to find corresponding JSON/JSON-LD file(s)
                 logger.info('Potential YAML context file found: %s', fn)
-                remaining_fn.extend(filenames_from_context(fn, context_registry))
+                remaining_fn.extend(filenames_from_context(fn, context_registry) or [])
                 continue
 
             if not re.match(r'.*\.json-?(ld)?$', fn):
