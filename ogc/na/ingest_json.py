@@ -767,7 +767,7 @@ def _process_cmdln():
                           )
 
     if args.fs:
-        print(args.fs.join(outputfiles))
+        print(args.fs.join(str(outputfile) for outputfile in outputfiles))
 
 
 if __name__ == '__main__':
