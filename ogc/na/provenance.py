@@ -17,6 +17,7 @@ class FileProvenanceMetadata:
     uri: str = None
     mime_type: str = None
     use_bnode: bool = True
+    label: str = None
 
 
 @dataclass
@@ -94,6 +95,9 @@ def add_provenance_entity(g: Graph, metadata: FileProvenanceMetadata = None,
 
     if mime:
         g.add((entity, DCTERMS.format, Literal(mime)))
+
+    if metadata.label:
+        g.add((entity, RDFS.label, Literal(metadata.label)))
 
     return entity
 
