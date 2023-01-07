@@ -310,13 +310,16 @@ def validate_context(context: Union[dict, str] = None, filename: Union[str, Path
     return context
 
 
-def add_jsonld_provenance(json_doc: dict, metadata: ProvenanceMetadata = None) -> dict:
+def add_jsonld_provenance(json_doc: Union[dict, list], metadata: ProvenanceMetadata = None) -> list:
     if not metadata:
         return json_doc
 
     g = generate_provenance(metadata=metadata)
-    prov = g.serialize(format='json-ld')
-    return json_doc.extend(prov)
+    prov = json.loads(g.serialize(format='json-ld'))
+    if not isinstance(json_doc, list):
+        json_doc = [json_doc]
+    json_doc.extend(prov)
+    return json_doc
 
 
 def uplift_json(data: dict, context: dict) -> dict:
@@ -652,7 +655,7 @@ def process(inputfiles: Union[str, Sequence],
                     provenance_process_id=process_id,
                 )
             except Exception as e:
-                logger.warning("Error processing JSON/JSON-LD file, skipping: %s", str(e))
+                logger.warning("Error processing JSON/JSON-LD file, skipping: %s", getattr(e, 'msg', str(e)))
     else:
         for inputfile in inputfiles:
             result += process_file(
