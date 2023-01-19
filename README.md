@@ -13,4 +13,17 @@ The tools here manage ETL processes for ingesting source data into a dynamic kno
 * specific scripts to convert OGC source material into a form compatible with the OGC Linked Data environment
 * tutorial for docker deployment and testing of available tools.
 
+## Development
 
+To install runtime and development dependencies, run:
+
+```shell
+pip install -e .[dev]
+```
+
+### Generating documentation
+
+`mkdocs` is used for generating documentation pages.
+
+* To build the documentation (will be written to the `site/` directory): `mkdocs build`
+* To deploy to GitHub pages: `mkdocs gh-deploy`

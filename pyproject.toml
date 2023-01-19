@@ -28,3 +28,18 @@ dependencies = {file = ["requirements.txt"]}
 
 [tool.setuptools_scm]
 write_to = "ogc/na/_version.py"
+
+[project.optional-dependencies]
+dev = [
+    "mkdocs>=1.4.2",
+    "mkdocs-autorefs",
+    "mkdocs-gen-files",
+    "mkdocs-literate-nav",
+    "mkdocs-material",
+    "mkdocs-material-extensions",
+    "mkdocs-pymdownx-material-extras",
+    "mkdocs-section-index",
+    "mkdocstrings",
+    "mkdocstrings-python",
+    "mkdocs-markdownextradata-plugin"
+]
