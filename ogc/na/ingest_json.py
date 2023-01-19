@@ -422,7 +422,7 @@ def generate_graph(inputdata: dict, context: dict,
 
     g = init_graph()
 
-    jdocld = uplift_json(inputdata, context, fetch_timeout, fetch_url_whitelist)
+    jdocld = uplift_json(inputdata, context, fetch_timeout=fetch_timeout, fetch_url_whitelist=fetch_url_whitelist)
 
     options = {}
     if base:
