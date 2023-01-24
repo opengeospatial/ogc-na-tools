@@ -441,7 +441,7 @@ def generate_graph(inputdata: dict, context: dict,
         else:
             base = jdocld['@context'].get('@base')
         if base:
-            options['base'] = jdocld['@context']['@base']
+            options['base'] = base
     expanded = jsonld.expand(jdocld, options)
     g.parse(data=json.dumps(expanded), format='json-ld')
 
