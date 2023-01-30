@@ -4,6 +4,8 @@ General utilities module.
 """
 from pathlib import Path
 from typing import Optional, Union
+
+import rfc3987
 from rdflib import Graph
 from pyshacl import validate as shacl_validate
 from urllib.parse import urlparse
@@ -135,3 +137,10 @@ def load_yaml(filename: Union[str, Path] = None, content: str = None) -> dict:
             return load(f, Loader=Loader)
     else:
         return load(content, Loader=Loader)
+
+
+def isiri(s: str) -> bool:
+    try:
+        return rfc3987.parse(s, rule='IRI') is not None
+    except ValueError:
+        return False
