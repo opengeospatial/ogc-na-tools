@@ -425,23 +425,25 @@ def generate_graph(inputdata: dict, context: dict,
     jdocld = uplift_json(inputdata, context, fetch_timeout=fetch_timeout, fetch_url_whitelist=fetch_url_whitelist)
 
     options = {}
+    if not base:
+        if context.get('base-uri'):
+            options['base'] = context['base-uri']
+        elif '@context' in jdocld:
+            # Try to extract from @context
+            # If it is a list, iterate until @base is found
+            base = None
+            if isinstance(jdocld['@context'], list):
+                for entry in jdocld['@context']:
+                    if not isinstance(entry, dict):
+                        continue
+                    base = entry.get('@base')
+                    if base:
+                        break
+            else:
+                # If not a list, just look @base up
+                base = jdocld['@context'].get('@base')
     if base:
         options['base'] = base
-    elif context.get('base-uri'):
-        options['base'] = context['base-uri']
-    elif '@context' in jdocld:
-        base = None
-        if isinstance(jdocld['@context'], list):
-            for entry in jdocld['@context']:
-                if not isinstance(entry, dict):
-                    continue
-                base = entry.get('@base')
-                if base:
-                    break
-        else:
-            base = jdocld['@context'].get('@base')
-        if base:
-            options['base'] = base
     expanded = jsonld.expand(jdocld, options)
     g.parse(data=json.dumps(expanded), format='json-ld')
 
