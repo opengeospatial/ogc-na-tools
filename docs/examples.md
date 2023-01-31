@@ -51,6 +51,12 @@ _:conceptSchemes a dcat:Dataset, dcfg:DomainConfiguration ;
 # Sample single-file JSON-LD context
 # Processing order is transform -> types -> context
 
+# `path-scope` affects how ingest_json treats JSON-LD documents (e.g. when chaining uplifts).
+# It can be `graph` (transformations and paths act on `@graph`, if any, instead of on the
+# whole file) or `document` (do not treat JSON-LD files differently, process "as is").
+# Default is `graph`.
+path-scope: graph
+
 # `transform` uses jq expressions for light data transformations
 #   see: https://pypi.org/project/jq/
 #   see: https://stedolan.github.io/jq/manual/
@@ -96,8 +102,14 @@ context:
     }
   ]
 
-  # local context for elements with type = "IS"
+  # scoped context for elements with "type" = "IS"
   '$[?type="IS"]': {
     "@vocab": "http://example.org/vocab3#"
   }
+
+# `context-position` dictates where the new context will be added if `@context` is already present
+# at any of the specified paths. Can be `before` (a new entry, with lower precedence, will be preprended
+# to any existing `@context`) or `after` (a new entry, with higher precedence, will be appended to any
+# existing `@context`). It has no effect for plan JSON documents. 
+context-position: before
 ```

@@ -3,14 +3,13 @@
 This module contains classes to perform JSON-LD uplifting operations, facilitating
 the conversion of standard JSON into JSON-LD.
 
-JSON-LD uplifting is done in 4 steps:
+JSON-LD uplifting is done in 3 steps:
 
-* Initial transformation using [jq](https://stedolan.github.io/jq/manual/) expressions.
+* Initial transformation using [jq](https://stedolan.github.io/jq/manual/) expressions (`transform`).
 * Class annotation (adding `@type` to the root object and/or to specific nodes, using
-  [jsongpath-ng](https://pypi.org/project/jsonpath-ng/) expressions).
-* Defining a base URI (`@base`).
+  [jsongpath-ng](https://pypi.org/project/jsonpath-ng/) expressions) (`types`).
 * Injecting custom JSON-LD `@context` either globally or inside specific nodes (using
-  [jsongpath-ng](https://pypi.org/project/jsonpath-ng/) expressions.
+  [jsongpath-ng](https://pypi.org/project/jsonpath-ng/) expressions (`context`).
 
 The details for each of these operations are declared inside context definition files,
 which are YAML documents containing specifications for the uplift workflow. For each input
@@ -74,6 +73,10 @@ VOCAB_DELIMS = set(("#", "/", ":"))
 UPLIFT_CONTEXT_SCHEMA = {
     "type": "object",
     "properties": {
+        "path-scope": {
+            "type": "string",
+            "enum": ["graph", "document"],
+        },
         "transform": {
             "anyOf": [
                 {
@@ -104,6 +107,10 @@ UPLIFT_CONTEXT_SCHEMA = {
         "context": {
             "type": "object",
         },
+        "context-position": {
+            "type": "string",
+            "enum": ["before", "after"],
+        }
     },
 }
 
@@ -350,6 +357,10 @@ def uplift_json(data: dict, context: dict,
 
     validate_context(context)
 
+    # Check whether @graph scoping is necessary for transformations and paths
+    scoped_graph = context.get('scope', 'graph') == 'graph' and '@graph' in data
+    data_graph = data['@graph'] if scoped_graph else data
+
     # Check if pre-transform necessary
     transform = context.get('transform')
     if transform:
@@ -357,12 +368,12 @@ def uplift_json(data: dict, context: dict,
         if isinstance(transform, str):
             transform = (transform,)
         for t in transform:
-            data = json.loads(jq.compile(t).input(data).text())
+            data_graph = json.loads(jq.compile(t).input(data_graph).text())
 
     # Add types
     types = context.get('types', {})
     for loc, typelist in types.items():
-        items = jsonpathparse(loc).find(data)
+        items = jsonpathparse(loc).find(data_graph)
         if isinstance(typelist, str):
             typelist = [typelist]
         for item in items:
@@ -379,17 +390,39 @@ def uplift_json(data: dict, context: dict,
         if not loc or loc in ['.', '$']:
             global_context = val
         else:
-            items = jsonpathparse(loc).find(data)
+            items = jsonpathparse(loc).find(data_graph)
             for item in items:
                 item.value['@context'] = val
 
-    if global_context:
-        data = {
-            '@context': global_context,
-            '@graph': data,
-        }
+    if global_context or scoped_graph:
+        result = {}
+        prev_context = data.get('@context') if isinstance(data, dict) else None
+        if prev_context:
+            # The original doc has @context
+            if not isinstance(global_context, list):
+                global_context = [global_context]
+            result['@context'] = []
 
-    return data
+            # Add existing @context
+            if isinstance(prev_context, dict):
+                result['@context'].append(prev_context)
+            elif isinstance(prev_context, list):
+                result['@context'].extend(prev_context)
+
+            # Add the new @context before or after existing
+            if context.get('context-position', 'before') == 'before':
+                result['@context'] = global_context + result['@context']
+            else:
+                result['@context'].extend(global_context)
+        else:
+            # No pre-existing @context, use new one
+            result['@context'] = global_context
+
+        result['@graph'] = data_graph
+
+        return result
+    else:
+        return data_graph
 
 
 def generate_graph(inputdata: dict, context: dict,
@@ -436,7 +469,6 @@ def generate_graph(inputdata: dict, context: dict,
     if base:
         options['base'] = base
     g.parse(data=jdocld, format='json-ld')
-    print(list(g.namespaces()))
     expanded = jsonld.expand(jdocld, options)
 
     return g, expanded, jdocld
