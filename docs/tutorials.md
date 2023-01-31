@@ -174,3 +174,13 @@ metadata, using the [PROV-O ontology](https://www.w3.org/TR/prov-o/), is automat
 
 Alternatively, for the `author` type, we could have used a `transform` (adding the `@type` property to the second
 entry) or used a scoped `@context` (using `$..author` as the `context` key).
+
+### Chaining JSON-LD uplifts
+
+`ingest_json` can also work with already uplifted JSON-LD documents:
+
+- If the root node has a `@graph` property, all transformations (jq operations) and paths will be anchored to it instead
+of the root node itself. If this is not desired, `path-scope: document` can be declared in the uplift definition.
+- When injecting `context`s, if an existing JSON-LD `@context` in the node, the new context will be either prepended
+(by default) or appended to it; this can be controlled by adding a new uplift property `context-position` with the value
+`before` or `after`, respectively. Note that prepended context will have lower precedence than appended context.

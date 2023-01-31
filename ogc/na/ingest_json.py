@@ -353,6 +353,8 @@ def uplift_json(data: dict, context: dict,
     :return: the transformed and JSON-LD-enriched data
     """
 
+    context_position = context.get('position', 'before')
+
     jsonld.set_document_loader(document_loader(timeout=fetch_timeout, url_whitelist=fetch_url_whitelist))
 
     validate_context(context)
@@ -392,37 +394,45 @@ def uplift_json(data: dict, context: dict,
         else:
             items = jsonpathparse(loc).find(data_graph)
             for item in items:
-                item.value['@context'] = val
+                item.value['@context'] = _get_injected_context(item.value, val, context_position)
 
     if global_context or scoped_graph:
-        result = {}
-        prev_context = data.get('@context') if isinstance(data, dict) else None
-        if prev_context:
-            # The original doc has @context
-            if not isinstance(global_context, list):
-                global_context = [global_context]
-            result['@context'] = []
-
-            # Add existing @context
-            if isinstance(prev_context, dict):
-                result['@context'].append(prev_context)
-            elif isinstance(prev_context, list):
-                result['@context'].extend(prev_context)
-
-            # Add the new @context before or after existing
-            if context.get('context-position', 'before') == 'before':
-                result['@context'] = global_context + result['@context']
-            else:
-                result['@context'].extend(global_context)
-        else:
-            # No pre-existing @context, use new one
-            result['@context'] = global_context
-
-        result['@graph'] = data_graph
-
-        return result
+        return {
+            '@context': _get_injected_context(data, global_context, context_position),
+            '@graph': data_graph,
+        }
     else:
         return data_graph
+
+
+def _get_injected_context(node: dict, ctx: Union[dict, list] = None, position: str = 'before') -> Union[dict, list]:
+    if not ctx:
+        return node.get('@context')
+
+    prev_ctx = node.get('@context') if isinstance(node, dict) else None
+    if prev_ctx:
+        result = []
+
+        if not isinstance(ctx, list):
+            ctx = [ctx]
+
+        # Add existing context
+        if isinstance(prev_ctx, dict):
+            result.append(prev_ctx)
+        elif isinstance(prev_ctx, list):
+            result.extend(prev_ctx)
+
+        # Add the new @context before or after existing
+        if not position or position == 'before':
+            result = ctx + result
+        elif position == 'after':
+            result.extend(ctx)
+        else:
+            raise ValueError('position must be "before" or "after" ("{}" found)'.format(position))
+    else:
+        result = ctx
+
+    return result
 
 
 def generate_graph(inputdata: dict, context: dict,
