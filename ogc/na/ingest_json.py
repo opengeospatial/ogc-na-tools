@@ -65,7 +65,7 @@ DEFAULT_NAMESPACES: dict[str, Union[str, DefinedNamespace]] = {
     "iso": 'http://iso.org/tc211/',
     "spec": "http://www.opengis.net/def/ont/modspec/",
     "specrel": "http://www.opengis.net/def/ont/specrel/",
-    "na": "http://www.opengis.net/def/metamodel/ogc-na/",
+    "ogcna": "http://www.opengis.net/def/metamodel/ogc-na/",
     "prov": "http://www.w3.org/ns/prov#"
 }
 
@@ -392,45 +392,6 @@ def uplift_json(data: dict, context: dict,
     return data
 
 
-def find_jsonld_namespaces(doc: dict) -> dict[str, Namespace]:
-    namespaces = DEFAULT_NAMESPACES.copy()
-
-    pending = deque(doc if isinstance(doc, list) else [doc])
-
-    while pending:
-        node = pending.popleft()
-        if isinstance(node, list):
-            pending.extend(node)
-        elif isinstance(node, dict):
-            for key, value in node.items():
-                if key == '@context':
-                    ctx = {}
-                    # If @context is list, add all dicts inside it
-                    if isinstance(value, list):
-                        for ctx_entry in value:
-                            if isinstance(ctx_entry, dict):
-                                ctx.update(ctx_entry)
-                    elif isinstance(value, dict):
-                        ctx = value
-
-                    for term, term_val in ctx.items():
-                        term_id = None
-                        if isinstance(term_val, str):
-                            term_id = term_val
-                        elif isinstance(term_val, dict):
-                            term_id = term_val.get('@id')
-
-                        if (isinstance(term_id, str) and term_id[-1] in VOCAB_DELIMS
-                                and term not in namespaces and util.isiri(term_id)):
-                            namespaces[term] = Namespace(term_id)
-                elif isinstance(value, list):
-                    pending.extend(value)
-                elif isinstance(value, dict):
-                    pending.append(value)
-
-    return namespaces
-
-
 def generate_graph(inputdata: dict, context: dict,
                    base: Optional[str] = None,
                    fetch_timeout: int = 5,
@@ -449,6 +410,8 @@ def generate_graph(inputdata: dict, context: dict,
     """
 
     g = Graph()
+    for prefix, ns in DEFAULT_NAMESPACES.items():
+        g.bind(prefix, Namespace(ns))
 
     jdocld = uplift_json(inputdata, context, fetch_timeout=fetch_timeout, fetch_url_whitelist=fetch_url_whitelist)
 
@@ -472,10 +435,9 @@ def generate_graph(inputdata: dict, context: dict,
                 base = jdocld['@context'].get('@base')
     if base:
         options['base'] = base
+    g.parse(data=jdocld, format='json-ld')
+    print(list(g.namespaces()))
     expanded = jsonld.expand(jdocld, options)
-    g.parse(data=json.dumps(expanded), format='json-ld')
-    for prefix, ns_uri in find_jsonld_namespaces(jdocld).items():
-        g.bind(prefix, ns_uri)
 
     return g, expanded, jdocld
 
