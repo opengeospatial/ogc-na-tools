@@ -12,6 +12,7 @@ from typing import Any
 from urllib.parse import urlparse, urljoin
 import yaml
 import requests
+from ogc.na.util import is_url, merge_dicts
 
 try:
     from yaml import CLoader as YamlLoader, CDumper as YamlDumper
@@ -28,17 +29,52 @@ class AnnotatedSchema:
     schema: dict
 
 
-def is_url(s: str) -> bool:
+def read_contents(fn: Path | str | None = None, url: str | None = None):
+    if not fn and not url:
+        raise ValueError('Either fn or url must be provided')
+
+    if fn:
+        fn = Path(fn)
+        base_url = None
+        logger.info('Reading file contents from %s', fn)
+        with open(fn) as f:
+            contents = f.read()
+    else:
+        base_url = url
+        r = requests.get(url)
+        r.raise_for_status()
+        contents = r.content
+
+    return contents, base_url
+
+
+def load_json_yaml(contents: str | bytes) -> tuple[dict, bool]:
     try:
-        url = urlparse(s)
-        return bool(url.scheme and url.netloc)
+        obj = json.loads(contents)
+        is_json = True
     except ValueError:
-        return False
+        obj = yaml.load(contents, Loader=YamlLoader)
+        is_json = False
+
+    return obj, is_json
+
+
+def resolve_ref(ref: str, fn_from: str | Path | None = None, url_from: str | None = None,
+                base_url: str | None = None) -> tuple[Path | None, str | None]:
+    base_url = base_url or url_from
+    if is_url(ref):
+        return None, ref
+    elif base_url:
+        return None, urljoin(base_url, ref)
+    else:
+        fn_from = fn_from if isinstance(fn_from, Path) else Path(fn_from)
+        ref = (fn_from.parent / ref).resolve()
+        return ref, None
 
 
 @functools.lru_cache(maxsize=20)
 def read_context_terms(file: Path | str = None, url: str = None) -> dict[str, str]:
-    context: dict[str, Any] = None
+    context: dict[str, Any] | None = None
 
     if file:
         with open(file) as f:
@@ -99,27 +135,9 @@ class SchemaAnnotator:
         self._process_schema(fn, url)
 
     def _process_schema(self, fn: Path | str | None = None, url: str | None = None):
-        if not fn and not url:
-            raise ValueError('Either fn or url must be provided')
+        contents, base_url = read_contents(fn, url)
+        schema, is_json = load_json_yaml(contents)
 
-        if fn:
-            fn = Path(fn)
-            base_url = None
-            logger.info('Processing JSON schema %s', fn)
-            with open(fn) as f:
-                contents = f.read()
-        else:
-            base_url = url
-            r = requests.get(url)
-            r.raise_for_status()
-            contents = r.content
-
-        try:
-            schema = json.loads(contents)
-            is_json = True
-        except ValueError:
-            schema = yaml.load(contents, Loader=YamlLoader)
-            is_json = False
         contextfn = schema.get('@modelReference')
         if not contextfn:
             return None
@@ -144,15 +162,10 @@ class SchemaAnnotator:
                 if prop in terms:
                     prop_value['@id'] = terms[prop]
                 if '$ref' in prop_value:
-                    if is_url(prop_value['$ref']):
-                        ref = prop_value['$ref']
-                        ref_url = True
-                    elif base_url:
-                        ref = urljoin(base_url, prop_value['$ref'])
-                        ref_url = True
-                    else:
-                        ref = (fn.parent / prop_value['$ref']).resolve()
-                        ref_url = False
+
+                    ref_fn, ref_url = resolve_ref(prop_value['$ref'], fn, url, base_url)
+                    ref = ref_fn or ref_url
+
                     if ref in self.schemas:
                         logger.info(' >> Found $ref to already-processed schema: %s', ref)
                     else:
@@ -175,6 +188,61 @@ class SchemaAnnotator:
             is_json=is_json,
             schema=schema
         )
+
+
+class ContextBuilder:
+
+    def __init__(self, fn: Path | str | None = None, url: str | None = None):
+        self.context = {'@context': {}}
+        self._parsed_schemas: dict[str | Path, dict] = {}
+
+        self.context = {'@context': self._build_context(fn, url)}
+
+    def _build_context(self, fn: Path | str | None = None, url: str | None = None) -> dict:
+        parsed = self._parsed_schemas.get(fn, self._parsed_schemas.get(url))
+        if parsed:
+            return parsed
+
+        contents, base_url = read_contents(fn, url)
+        schema = load_json_yaml(contents)[0]
+
+        base_url = schema.get('$id', base_url)
+
+        own_context = {}
+
+        def read_properties(where: dict):
+            if not isinstance(where, dict):
+                return
+            for prop, prop_val in where.get('properties', {}).items():
+                if '@id' in prop_val:
+                    prop_context = {
+                        '@id': prop_val['@id']
+                    }
+                    if '@type' in prop_val:
+                        prop_context['@type'] = prop_val['@type']
+
+                    if '$ref' in prop_val:
+                        ref_fn, ref_url = resolve_ref(prop_val['$ref'], fn, url, base_url)
+                        prop_context['@context'] = self._build_context(ref_fn, ref_url)
+
+                    if len(prop_context) == 1:
+                        # shorten to just the id
+                        prop_context = next(iter(prop_context.values()))
+
+                    own_context[prop] = prop_context
+
+        for i in ('allOf', 'anyOf', 'oneOf'):
+            l = schema.get(i)
+            if isinstance(l, list):
+                for schema_ref in l:
+                    if isinstance(schema_ref, dict) and '$ref' in schema_ref:
+                        ref_fn, ref_url = resolve_ref(schema_ref['$ref'], fn, url, base_url)
+                        merge_dicts(self._build_context(ref_fn, ref_url), own_context)
+
+        read_properties(schema)
+
+        self._parsed_schemas[fn or url] = own_context
+        return own_context
 
 
 def dump_annotated_schemas(annotator: SchemaAnnotator, subdir: Path | str = 'annotated'):
@@ -216,6 +284,13 @@ def _main():
     )
 
     parser.add_argument(
+        '-c',
+        '--build-context',
+        help='Build JSON-LD context fron annotated schemas',
+        action='store_true'
+    )
+
+    parser.add_argument(
         '-F',
         '--no-follow-refs',
         help='Do not follow $ref\'s',
@@ -236,12 +311,15 @@ def _main():
         parser.print_usage(file=sys.stderr)
         sys.exit(2)
 
-    annotator = SchemaAnnotator(fn=args.file, url=args.url, follow_refs=not args.no_follow_refs)
-    dump_annotated_schemas(annotator, args.output)
+    if args.build_context:
+        ctx_builder = ContextBuilder(fn=args.file, url=args.url)
+        print(json.dumps(ctx_builder.context, indent=2))
+    else:
+        annotator = SchemaAnnotator(fn=args.file, url=args.url, follow_refs=not args.no_follow_refs)
+        dump_annotated_schemas(annotator, args.output)
 
 
 if __name__ == '__main__':
-
     logging.basicConfig(
         stream=sys.stderr,
         level=logging.INFO,
