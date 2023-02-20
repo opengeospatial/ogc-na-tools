@@ -144,3 +144,23 @@ def isiri(s: str) -> bool:
         return rfc3987.parse(s, rule='IRI') is not None
     except ValueError:
         return False
+
+
+def merge_dicts(src: dict, dst: dict) -> dict:
+    if not src:
+        return dst
+    for k, v in src.items():
+        if isinstance(v, dict):
+            node = dst.setdefault(k, {})
+            merge_dicts(v, node)
+        else:
+            dst[k] = v
+    return dst
+
+
+def is_url(s: str) -> bool:
+    try:
+        url = urlparse(s)
+        return bool(url.scheme and url.netloc)
+    except ValueError:
+        return False
