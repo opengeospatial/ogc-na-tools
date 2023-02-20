@@ -1,14 +1,126 @@
 #!/usr/bin/env python3
+"""
+This module offers functionality to semantically enrich JSON Schemas
+by using `@modelReference` annotations pointing to JSON-LD context documents,
+and also to build ready-to-use JSON-LD contexts from annotated JSON Schemas.
+
+An example of an annotated JSON schema:
+
+```yaml
+"$schema": https://json-schema.org/draft/2020-12/schema
+"@modelReference": observation.context.jsonld
+title: Observation
+type: object
+required:
+  - featureOfInterest
+  - hasResult
+  - resultTime
+properties:
+  featureOfInterest:
+    type: string
+  hasResult:
+    type: object
+  resultTime:
+    type: string
+    format: date-time
+  observationCollection:
+    type: string
+```
+
+... and its linked `@modelReference`:
+
+```json
+{
+  "@context": {
+    "@version": 1.1,
+    "sosa": "http://www.w3.org/ns/sosa/",
+    "featureOfInterest": "sosa:featureOfInterest",
+    "hasResult": "sosa:hasResult",
+    "resultTime": "sosa:resultTime"
+  }
+}
+```
+
+A `SchemaAnnotator` instance would then generate the following annotated JSON schema:
+
+```yaml
+$schema: https://json-schema.org/draft/2020-12/schema
+title: Observation
+type: object
+required:
+- featureOfInterest
+- hasResult
+- observationTime
+properties:
+  featureOfInterest:
+    '@id': http://www.w3.org/ns/sosa/featureOfInterest
+    type: string
+  hasResult:
+    '@id': http://www.w3.org/ns/sosa/hasResult
+    type: object
+  observationCollection:
+    type: string
+  observationTime:
+    '@id': http://www.w3.org/ns/sosa/resultTime
+    format: date-time
+    type: string
+```
+
+This schema can then be referenced from other entities that follow it (e.g., by using
+[FG-JSON](https://github.com/opengeospatial/ogc-feat-geo-json) "definedby" links).
+
+A client can then build a full JSON-LD `@context` (by using a `ContextBuilder` instance)
+and use it when parsing plain-JSON entities:
+
+```json
+{
+  "@context": {
+    "featureOfInterest": "http://www.w3.org/ns/sosa/featureOfInterest",
+    "hasResult": "http://www.w3.org/ns/sosa/hasResult",
+    "observationTime": "http://www.w3.org/ns/sosa/resultTime"
+  }
+}
+```
+
+A JSON schema can be in YAML or JSON format (the annotated schema will use the same format
+as the input one).
+
+JSON schemas need to follow some rules to work with this tool:
+
+* No nested `properties` are allowed. If they are needed, they should be put in a different
+schema, and a `$ref` to it used inside the appropriate property definition.
+* `allOf`/`someOf` root properties can be used to import other schemas (as long as they
+contain `$ref`s to them).
+
+This module can be run as a script, both for schema annotation and for context generation.
+
+To annotate a schema (that already contains a `@modelReference` to a JSON-LD context resource):
+
+```shell
+python -m ogc.na.annotate_schema --file path/to/schema.file.yaml
+```
+
+This will generate a new `annotated` directory replicating the layout of the input file
+path (`/annotated/path/to/schema.file.yaml` in this example).
+
+JSON-LD contexts can be built by adding a `-c` flag:
+
+```shell
+python -m ogc.na.annotate_schema -c --file annotated/path/to/schema.file.yaml
+```
+
+The resulting context will be printed to the standard output.
+
+"""
 
 import argparse
 import dataclasses
 import functools
 import json
 import logging
-import os.path
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, AnyStr
 from urllib.parse import urlparse, urljoin
 import yaml
 import requests
@@ -29,7 +141,14 @@ class AnnotatedSchema:
     schema: dict
 
 
-def read_contents(fn: Path | str | None = None, url: str | None = None):
+def read_contents(fn: Path | str | None = None, url: str | None = None) -> tuple[AnyStr | bytes, str]:
+    """
+    Reads contents from a file or URL
+
+    @param fn: filename to load
+    @param url: URL to load
+    @return: a tuple with the loaded data (str or bytes) and the base URL, if any
+    """
     if not fn and not url:
         raise ValueError('Either fn or url must be provided')
 
@@ -48,7 +167,13 @@ def read_contents(fn: Path | str | None = None, url: str | None = None):
     return contents, base_url
 
 
-def load_json_yaml(contents: str | bytes) -> tuple[dict, bool]:
+def load_json_yaml(contents: str | bytes) -> tuple[Any, bool]:
+    """
+    Loads either a JSON or a YAML file
+
+    :param contents: contents to load
+    :return: a tuple with the loaded document, and whether the detected format was JSON (True) or YAML (False)
+    """
     try:
         obj = json.loads(contents)
         is_json = True
@@ -61,6 +186,15 @@ def load_json_yaml(contents: str | bytes) -> tuple[dict, bool]:
 
 def resolve_ref(ref: str, fn_from: str | Path | None = None, url_from: str | None = None,
                 base_url: str | None = None) -> tuple[Path | None, str | None]:
+    """
+    Resolves a `$ref`
+    :param ref: the `$ref` to resolve
+    :param fn_from: original name of the file containing the `$ref` (when it is a file)
+    :param url_from: original URL of the document containing the `$ref` (when it is a URL)
+    :param base_url: base URL of the document containing the `$ref` (if any)
+    :return: a tuple of (Path, str) with only one None entry (the Path if the resolved
+    reference is a file, or the str if it is a URL)
+    """
     base_url = base_url or url_from
     if is_url(ref):
         return None, ref
@@ -74,6 +208,13 @@ def resolve_ref(ref: str, fn_from: str | Path | None = None, url_from: str | Non
 
 @functools.lru_cache(maxsize=20)
 def read_context_terms(file: Path | str = None, url: str = None) -> dict[str, str]:
+    """
+    Reads all the terms from a JSON-LD context document.
+
+    :param file: file path to load
+    :param url: URL to load
+    :return: a dictionary with term -> URI mappings
+    """
     context: dict[str, Any] | None = None
 
     if file:
@@ -125,9 +266,21 @@ def read_context_terms(file: Path | str = None, url: str = None) -> dict[str, st
 
 
 class SchemaAnnotator:
+    """
+    Builds a set of annotated JSON schemas from a collection of input schemas
+    that have `@modelReference`s to JSON-LD context documents.
+
+    The results will be stored in the `schemas` property (a dictionary of
+    schema-path-or-url -> AnnotatedSchema mappings).
+    """
 
     def __init__(self, fn: Path | str | None = None, url: str | None = None,
                  follow_refs: bool = True):
+        """
+        :param fn: file path to load (root schema)
+        :param url: URL to load (root schema)
+        :follow_refs: whether to follow `$ref`s (otherwise just annotate the provided root schema)
+        """
         self.schemas: dict[str | Path, AnnotatedSchema] = {}
         self.bundled_schema = None
         self._follow_refs = follow_refs
@@ -191,8 +344,15 @@ class SchemaAnnotator:
 
 
 class ContextBuilder:
+    """
+    Builds a JSON-LD context from a set of annotated JSON schemas.
+    """
 
     def __init__(self, fn: Path | str | None = None, url: str | None = None):
+        """
+        :param fn: file to load the annotated schema from
+        :param url: URL to load the annotated schema from
+        """
         self.context = {'@context': {}}
         self._parsed_schemas: dict[str | Path, dict] = {}
 
@@ -246,6 +406,13 @@ class ContextBuilder:
 
 
 def dump_annotated_schemas(annotator: SchemaAnnotator, subdir: Path | str = 'annotated'):
+    """
+    Creates a "mirror" directory (named `annotated` by default) with the resulting
+    schemas annotated by a `SchemaAnnotator`.
+
+    :param annotator: a `SchemaAnnotator` with the annotated schemas to read
+    :param subdir: a name for the mirror directory
+    """
     wd = Path().resolve()
     subdir = subdir if isinstance(subdir, Path) else Path(subdir)
     for path, schema in annotator.schemas.items():
