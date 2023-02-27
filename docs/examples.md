@@ -39,13 +39,13 @@ _:conceptSchemes a dcat:Dataset, dcfg:DomainConfiguration ;
   # the source files
   dcfg:uriRootFilter "/def/" ;
                  
-  # Profiles conformance can optionally be declated in the DomainConfiguration
+  # Profile conformance can optionally be declared in the DomainConfiguration
   # as well as in the source data itself
   dct:conformsTo profiles:vocprez_ogc, profiles:skos_conceptscheme ;
 .
 ```
 
-## Sample JSON-LD uplifting context
+## Sample JSON-LD uplift context
 
 ```yaml
 # Sample single-file JSON-LD context
