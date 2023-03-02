@@ -303,7 +303,7 @@ class SchemaAnnotator:
             contextfn = urljoin(base_url, contextfn)
             terms = read_context_terms(url=contextfn)
         else:
-            contextfn = fn.parent / contextfn
+            contextfn = Path(fn).parent / contextfn
             terms = read_context_terms(file=contextfn)
 
         def process_properties(obj: dict):
@@ -348,15 +348,18 @@ class ContextBuilder:
     Builds a JSON-LD context from a set of annotated JSON schemas.
     """
 
-    def __init__(self, fn: Path | str | None = None, url: str | None = None):
+    def __init__(self, fn: Path | str | None = None, url: str | None = None,
+                 compact: bool = True):
         """
         :param fn: file to load the annotated schema from
         :param url: URL to load the annotated schema from
         """
         self.context = {'@context': {}}
         self._parsed_schemas: dict[str | Path, dict] = {}
+        self.compact = compact
 
-        self.context = {'@context': self._build_context(fn, url)}
+        context = self._build_context(fn, url)
+        self.context = {'@context': context}
 
     def _build_context(self, fn: Path | str | None = None, url: str | None = None) -> dict:
         parsed = self._parsed_schemas.get(fn, self._parsed_schemas.get(url))
@@ -401,6 +404,21 @@ class ContextBuilder:
 
         read_properties(schema)
 
+        if self.compact:
+            context_props = set(own_context.keys())
+            compact_context = {}
+            for prop, prop_val in own_context.items():
+                if not isinstance(prop_val, dict) or '@context' not in prop_val:
+                    compact_context[prop] = prop_val
+                    continue
+                prop_context = prop_val['@context']
+                for term, term_val in prop_context.items():
+                    if term in context_props:
+                        compact_context.setdefault(prop, {}).setdefault('@context', {})[term] = term_val
+                    else:
+                        compact_context[term] = term_val
+            own_context = compact_context
+
         self._parsed_schemas[fn or url] = own_context
         return own_context
 
@@ -430,7 +448,7 @@ def dump_annotated_schemas(annotator: SchemaAnnotator, subdir: Path | str = 'ann
             if schema.is_json:
                 json.dump(schema.schema, f, indent=2)
             else:
-                yaml.dump(schema.schema, f)
+                yaml.dump(schema.schema, f, sort_keys=False)
 
 
 def _main():
@@ -471,6 +489,13 @@ def _main():
         default='annotated'
     )
 
+    parser.add_argument(
+        '-b',
+        '--context-batch',
+        help="Write JSON-LD context to a file with the same name and .jsonld extension (implies --build-context)",
+        action='store_true',
+    )
+
     args = parser.parse_args()
 
     if not args.file and not args.url:
@@ -478,9 +503,14 @@ def _main():
         parser.print_usage(file=sys.stderr)
         sys.exit(2)
 
-    if args.build_context:
+    if args.build_context or args.context_batch:
         ctx_builder = ContextBuilder(fn=args.file, url=args.url)
-        print(json.dumps(ctx_builder.context, indent=2))
+        if args.context_batch:
+            fn = Path(args.file).with_suffix('.jsonld')
+            with open(fn, 'w') as f:
+                json.dump(ctx_builder.context, f, indent=2)
+        else:
+            print(json.dumps(ctx_builder.context, indent=2))
     else:
         annotator = SchemaAnnotator(fn=args.file, url=args.url, follow_refs=not args.no_follow_refs)
         dump_annotated_schemas(annotator, args.output)
