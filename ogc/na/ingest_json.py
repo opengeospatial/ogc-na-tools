@@ -435,14 +435,14 @@ def _get_injected_context(node: dict, ctx: Union[dict, list] = None, position: s
     return result
 
 
-def generate_graph(inputdata: dict, context: dict,
+def generate_graph(inputdata: Union[dict, list], context: dict,
                    base: Optional[str] = None,
                    fetch_timeout: int = 5,
                    fetch_url_whitelist: Optional[Union[Sequence, bool]] = None) -> Tuple[Graph, dict, dict]:
     """
     Create a graph from an input JSON document and a YAML context definition file.
 
-    :param inputdata: input JSON data in dict format
+    :param inputdata: input JSON data in dict or list format
     :param context: YAML context definition in dict format
     :param base: base URI for JSON-LD context
     :param fetch_timeout: timeout (in seconds) for fetching referenced JSON-LD context URLs
@@ -451,6 +451,9 @@ def generate_graph(inputdata: dict, context: dict,
         throw an exception.
     :return: a tuple with the resulting RDFLib Graph and the JSON-LD enriched file name
     """
+
+    if not isinstance(inputdata, dict) and not isinstance(inputdata, list):
+        raise ValueError('inputdata must be a list or dictionary')
 
     g = Graph()
     for prefix, ns in DEFAULT_NAMESPACES.items():
