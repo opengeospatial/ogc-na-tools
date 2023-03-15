@@ -408,15 +408,20 @@ class ContextBuilder:
             context_props = set(own_context.keys())
             compact_context = {}
             for prop, prop_val in own_context.items():
-                if not isinstance(prop_val, dict) or '@context' not in prop_val:
-                    compact_context[prop] = prop_val
+                compact_context[prop] = prop_val
+                if not isinstance(prop_val, dict):
                     continue
-                prop_context = prop_val['@context']
+                prop_context = prop_val.pop('@context', None)
+                if not isinstance(prop_context, dict):
+                    continue
                 for term, term_val in prop_context.items():
-                    if term in context_props:
+                    if not term.startswith('@') and term in context_props:
                         compact_context.setdefault(prop, {}).setdefault('@context', {})[term] = term_val
                     else:
                         compact_context[term] = term_val
+                if len(compact_context[prop]) == 1 and '@id' in compact_context[prop]:
+                    compact_context[prop] = compact_context[prop]['@id']
+
             own_context = compact_context
 
         self._parsed_schemas[fn or url] = own_context
