@@ -2,6 +2,9 @@
 """
 General utilities module.
 """
+import os.path
+import shlex
+from glob import glob
 from pathlib import Path
 from typing import Optional, Union
 
@@ -164,3 +167,15 @@ def is_url(s: str) -> bool:
         return bool(url.scheme and url.netloc)
     except ValueError:
         return False
+
+
+def glob_list_split(s: str, exclude_dirs: bool = True, recursive: bool = False) -> list[str]:
+    result = []
+    for e in shlex.split(s):
+        if is_url(s):
+            result.append(s)
+        else:
+            for fn in glob(e, recursive=recursive):
+                if not exclude_dirs or os.path.isfile(fn):
+                    result.append(fn)
+    return result
