@@ -21,7 +21,7 @@ import itertools
 import logging
 from collections import deque
 from typing import Union, Sequence, Optional, Generator, Any, cast
-from rdflib import Graph, RDF, PROF, OWL, URIRef, DCTERMS, Namespace
+from rdflib import Graph, RDF, PROF, OWL, URIRef, DCTERMS, Namespace, RDFS
 
 from ogc.na import util
 from pathlib import Path
@@ -36,12 +36,14 @@ PROFILES_QUERY = """
     PREFIX shacl: <http://www.w3.org/ns/shacl#>
     PREFIX dct: <http://purl.org/dc/terms/>
     PREFIX owl: <http://www.w3.org/2002/07/owl#>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
     CONSTRUCT {
         ?profile a prof:Profile ;
             prof:hasToken ?token ;
             prof:isProfileOf ?ancestor ;
             prof:hasResource ?resource ;
             owl:sameAs ?sameAs ;
+            rdfs:label ?label ;
             .
         ?resource prof:hasRole ?role ;
             prof:hasArtifact ?artifact ;
@@ -55,6 +57,7 @@ PROFILES_QUERY = """
             OPTIONAL {
                 { ?profile owl:sameAs+ ?sameAs} UNION { ?sameAs owl:sameAs+ ?profile }
             }
+            OPTIONAL { ?profile rdfs:label ?label }
             OPTIONAL { ?profile prof:isProfileOf+ ?ancestor }
             OPTIONAL {
                 ?resource prof:hasRole ?role ;
@@ -86,8 +89,9 @@ def find_profiles(g: Graph) -> Generator[URIRef, Any, None]:
 
 class Profile:
 
-    def __init__(self, token: str, profile_of: list[URIRef]):
+    def __init__(self, token: str, profile_of: list[URIRef], label: str | None = None):
         self.token = token
+        self.label = label
         self.profile_of = profile_of
         self.artifacts: dict[URIRef, list[str]] = {}
 
@@ -114,7 +118,7 @@ class ProfileRegistry:
         if local_artifact_mappings:
             self._local_artifact_mappings = {u: Path(p) for u, p in local_artifact_mappings.items()}
         logger.debug("Using local artifact mappings: %s", self._local_artifact_mappings)
-        self._profiles: dict[URIRef, Profile] = {}
+        self.profiles: dict[URIRef, Profile] = {}
         self._load_profiles()
         # Cache of { profile: { role: Graph } }
         self._graphs: dict[URIRef, dict[URIRef, tuple[Graph, set[Union[str, Path]]]]] = {}
@@ -138,23 +142,24 @@ class ProfileRegistry:
 
         for profile_ref in cast(list[URIRef], g.subjects(RDF.type, PROF.Profile)):
 
-            if profile_ref in self._profiles:
+            if profile_ref in self.profiles:
                 # do not parse duplicate profiles
                 continue
 
             token = str(g.value(profile_ref, PROF.hasToken))
+            label = g.value(profile_ref, RDFS.label)
             profile_of: list[URIRef] = cast(list[URIRef], list(g.objects(profile_ref, PROF.isProfileOf)))
 
-            profile = Profile(token, profile_of)
+            profile = Profile(token, profile_of, label=str(label) if label else None)
 
             for resource_ref in g.objects(profile_ref, PROF.hasResource):
                 role_ref = g.value(resource_ref, PROF.hasRole)
                 for artifact_ref in g.objects(resource_ref, PROF.hasArtifact):
                     profile.add_artifact(role_ref, cast(URIRef, artifact_ref))
 
-            self._profiles[profile_ref] = profile
+            self.profiles[profile_ref] = profile
             for same_as_ref in g.objects(profile_ref, OWL.sameAs):
-                self._profiles[cast(URIRef, same_as_ref)] = profile
+                self.profiles[cast(URIRef, same_as_ref)] = profile
 
     def _apply_mappings(self, uri: str) -> Union[Path, str]:
         """
@@ -173,13 +178,13 @@ class ProfileRegistry:
         return matchedpath
 
     def get_artifacts(self, profile: URIRef, role: URIRef) -> Optional[set[Union[str, Path]]]:
-        if profile not in self._profiles:
+        if profile not in self.profiles:
             return None
 
-        return set(self._apply_mappings(artifact_ref) for artifact_ref in self._profiles[profile].get_artifacts(role))
+        return set(self._apply_mappings(artifact_ref) for artifact_ref in self.profiles[profile].get_artifacts(role))
 
     def get_graph(self, profile: URIRef, role: URIRef) -> tuple[Optional[Graph], Optional[set[Union[str, Path]]]]:
-        if profile not in self._profiles:
+        if profile not in self.profiles:
             return None, None
 
         prof_graphs = self._graphs.setdefault(profile, {})
@@ -226,7 +231,7 @@ class ProfileRegistry:
             g = util.entail(g, rules, extra or None, True)
             seen.add(profile_ref)
 
-            profile = self._profiles.get(profile_ref)
+            profile = self.profiles.get(profile_ref)
             if recursive and profile and profile.profile_of:
                 profiles.extend(profile.profile_of)
 
@@ -246,7 +251,7 @@ class ProfileRegistry:
                 continue
             seen.add(profile_ref)
             logger.debug("Validating with %s", str(profile_ref))
-            profile = self._profiles.get(profile_ref)
+            profile = self.profiles.get(profile_ref)
             if not profile:
                 logger.warning("Profile %s not found", profile_ref)
                 # should we fail?
