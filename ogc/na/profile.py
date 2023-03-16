@@ -209,7 +209,7 @@ class ProfileRegistry:
         return g, artifacts
 
     def entail(self, g: Graph,
-               additional_profiles: Optional[Sequence[URIRef]] = None,
+               additional_profiles: Optional[Sequence[str | URIRef]] = None,
                inplace: bool = True,
                recursive: bool = True) -> tuple[Graph, set[Union[str, Path]]]:
         if not inplace:
@@ -217,7 +217,7 @@ class ProfileRegistry:
 
         profiles = deque(find_profiles(g))
         if additional_profiles:
-            profiles.extend(additional_profiles)
+            profiles.extend(p if isinstance(p, URIRef) else URIRef(p) for p in additional_profiles)
         seen = set()
         artifacts = set()
         while profiles:
@@ -238,12 +238,12 @@ class ProfileRegistry:
         return g, artifacts
 
     def validate(self, g: Graph,
-                 additional_profiles: Optional[Sequence[URIRef]] = None,
+                 additional_profiles: Optional[Sequence[str | URIRef]] = None,
                  recursive: bool = True) -> ProfilesValidationReport:
         result = ProfilesValidationReport()
         profiles = deque(find_profiles(g))
         if additional_profiles:
-            profiles.extend(additional_profiles)
+            profiles.extend(p if isinstance(p, URIRef) else URIRef(p) for p in additional_profiles)
         seen = set()
         while profiles:
             profile_ref = profiles.popleft()
@@ -278,3 +278,8 @@ class ProfileRegistry:
             for artifact in artifacts:
                 result[artifact] = Graph().parse(artifact)
         return result
+
+    def has_profile(self, uri: str | URIRef) -> bool:
+        if isinstance(uri, str):
+            uri = URIRef(uri)
+        return uri in self.profiles
