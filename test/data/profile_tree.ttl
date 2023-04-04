@@ -1,0 +1,24 @@
+@prefix : <http://example.org/prof/> .
+@prefix prof: <http://www.w3.org/ns/dx/prof/> .
+
+:a a prof:Profile ;
+  prof:hasToken "a" .
+
+:b a prof:Profile ;
+  prof:hasToken "b" ;
+  prof:isProfileOf :a .
+
+:c a prof:Profile ;
+  prof:hasToken "c" ;
+  prof:isProfileOf :a .
+
+:d a prof:Profile ;
+  prof:hasToken "d" ;
+  prof:isProfileOf :b .
+
+:e a prof:Profile ;
+  prof:hasToken "e" ;
+  prof:isProfileOf :a, :d .
+
+:f a prof:Profile;
+  prof:hasToken "f" .

@@ -7,12 +7,16 @@ defining how to find and select files for processing.
 import logging
 import os
 from pathlib import Path
-from typing import Union, Optional, Sequence, cast
+from typing import Union, Optional, Sequence, cast, IO, TypeVar
 
-from rdflib import Graph, Namespace, URIRef, RDF, DCTERMS, DCAT
-from typing.io import IO
+from rdflib import Graph, Namespace, URIRef, DCTERMS, DCAT, Literal
+from wcmatch.glob import globmatch
+
+from ogc.na.profile import ProfileRegistry
 
 DCFG = Namespace('http://www.example.org/ogc/domain-cfg#')
+
+CE = TypeVar('CE', bound='ConfigurationEntry')
 
 DOMAIN_CFG_QUERY = """
     PREFIX dcat: <http://www.w3.org/ns/dcat#>
@@ -20,29 +24,56 @@ DOMAIN_CFG_QUERY = """
     PREFIX dct: <http://purl.org/dc/terms/>
     CONSTRUCT {
         ?catalog dcat:dataset ?domainCfg ;
-            dcfg:localArtifactMapping ?mapping .
-        ?domainCfg a dcfg:DomainConfiguration ;
-            dcfg:localPath ?localPath ;
+            dcfg:localArtifactMapping ?mapping ;
+            dcfg:hasProfileSource ?profileSource .
+        ?domainCfg a ?configType ;
             dcfg:glob ?glob ;
             dcfg:uriRootFilter ?uriRootFilter ;
-            dct:conformsTo ?profile .
+            dct:conformsTo ?profile ;
+            dcfg:hasUpliftDefinition ?upliftDefinition ;
+            dct:identifier ?identifier .
+        ?upliftDefinition dcfg:file ?upliftFile ;
+            dcfg:profile ?upliftProfile ;
+            dcfg:order ?upliftOrder .
         ?mapping dcfg:baseURI ?mappingBaseURI ;
             dcfg:localPath ?mappingLocalPath .
     } WHERE {
         __SERVICE__ {
             ?catalog dcat:dataset ?domainCfg .
-            ?domainCfg dcfg:localPath ?localPath ;
-                dcfg:glob ?glob .
-            OPTIONAL {
-                ?domainCfg dcfg:uriRootFilter ?uriRootFilter .
+            {
+                ?domainCfg a dcfg:DomainConfiguration ;
+                    dcfg:glob ?glob .
+                BIND(dcfg:DomainConfiguration as ?configType)
+                OPTIONAL {
+                    ?domainCfg dcfg:uriRootFilter ?uriRootFilter .
+                }
+                OPTIONAL {
+                    ?domainCfg dct:conformsTo ?profile
+                }
+            } UNION {
+                ?domainCfg a dcfg:UpliftConfiguration ;
+                    dcfg:glob ?glob ;
+                    dcfg:hasUpliftDefinition ?upliftDefinition .
+                BIND(dcfg:UpliftConfiguration as ?configType)
+                {
+                    ?upliftDefinition dcfg:file ?upliftFile
+                } UNION {
+                    ?upliftDefinition dcfg:profile ?upliftProfile
+                }
+                OPTIONAL {
+                    ?upliftDefinition dcfg:order ?upliftOrder
+                }
             }
             OPTIONAL {
-                ?domainCfg dct:conformsTo ?profile
+                ?domainCfg dct:identifier ?identifier
             }
             OPTIONAL {
                 ?catalog dcfg:localArtifactMapping ?mapping .
                 ?mapping dcfg:baseURI ?mappingBaseURI ;
                     dcfg:localPath ?mappingLocalPath .
+            }
+            OPTIONAL {
+                ?catalog dcfg:hasProfileSource ?profileSource
             }
         }
   }
@@ -53,43 +84,47 @@ logger = logging.getLogger('domain_config')
 
 class DomainConfiguration:
     """
-    The DomainConfiguration class can load a collection of DomainConfigurationEntry's
+    The DomainConfiguration class can load a collection of ConfigurationEntry's
     detailing which files need to be processed and where they can be found, as well
     as including a list of profiles for entailment, validation, and (potentially)
     other operations.
 
     Domain configurations use the `http://www.example.org/ogc/domain-cfg#` (dcfg) prefix.
 
-    A domain configuration must include, at least, a `dcfg:localPath` (a base directory, relative
-    to the working directory) and a `dcfg:glob` (glob expression to find/filter files inside
-    the base directory). If present, a `dcfg:uriRootFilter` will be used to determine which is
-    the main concept scheme in the file (if more than one is found). Profiles for
+    A domain configuration must include, at least, a `dcfg:glob` (glob expression to find/filter
+    files inside the base directory). If present, a `dcfg:uriRootFilter` will be used to determine
+    which is the main concept scheme in the file (if more than one is found). Profiles for
     validation, entailment, etc. can be specified using `dcterms:conformsTo`.
+
+    `dcfg:hasUpliftDefinition` can also be used to declare (ordered) semantic uplift definitions, either
+    from profile artifacts or from files.
     """
 
-    def __init__(self, working_directory: Union[str, Path] = None):
+    def __init__(self, source: Union[Graph, str, Path, IO], working_directory: str | Path = None):
         """
         Creates a new DomainConfiguration, optionally specifying the working directory.
 
-        :param working_directory: the working directory to use for local paths (cwd by default)
+        :param source: Graph or Turtle file to load
+        :param working_directory: the working directory to use for local paths.
         """
-        self.working_directory = (Path(working_directory) if working_directory else Path()).resolve()
-        logger.debug("Working directory: %s", self.working_directory)
-        self.entries: dict[Path, list[DomainConfigurationEntry]] = {}
+        if working_directory:
+            self.working_directory = Path(working_directory).resolve()
+        elif isinstance(source, str) or isinstance(source, Path):
+            self.working_directory = Path(source).parent.resolve()
+        else:
+            self.working_directory = Path().resolve()
+        logger.info("Working directory: %s", self.working_directory)
+        self.entries = ConfigurationEntryList()
+        self.uplift_entries = UpliftConfigurationEntryList()
         self.local_artifacts_mapping = {}
+        self.profile_registry: ProfileRegistry | None = None
+        self._load(source)
 
-    def clear(self):
-        """
-        Removes all configuration entries.
-        """
-        self.entries = {}
-
-    def load(self, source: Union[Graph, str, IO], domain: Union[str, Path] = None):
+    def _load(self, source: Union[Graph, str, IO]):
         """
         Load entries from a Graph or Turtle document.
 
         :param source: Graph or Turtle file to load
-        :param domain: Domain path filter
         :return: this DomainConfiguration instance
         """
         service = ''
@@ -101,117 +136,183 @@ class DomainConfiguration:
         else:
             g = Graph().parse(source)
 
-        domain = None if not domain else Path(domain).resolve()
+        cfg_graph = g.query(DOMAIN_CFG_QUERY.replace('__SERVICE__', service)).graph
 
-        cfggraph = g.query(DOMAIN_CFG_QUERY.replace('__SERVICE__', service)).graph
-
-        for catalog_ref in cfggraph.subjects(DCAT.dataset):
+        prof_sources: set[str | Path] = set()
+        for catalog_ref in cfg_graph.subjects(DCAT.dataset):
             logger.debug("Found catalog %s", catalog_ref)
-            for mapping_ref in cfggraph.objects(catalog_ref, DCFG.localArtifactMapping):
-                base_uri = str(cfggraph.value(mapping_ref, DCFG.baseURI))
-                local_path = Path(str(cfggraph.value(mapping_ref, DCFG.localPath)))
+
+            # Local artifacts mapping
+            for mapping_ref in cfg_graph.objects(catalog_ref, DCFG.localArtifactMapping):
+                base_uri = str(cfg_graph.value(mapping_ref, DCFG.baseURI))
+                local_path = Path(str(cfg_graph.value(mapping_ref, DCFG.localPath)))
                 logger.debug("Found local artifact mapping: %s -> %s", base_uri, local_path)
                 self.local_artifacts_mapping[base_uri] = local_path
 
-        for cfg_ref in cfggraph.subjects(RDF.type, DCFG.DomainConfiguration):
-
-            globs = [str(g) for g in cfggraph.objects(cfg_ref, DCFG.glob)]
-            uri_root_filter = cfggraph.value(cfg_ref, DCFG.uriRootFilter)
-            profile_refs = cast(list[URIRef], list(cfggraph.objects(cfg_ref, DCTERMS.conformsTo)))
-
-            for localpath in cfggraph.objects(cfg_ref, DCFG.localPath):
-                localpath = Path(str(localpath))
-                path = (self.working_directory / localpath).resolve()
-                if domain is not None and path != domain:
+            # Profile sources
+            for p in cfg_graph.objects(catalog_ref, DCFG.hasProfileSource):
+                if not isinstance(p, Literal):
                     continue
+                if p.value.startswith('sparql:'):
+                    prof_sources.add(p.value)
+                else:
+                    prof_sources.add(self.working_directory / p.value)
 
-                entry = DomainConfigurationEntry(
+        self.profile_registry = ProfileRegistry(prof_sources)
+
+        for cfg_ref in cfg_graph.objects(predicate=DCAT.dataset):
+
+            globs = [str(g) for g in cfg_graph.objects(cfg_ref, DCFG.glob)]
+
+            # DomainConfigurationEntry specific properties
+            uri_root_filter = cfg_graph.value(cfg_ref, DCFG.uriRootFilter)
+            profile_refs = cast(list[URIRef], list(cfg_graph.objects(cfg_ref, DCTERMS.conformsTo)))
+
+            # UpliftConfigurationEntry specific properties
+            found_uplift_defs = []
+            max_order = None
+            for uplift_def_ref in cfg_graph.objects(cfg_ref, DCFG.hasUpliftDefinition):
+                order = cfg_graph.value(uplift_def_ref, DCFG.order)
+                if order is not None and (max_order is None or order > max_order):
+                    max_order = order
+                target_prof = cfg_graph.value(uplift_def_ref, DCFG.profile)
+                target_file = cfg_graph.value(uplift_def_ref, DCFG.file)
+                if target_prof:
+                    found_uplift_defs.append([order, target_prof])
+                elif target_file:
+                    found_uplift_defs.append([order, self.working_directory.joinpath(target_file).resolve()])
+            uplift_defs = [p[1] for p in
+                           sorted(found_uplift_defs,
+                                  key=lambda u: u[0] if u[0] is not None else max_order + 1)]
+
+            identifier = cfg_graph.value(cfg_ref, DCTERMS.identifier) or str(cfg_ref)
+
+            if profile_refs:
+                self.entries.append(DomainConfigurationEntry(
                     working_directory=self.working_directory,
-                    localpath=localpath,
                     glob=globs,
+                    identifier=identifier,
                     uri_root_filter=uri_root_filter,
                     conforms_to=profile_refs,
-                )
-                self.entries.setdefault(path, []).append(entry)
+                ))
 
-        if domain:
-            logger.info("Found %d domain configuration entries for domain %s:\n - %s",
-                        len(self.entries), domain,
-                        '\n - '.join([g for entries in self.entries.values() for e in entries for g in e.glob]))
-        else:
-            logger.info("Found %d domain configurations:\n - %s",
-                        len(self.entries), '\n - '.join([os.path.relpath(p) for p in self.entries.keys()]))
+            if uplift_defs:
+                self.uplift_entries.append(UpliftConfigurationEntry(
+                    working_directory=self.working_directory,
+                    glob=globs,
+                    identifier=identifier,
+                    uplift_definitions=uplift_defs,
+                ))
+
+        logger.info("Found %d domain configurations and %d uplift configurations",
+                    len(self.entries),
+                    len(self.uplift_entries))
+
         return self
 
-    def find_file(self, fn: Union[str, Path]) -> Optional['DomainConfigurationEntry']:
+    def __len__(self):
+        return len(self.entries)
+
+
+class ConfigurationEntry:
+
+    def __init__(self,
+                 working_directory: Path,
+                 glob: Sequence[str],
+                 identifier: str):
+        if not isinstance(working_directory, Path):
+            working_directory = Path(working_directory)
+        self.working_directory = working_directory.resolve()
+        self.globs = glob if not isinstance(glob, str) else [glob]
+        self.identifier = identifier
+
+    def find_all(self) -> set[Path]:
+        return set(item for g in self.globs for item in self.working_directory.glob(g))
+
+    def matches(self, fn: str | Path) -> bool:
+        if not isinstance(fn, Path):
+            fn = Path(fn)
+        fn = os.path.relpath(fn.resolve(), self.working_directory)
+        return globmatch(fn, self.globs)
+
+
+class DomainConfigurationEntry(ConfigurationEntry):
+
+    def __init__(self,
+                 working_directory: Path,
+                 glob: Sequence[str],
+                 identifier: str,
+                 uri_root_filter: Optional[str] = None,
+                 conforms_to: Optional[Sequence[URIRef]] = None):
+        super().__init__(working_directory, glob, identifier)
+        self.uri_root_filter = uri_root_filter
+        self.conforms_to = [conforms_to] if isinstance(conforms_to, str) else conforms_to
+
+
+class UpliftConfigurationEntry(ConfigurationEntry):
+
+    def __init__(self,
+                 working_directory: Path,
+                 glob: Sequence[str],
+                 identifier: str,
+                 uplift_definitions: Sequence[str | Path]):
+        super().__init__(working_directory, glob, identifier)
+        self.uplift_definitions = list(uplift_definitions)
+        self.context_filenames = set(f for f in uplift_definitions if isinstance(f, Path))
+
+
+class ConfigurationEntryList(list[CE]):
+
+    def find_entry_for_file(self, fn: str | Path) -> ConfigurationEntry | None:
         """
-        Find the DomainConfigurationEntry that corresponds to a file, if any.
+        Find the configuration entry that corresponds to a file, if any.
 
         :param fn: the file name
         :return: a DomainConfigurationEntry, or None if none is found
         """
         if not isinstance(fn, Path):
             fn = Path(fn)
-        for entryList in self.entries.values():
-            for entry in entryList:
-                if entry.matches(fn):
-                    return entry
 
-    def find_files(self, fns: list[Union[str, Path]]) -> 'dict[Path, DomainConfigurationEntry]':
+        for entry in self:
+            if entry.matches(fn):
+                return entry
+
+    def find_entries_for_files(self, fns: list[str | Path]) -> 'dict[Path, ConfigurationEntry]':
         """
-        Find the DomainConfigurationEntry's associated to a lis of files. Similar
-        to [find_file()][ogc.na.domain_config.DomainConfiguration.find_file]
+        Find the configuration entries associated to a list of files. Similar
+        to [find_file()][ogc.na.domain_config.ConfigurationEntryList.find_file]
         but with a list of files.
 
         :param fns: a list of files to find
         :return: a path \u2192 DomainConfigurationEntry dict for each file that is found
         """
-        result = {}
+        result: dict[Path, ConfigurationEntry] = {}
         for fn in fns:
             p = Path(fn).resolve()
-            e = self.find_file(p)
+            e = self.find_entry_for_file(p)
             if e:
                 result[p] = e
         return result
 
-    def find_all(self) -> 'dict[Path, DomainConfigurationEntry]':
+    def find_all_files(self) -> 'dict[Path, ConfigurationEntry]':
         """
-        Find all the files referenced by this DomainConfiguration, including
+        Find all the files referenced by this configuration entry list, including
         their DomainConfigurationEntry.
 
-        :return: a path \u2192 DomainConfigurationEntry dict including all files
+        :return: a path to DomainConfigurationEntry mapping (dict) including all files
         """
         r = {}
-        for entryList in self.entries.values():
-            for entry in entryList:
-                r.update({p: entry for p in entry.find_all()})
+        for entry in self:
+            r.update({p: entry for p in entry.find_all()})
         return r
 
-    def __len__(self):
-        return len(self.entries)
 
+class UpliftConfigurationEntryList(ConfigurationEntryList[UpliftConfigurationEntry]):
 
-class DomainConfigurationEntry:
-
-    def __init__(self,
-                 working_directory: Path,
-                 localpath: Path,
-                 glob: Sequence[str],
-                 uri_root_filter: Optional[str] = None,
-                 conforms_to: Optional[Sequence[URIRef]] = None):
-        self.working_directory = working_directory
-        self.localpath = localpath
-        self.path = (working_directory / localpath).resolve()
-        self.glob = glob if not isinstance(glob, str) else [glob]
-        self.uri_root_filter = uri_root_filter
-        self.conforms_to = [conforms_to] if isinstance(conforms_to, str) else conforms_to
-
-    def find_all(self):
-        return [item for g in self.glob for item in self.path.glob(g)]
-
-    def matches(self, fn: Union[str, Path]):
-        if not isinstance(fn, Path):
-            fn = Path(fn)
-        if self.path != fn.parent.resolve():
-            return False
-        return any(fn.match(g) for g in self.glob)
+    def find_files_by_context_fn(self, context_fn: Path) -> set[Path]:
+        context_fn = context_fn.resolve()
+        result: set[Path] = set()
+        for entry in self:
+            if context_fn in entry.context_filenames:
+                result.update(entry.find_all())
+        return result

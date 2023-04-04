@@ -8,6 +8,7 @@ from glob import glob
 from pathlib import Path
 from typing import Optional, Union
 
+import requests
 import rfc3987
 from rdflib import Graph
 from pyshacl import validate as shacl_validate
@@ -118,17 +119,20 @@ def isurl(url: str, http_only: bool = False) -> bool:
     return True
 
 
-def load_yaml(filename: Union[str, Path] = None, content: str = None) -> dict:
+def load_yaml(filename: str | Path = None,
+              content: str | None = None,
+              url: str | None = None) -> dict:
     """
-    Loads a YAML file either from a file or from a string.
+    Loads a YAML file either from a file, a string or a URL.
 
     :param filename: YAML document file name
     :param content: str with YAML contents
+    :param url: url from which to retrieve the contents
     :return: a dict with the loaded data
     """
 
-    if bool(filename) == bool(content):
-        raise ValueError("One (and only one) of filename or contents required")
+    if bool(filename) + bool(content) + bool(url) > 1:
+        raise ValueError("One (and only one) of filename, contents and url must be provided")
 
     from yaml import load
     try:
@@ -139,6 +143,8 @@ def load_yaml(filename: Union[str, Path] = None, content: str = None) -> dict:
         with open(filename, 'r') as f:
             return load(f, Loader=Loader)
     else:
+        if url:
+            content = requests.get(url).text
         return load(content, Loader=Loader)
 
 

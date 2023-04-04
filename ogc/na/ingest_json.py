@@ -7,18 +7,16 @@ JSON-LD uplifting is done in 3 steps:
 
 * Initial transformation using [jq](https://stedolan.github.io/jq/manual/) expressions (`transform`).
 * Class annotation (adding `@type` to the root object and/or to specific nodes, using
-  [jsongpath-ng](https://pypi.org/project/jsonpath-ng/) expressions) (`types`).
+  [jsonpath-ng](https://pypi.org/project/jsonpath-ng/) expressions) (`types`).
 * Injecting custom JSON-LD `@context` either globally or inside specific nodes (using
-  [jsongpath-ng](https://pypi.org/project/jsonpath-ng/) expressions (`context`).
+  [jsonpath-ng](https://pypi.org/project/jsonpath-ng/) expressions (`context`).
 
 The details for each of these operations are declared inside context definition files,
 which are YAML documents containing specifications for the uplift workflow. For each input
 JSON file, its corresponding YAML context definition is detected at runtime:
 
-1. A [context definition registry][ogc.na.ingest_json.ContextRegistry] can be defined,
-which is a JSON document with `{ "yamlContextFile.yml": ["glob/1/*.json", "glob2/g*.json", ... ], ... }`
-mappings. If a given input JSON file matches any of the globs, its corresponding YAML context definition
-will be used.
+1. A [context definition registry][ogc.na.ingest_json.ContextRegistry] can be used,
+which is a JSON (or YAML) document that defines JSON file to context definition mappings.
 2. If no registry is used or the input file is not in the registry, a file with the same
 name but `.yml` extension will be used, if it exists.
 3. Otherwise, a `_json-context.yml` file in the same directory will be used, if it exists.
@@ -30,24 +28,26 @@ import argparse
 import json
 import logging
 import os
+import os.path
 import re
 import sys
 import uuid
 from collections import deque
+from dataclasses import dataclass, field
 from datetime import datetime
-from os import path, scandir
+from os import scandir
 from pathlib import Path
-from typing import Union, Optional, List, Tuple, Sequence
+from typing import Union, Optional, Sequence, cast, Iterable
 
 import jq
-from jsonpath_ng.ext import parse as jsonpathparse
+from jsonpath_ng.ext import parse as json_path_parse
 from jsonschema import validate as json_validate
 from pyld import jsonld
 from rdflib import Graph, DC, DCTERMS, SKOS, OWL, RDF, RDFS, XSD, DCAT
 from rdflib.namespace import Namespace, DefinedNamespace
-from wcmatch.glob import globmatch
 
-from ogc.na import util
+from ogc.na import util, profile
+from ogc.na.domain_config import UpliftConfigurationEntry, DomainConfiguration
 from ogc.na.provenance import ProvenanceMetadata, FileProvenanceMetadata, generate_provenance
 
 logger = logging.getLogger(__name__)
@@ -68,7 +68,7 @@ DEFAULT_NAMESPACES: dict[str, Union[str, DefinedNamespace]] = {
     "prov": "http://www.w3.org/ns/prov#"
 }
 
-VOCAB_DELIMS = set(("#", "/", ":"))
+VOCAB_DELIMITERS = {"#", "/", ":"}
 
 UPLIFT_CONTEXT_SCHEMA = {
     "type": "object",
@@ -115,144 +115,6 @@ UPLIFT_CONTEXT_SCHEMA = {
 }
 
 
-class IContextRegistry:
-    """
-    Base interface for YAML context definitions.
-    """
-    root_dir: Path = None
-
-    def get_filenames(self, contextfn: Union[Path, str]) -> List[Path]:
-        """
-        Obtain a list of filenames that this context
-        :param contextfn:
-        :return:
-        """
-        pass
-
-    def get_context(self, filename: Union[Path, str]) -> Optional[Path]:
-        pass
-
-    def has_context(self, contextfn: Union[Path, str]) -> bool:
-        pass
-
-    def has_filename(self, filename: Union[Path, str]) -> bool:
-        pass
-
-    def __bool__(self):
-        pass
-
-
-class ContextRegistry(IContextRegistry):
-    """
-    Support class for context registry operations. A context registry
-    is a `yamlContextFilename:[listOfFilenameGlobs]` mapping contained
-    in a dict or a JSON document.
-    The context registry has a root directory (implicit or explicit)
-    which will be used for glob-matching operations.
-    """
-
-    registry: dict
-
-    def __init__(self, source: Union[str, Path, dict], root_dir: Union[Path, str] = None):
-        """
-        Creates a context registry from a collection of YAML-context-definition-to-list-of-globs
-        mappings.
-
-        :param source: a dict or JSON file name with the mappings
-        :param root_dir: the base directory to use for relative path matching. If `None`,
-               an implicit one will be used (the current working directory for dict
-               mappings, or the parent directory of the JSON filename otherwise)
-        """
-        if isinstance(source, str) or isinstance(source, Path):
-            # load from file
-            with open(source, 'r') as f:
-                entries: dict[str, list[str]] = json.load(f)
-            self.root_dir = Path(root_dir) if root_dir else Path(source).parent
-        else:
-            # take as is
-            entries = source
-            self.root_dir = Path(root_dir) if root_dir else Path()
-
-        # Resolve context filename paths
-        self.registry: dict[Path, list[str]] = {}
-        for ctx, globs in entries.items():
-            p = Path(ctx)
-            if not p.is_absolute():
-                p = self.root_dir / p
-            self.registry[p.resolve()] = globs
-
-    def get_filenames(self, contextfn: Union[Path, str]) -> List[Path]:
-        """
-        Tries to find a list of JSON/JSON-LD files for a given YAML context definition filename.
-        :param contextfn: YAML context definition filename
-        :return: corresponding JSON/JSON-LD filenames, if found
-        """
-        if not isinstance(contextfn, Path):
-            contextfn = Path(contextfn)
-
-        globs = self.registry.get(contextfn.resolve())
-        if not globs:
-            return []
-        return [fn for g in globs for fn in self.root_dir.glob(g)]
-
-    def get_context(self, filename: Union[Path, str]) -> Optional[Path]:
-        """
-        Tries to find the YAML context file for a given JSON file.
-        :param filename: the filename of the JSON document
-        :return: its corresponding YAML context file, or None
-        """
-
-        relativefn = Path(filename).relative_to(self.root_dir)
-        for ctx, globs in self.registry.items():
-            if globmatch(relativefn, globs):
-                return ctx
-
-    def has_context(self, contextfn: Union[Path, str]) -> bool:
-        return (contextfn if isinstance(contextfn, Path) else Path(contextfn)).resolve() in self.registry
-
-    def has_filename(self, filename: Union[Path, str]) -> bool:
-        return bool(self.get_context(filename))
-
-    def __bool__(self):
-        return bool(self.registry)
-
-    def __str__(self):
-        return f"ContextRegistry(root_dir={self.root_dir},entries={self.registry})"
-
-
-class ContextRegistryList(IContextRegistry):
-    """
-    Support class for aggregating [ContextRegistry][ogc.na.ingest_json.ContextRegistry]'s.
-    """
-
-    def __init__(self, *args: ContextRegistry):
-        self.registries: List[ContextRegistry] = list(args)
-
-    def add(self, registry: ContextRegistry):
-        self.registries.append(registry)
-
-    def get_filenames(self, contextfn: Union[Path, str]) -> List[Path]:
-        return [fn for registry in self.registries for fn in registry.get_filenames(contextfn)]
-
-    def get_context(self, filename: Union[Path, str]) -> Optional[Path]:
-        return next(
-            filter(lambda x: x,
-                   (registry.get_context(filename) for registry in self.registries)),
-            None)
-
-    def has_context(self, contextfn: Union[Path, str]) -> bool:
-        return any(r.has_context(contextfn) for r in self.registries)
-
-    def has_filename(self, filename: Union[Path, str]) -> bool:
-        return any(r.has_filename(filename) for r in self.registries)
-
-    def __bool__(self):
-        return bool(self.registries) and any(bool(r) for r in self.registries)
-
-    def __str__(self):
-        return f"ContextRegistryList[{','.join(str(r) for r in self.registries)}]"
-
-
 class ValidationError(Exception):
 
     def __init__(self, cause: Exception = None, msg: str = None,
@@ -265,9 +127,22 @@ class ValidationError(Exception):
         self.index = index
 
 
-def document_loader(secure: bool = False,
-                    url_whitelist: Optional[Union[Sequence, bool]] = None,
-                    **kwargs):
+class MissingContextException(Exception):
+    pass
+
+
+@dataclass
+class UpliftResult:
+    input_file: Path = None
+    uplifted_json: dict | list = None
+    graph: Graph = None
+    expanded_jsonld: dict | list = None
+    output_files: list[Path] = field(default_factory=list)
+
+
+def _document_loader(secure: bool = False,
+                     url_whitelist: Optional[Union[Sequence, bool]] = None,
+                     **kwargs):
     if url_whitelist is False:
         raise ValueError("Remote document fetching is disabled (url_whitelist is False)")
     if isinstance(url_whitelist, str):
@@ -308,17 +183,16 @@ def validate_context(context: Union[dict, str] = None, filename: Union[str, Path
                                   property="transform",
                                   value=t,
                                   index=i)
-
-    for path in context.get('types', {}).keys():
-        if path in ('.', '$'):
+    for json_path in context.get('types', {}).keys():
+        if json_path in ('.', '$'):
             continue
         try:
-            jsonpathparse(path)
+            json_path_parse(json_path)
         except Exception as e:
             raise ValidationError(cause=e,
-                                  msg=f"Error parsing jsonpathng path '{path}' in types",
+                                  msg=f"Error parsing jsonpath-ng path '{json_path}' in types",
                                   property="types",
-                                  value=path)
+                                  value=json_path)
 
     return context
 
@@ -335,7 +209,7 @@ def add_jsonld_provenance(json_doc: Union[dict, list], metadata: ProvenanceMetad
     return json_doc
 
 
-def uplift_json(data: dict, context: dict,
+def uplift_json(data: dict | list, context: dict,
                 fetch_timeout: int = 5,
                 fetch_url_whitelist: Optional[Union[Sequence, bool]] = None) -> dict:
     """
@@ -355,7 +229,7 @@ def uplift_json(data: dict, context: dict,
 
     context_position = context.get('position', 'before')
 
-    jsonld.set_document_loader(document_loader(timeout=fetch_timeout, url_whitelist=fetch_url_whitelist))
+    jsonld.set_document_loader(_document_loader(timeout=fetch_timeout, url_whitelist=fetch_url_whitelist))
 
     validate_context(context)
 
@@ -374,16 +248,16 @@ def uplift_json(data: dict, context: dict,
 
     # Add types
     types = context.get('types', {})
-    for loc, typelist in types.items():
-        items = jsonpathparse(loc).find(data_graph)
-        if isinstance(typelist, str):
-            typelist = [typelist]
+    for loc, type_list in types.items():
+        items = json_path_parse(loc).find(data_graph)
+        if isinstance(type_list, str):
+            type_list = [type_list]
         for item in items:
             existing = item.value.setdefault('@type', [])
             if isinstance(existing, str):
-                item.value['@type'] = [existing] + typelist
+                item.value['@type'] = [existing] + type_list
             else:
-                item.value['@type'].extend(typelist)
+                item.value['@type'].extend(type_list)
 
     # Add contexts
     context_list = context.get('context', {})
@@ -392,7 +266,7 @@ def uplift_json(data: dict, context: dict,
         if not loc or loc in ['.', '$']:
             global_context = val
         else:
-            items = jsonpathparse(loc).find(data_graph)
+            items = json_path_parse(loc).find(data_graph)
             for item in items:
                 item.value['@context'] = _get_injected_context(item.value, val, context_position)
 
@@ -435,15 +309,16 @@ def _get_injected_context(node: dict, ctx: Union[dict, list] = None, position: s
     return result
 
 
-def generate_graph(inputdata: Union[dict, list], context: dict,
-                   base: Optional[str] = None,
+def generate_graph(input_data: dict | list,
+                   context: dict | Sequence[dict] = None,
+                   base: str | None = None,
                    fetch_timeout: int = 5,
-                   fetch_url_whitelist: Optional[Union[Sequence, bool]] = None) -> Tuple[Graph, dict, dict]:
+                   fetch_url_whitelist: Sequence[str] | bool | None = None) -> UpliftResult:
     """
     Create a graph from an input JSON document and a YAML context definition file.
 
-    :param inputdata: input JSON data in dict or list format
-    :param context: YAML context definition in dict format
+    :param input_data: input JSON data in dict or list format
+    :param context: context definition in dict format, or list thereof
     :param base: base URI for JSON-LD context
     :param fetch_timeout: timeout (in seconds) for fetching referenced JSON-LD context URLs
     :param fetch_url_whitelist: list of regular expressions to filter referenced JSON-LD context URLs before
@@ -452,25 +327,33 @@ def generate_graph(inputdata: Union[dict, list], context: dict,
     :return: a tuple with the resulting RDFLib Graph and the JSON-LD enriched file name
     """
 
-    if not isinstance(inputdata, dict) and not isinstance(inputdata, list):
-        raise ValueError('inputdata must be a list or dictionary')
+    if not isinstance(input_data, dict) and not isinstance(input_data, list):
+        raise ValueError('input_data must be a list or dictionary')
+
+    if not context:
+        raise ValueError('context must be provided')
 
     g = Graph()
     for prefix, ns in DEFAULT_NAMESPACES.items():
         g.bind(prefix, Namespace(ns))
 
-    jdocld = uplift_json(inputdata, context, fetch_timeout=fetch_timeout, fetch_url_whitelist=fetch_url_whitelist)
+    jdoc_ld = input_data
+    context_list = context if isinstance(context, Sequence) else (context,)
+    for context_entry in context_list:
+        jdoc_ld = uplift_json(input_data, context_entry,
+                              fetch_timeout=fetch_timeout,
+                              fetch_url_whitelist=fetch_url_whitelist)
 
     options = {}
     if not base:
         if context.get('base-uri'):
             options['base'] = context['base-uri']
-        elif '@context' in jdocld:
+        elif '@context' in jdoc_ld:
             # Try to extract from @context
             # If it is a list, iterate until @base is found
             base = None
-            if isinstance(jdocld['@context'], list):
-                for entry in jdocld['@context']:
+            if isinstance(jdoc_ld['@context'], list):
+                for entry in jdoc_ld['@context']:
                     if not isinstance(entry, dict):
                         continue
                     base = entry.get('@base')
@@ -478,41 +361,38 @@ def generate_graph(inputdata: Union[dict, list], context: dict,
                         break
             else:
                 # If not a list, just look @base up
-                base = jdocld['@context'].get('@base')
+                base = jdoc_ld['@context'].get('@base')
     if base:
         options['base'] = base
-    g.parse(data=jdocld, format='json-ld')
-    expanded = jsonld.expand(jdocld, options)
+    g.parse(data=json.dumps(jdoc_ld), format='json-ld')
+    expanded = jsonld.expand(jdoc_ld, options)
 
-    return g, expanded, jdocld
+    return UpliftResult(graph=g, expanded_jsonld=expanded, uplifted_json=jdoc_ld)
 
 
-def process_file(inputfn: str,
-                 jsonldfn: Optional[Union[bool, str]] = False,
-                 ttlfn: Optional[Union[bool, str]] = False,
-                 contextfn: Optional[str] = None,
-                 context_registry: Optional[IContextRegistry] = None,
-                 base: Optional[str] = None,
-                 skip_on_missing_context: bool = False,
-                 provenance_base_uri: Optional[Union[str, bool]] = None,
-                 provenance_process_id: Optional[str] = None,
+def process_file(input_fn: str | Path,
+                 jsonld_fn: str | bool | None = False,
+                 ttl_fn: str | bool | None = False,
+                 context_fn: str | Path | Sequence[str | Path] | None = None,
+                 domain_cfg: DomainConfiguration | None = None,
+                 base: str | None = None,
+                 provenance_base_uri: str | bool | None = None,
+                 provenance_process_id: str | None = None,
                  fetch_timeout: int = 5,
-                 fetch_url_whitelist: Optional[Union[Sequence, bool]] = None) -> List[Path]:
+                 fetch_url_whitelist: bool | Sequence[str] | None = None) -> UpliftResult | None:
     """
     Process input file and generate output RDF files.
 
-    :param inputfn: input filename
-    :param jsonldfn: output JSON-lD filename (None for automatic).
+    :param input_fn: input filename
+    :param jsonld_fn: output JSON-lD filename (None for automatic).
         If False, no JSON-LD output will be generated
-    :param ttlfn: output Turtle filename (None for automatic).
+    :param ttl_fn: output Turtle filename (None for automatic).
         If False, no Turtle output will be generated.
-    :param contextfn: YAML context filename. If None, will be autodetected:
+    :param context_fn: YAML context filename. If None, will be autodetected:
         1. From a file with the same name but yml/yaml extension (test.json -> test.yml)
         2. From a _json-context.yml/_json-context.yaml file in the same directory
-    :param context_registry: dict with filename:yamlContextFilename mappings. Will be ignored
-        if contextfn is provided
+    :param domain_cfg: domain configuration with uplift definition locations
     :param base: base URI for JSON-LD
-    :param skip_on_missing_context: whether to silently fail if no context file is found
     :param provenance_base_uri: base URI for provenance resources
     :param provenance_process_id: process identifier for provenance tracking
     :param fetch_timeout: timeout (in seconds) for fetching referenced JSON-LD context URLs
@@ -522,172 +402,194 @@ def process_file(inputfn: str,
     :return: List of output files created
     """
 
-    starttime = datetime.now()
+    start_time = datetime.now()
 
-    if not path.isfile(inputfn):
-        raise IOError(f'Input is not a file ({inputfn})')
+    if not isinstance(input_fn, Path):
+        input_fn = Path(input_fn)
 
-    inputbase, inputext = path.splitext(inputfn)
+    if not input_fn.is_file():
+        raise IOError(f'Input is not a file ({input_fn})')
 
-    if not contextfn:
-        contextfn = find_context_filename(inputfn, context_registry)
+    contexts = []
+    if not context_fn:
+        for found_context in (find_contexts(input_fn, domain_config=domain_cfg) or ()):
+            if isinstance(found_context, Path):
+                contexts.append(util.load_yaml(filename=found_context))
+            else:
+                # Profile URI
+                artifact_urls = domain_cfg.profile_registry.get_artifacts(found_context, profile.ROLE_SEMANTIC_UPLIFT)
+                if artifact_urls:
+                    contexts.extend(util.load_yaml(a) for a in artifact_urls)
 
-    if not contextfn:
-        if skip_on_missing_context:
-            logger.warning("No context file provided and one could not be discovered automatically. Skipping...")
-            return []
-        raise Exception('No context file provided and one could not be discovered automatically')
+    elif not isinstance(context_fn, Sequence) or isinstance(context_fn, str):
+        contexts = (util.load_yaml(context_fn),)
 
-    with open(inputfn, 'r') as j:
-        inputdata = json.load(j)
+    if not contexts:
+        raise MissingContextException('No context file provided and one could not be discovered automatically')
 
-    provenance_metadata: ProvenanceMetadata = None
+    with open(input_fn, 'r') as j:
+        input_data = json.load(j)
+
+    provenance_metadata: ProvenanceMetadata | None = None
     if provenance_base_uri is not False:
+        used = [FileProvenanceMetadata(filename=input_fn, mime_type='application/json')]
+        used.extend(FileProvenanceMetadata(filename=c, mime_type='application/yaml') for c in context_fn)
         provenance_metadata = ProvenanceMetadata(
-            used=[
-                FileProvenanceMetadata(filename=contextfn, mime_type='application/yaml'),
-                FileProvenanceMetadata(filename=inputfn, mime_type='application/json'),
-            ],
+            used=used,
             batch_activity_id=provenance_process_id,
             base_uri=provenance_base_uri,
             root_directory=os.getcwd(),
-            start=starttime,
+            start=start_time,
             end_auto=True,
         )
 
-    g, jsonldexpanded, _ = generate_graph(inputdata,
-                                          util.load_yaml(contextfn),
-                                          base,
-                                          fetch_timeout=fetch_timeout,
-                                          fetch_url_whitelist=fetch_url_whitelist)
+    uplift_result = generate_graph(input_data,
+                                   context=contexts,
+                                   base=base,
+                                   fetch_timeout=fetch_timeout,
+                                   fetch_url_whitelist=fetch_url_whitelist)
 
-    createdfiles = []
+    uplift_result.input_file = input_fn
+
     # False = do not generate
     # None = auto filename
     # - = stdout
-    if ttlfn or ttlfn is None:
-        if ttlfn == '-':
+    if ttl_fn or ttl_fn is None:
+        if ttl_fn == '-':
             if provenance_metadata:
                 provenance_metadata.output = FileProvenanceMetadata(mime_type='text/turtle', use_bnode=False)
-                generate_provenance(g, provenance_metadata)
-            print(g.serialize(format='ttl'))
+                generate_provenance(uplift_result.graph, provenance_metadata)
+            print(uplift_result.graph.serialize(format='ttl'))
         else:
-            if not ttlfn:
-                ttlfn = f'{inputbase}.ttl' if inputext != '.ttl' else f'{inputfn}.ttl'
+            if not ttl_fn:
+                ttl_fn = input_fn.with_suffix('.ttl') \
+                    if input_fn.suffix != '.ttl' \
+                    else input_fn.with_suffix(input_fn.suffix + '.ttl')
             if provenance_metadata:
-                provenance_metadata.output = FileProvenanceMetadata(filename=ttlfn, mime_type='text/turtle', use_bnode=False)
-                generate_provenance(g, provenance_metadata)
-            g.serialize(destination=ttlfn, format='ttl')
-            createdfiles.append(Path(ttlfn))
+                provenance_metadata.output = FileProvenanceMetadata(filename=ttl_fn,
+                                                                    mime_type='text/turtle',
+                                                                    use_bnode=False)
+                generate_provenance(uplift_result.graph, provenance_metadata)
+            uplift_result.graph.serialize(destination=ttl_fn, format='ttl')
+            uplift_result.output_files.append(ttl_fn)
 
     # False = do not generate
     # None = auto filename
     # "-" = stdout
-    if jsonldfn or jsonldfn is None:
-        if jsonldfn == '-':
+    if jsonld_fn or jsonld_fn is None:
+        if jsonld_fn == '-':
             if provenance_metadata:
                 provenance_metadata.generated = FileProvenanceMetadata(mime_type='application/ld+json', use_bnode=False)
-                jsonldexpanded = add_jsonld_provenance(jsonldexpanded, provenance_metadata)
-            print(json.dumps(jsonldexpanded))
+                uplift_result.expanded_jsonld = add_jsonld_provenance(uplift_result.expanded_jsonld,
+                                                                      provenance_metadata)
+            print(uplift_result.expanded_jsonld)
         else:
-            if not jsonldfn:
-                jsonldfn = f'{inputbase}.jsonld' if inputext != '.jsonld' else f'{inputfn}.jsonld'
+            if not jsonld_fn:
+                jsonld_fn = input_fn.with_suffix('.jsonld') \
+                    if input_fn.suffix != '.jsonld' \
+                    else input_fn.with_suffix(input_fn.suffix + '.jsonld')
             if provenance_metadata:
                 provenance_metadata.generated = FileProvenanceMetadata(
-                    filename=jsonldfn,
+                    filename=jsonld_fn,
                     mime_type='application/ld+json',
                     use_bnode=False,
                 )
-                jsonldexpanded = add_jsonld_provenance(jsonldexpanded, provenance_metadata)
-            with open(jsonldfn, 'w') as f:
-                json.dump(jsonldexpanded, f, indent=2)
-            createdfiles.append(Path(jsonldfn))
+                uplift_result.expanded_jsonld = add_jsonld_provenance(uplift_result.expanded_jsonld,
+                                                                      provenance_metadata)
+            with open(jsonld_fn, 'w') as f:
+                json.dump(uplift_result.expanded_jsonld, f, indent=2)
+            uplift_result.output_files.append(jsonld_fn)
 
-    return createdfiles
+    return uplift_result
 
 
-def find_context_filename(filename, registry: Optional[IContextRegistry] = None) -> Optional[Path]:
+def find_contexts(filename: Path | str,
+                  domain_config: DomainConfiguration | None = None) -> list[Path | str] | None:
     """
     Find the YAML context file for a given filename, with the following precedence:
         1. Search in registry (if provided)
         2. Search file with same base name but with yaml/yml extension.
         3. Find _json-context.yml/yaml file in same directory
     :param filename: the filename for which to find the context
-    :param registry: an optional filename:yamlContextFile mapping
-    :return: the YAML context definition filename
+    :param domain_config: an optional filename:yamlContextFile mapping
+    :return: the YAML context definition paths (Path) and/or profile URIs (str)
     """
 
+    if not isinstance(filename, Path):
+        filename = Path(filename)
+
     # 1. Registry lookup
-    if registry:
-        yml = registry.get_context(filename)
-        if yml:
-            return yml
+    if domain_config:
+        entry: UpliftConfigurationEntry = domain_config.uplift_entries.find_entry_for_file(filename)
+        if entry:
+            return entry.uplift_definitions
 
     # 2. Same filename with yml/yaml extension or autodetect in dir
-    base, ext = path.splitext(filename)
-    dirname = path.dirname(filename)
-
-    for cfn in [
-        f'{filename}.yml',
-        f'{filename}.yaml',
-        f'{base}.yaml',
-        f'{base}.yml',
-        path.join(dirname, '_json-context.yml'),
-        path.join(dirname, '_json-context.yaml'),
-    ]:
-        if path.isfile(cfn):
-            logger.info(f'Autodetected context {cfn} for file {filename}')
-            return Path(cfn)
+    for context_path in (
+        filename.with_suffix('yml'),
+        filename.with_suffix('yaml'),
+        filename.with_suffix('').with_suffix('yml'),
+        filename.with_suffix('').with_suffix('yaml'),
+        filename.parent / '_json-context.yml',
+        filename.parent / '_json-context.yaml',
+    ):
+        if context_path.is_file():
+            logger.info(f'Autodetected context {context_path} for file {filename}')
+            return [context_path]
 
 
-def filenames_from_context(contextfn: Union[str, Path],
-                           registry: Optional[IContextRegistry]) -> Optional[List[Path]]:
+def filenames_from_context(context_fn: Path | str,
+                           domain_config: DomainConfiguration | None) -> list[Path]:
     """
     Tries to find a JSON/JSON-LD file from a given YAML context definition filename.
     Priority:
-      1. Context file in registry (if registry present)
-      2. Context file with same name as JSON doc (e.g. test.yml/test.json)
+      1. Context file with same name as JSON doc (e.g. test.yml/test.json)
+      2. Context file in domain configuration (if one provided)
       3. Context file in directory (_json-context.yml or _json-context.yaml)
-    :param contextfn: YAML context definition filename
-    :param registry: dict of jsonFile:yamlContextFile mappings
+    :param context_fn: YAML context definition filename
+    :param domain_config: dict of jsonFile:yamlContextFile mappings
     :return: corresponding JSON/JSON-LD filename, if found
     """
 
-    # 1. Reverse lookup in registry
-    if registry:
-        found = registry.get_filenames(contextfn)
-        if found:
-            return found
+    result = set()
 
-    # 2. Lookup by matching filename
-    basefn = path.splitext(contextfn)[0]
-    if re.match(r'.*\.json-?(ld)?$', basefn):
+    if not isinstance(context_fn, Path):
+        context_fn = Path(context_fn)
+
+    # 1. Lookup by matching filename
+    if re.match(r'.*\.json-?(ld)?$', context_fn.stem):
         # If removing extension results in a JSON/JSON-LD
         # filename, try it
-        return basefn if not registry.has_filename(basefn) and path.isfile(basefn) else None
+        json_fn = context_fn.with_suffix('')
+        if json_fn.is_file():
+            result.add(json_fn)
     # Otherwise check with appended JSON/JSON-LD extensions
-    for e in ('.json', '.jsonld', '.json-ld'):
-        jsonfn = basefn + e
-        if not registry.has_filename(jsonfn) and path.isfile(jsonfn):
-            return [Path(jsonfn)]
+    for suffix in ('.json', '.jsonld', '.json-ld'):
+        json_fn = context_fn.with_suffix(suffix)
+        if json_fn.is_file():
+            result.add(json_fn)
+
+    # 2. Reverse lookup in registry
+    if domain_config:
+        result.update(domain_config.uplift_entries.find_files_by_context_fn(context_fn))
 
     # 3. If directory context file, all .json files in directory
     # NOTE: no .jsonld or .json-ld files, since those could come
     #   from the output of this very script
     # NOTE: excluding those files present in the registry
-    dirname, ctxfn = path.split(contextfn)
-    if re.match(r'_json-context\.ya?ml', ctxfn):
-        with scandir(dirname) as it:
-            return [x.path for x in it
-                    if (x.is_file() and x.name.endswith('.json')
-                        and not registry.has_filename(x))]
+    if context_fn.stem == '_json-context':
+        with scandir(context_fn.parent) as it:
+            return [x.path for x in cast(it, Iterable)
+                    if x.is_file() and x.name.endswith('.json')]
+
+    return list(result)
 
 
-def process(inputfiles: Union[str, Sequence],
-            context_registry: Optional[IContextRegistry] = None,
-            contextfn: Optional[str] = None,
-            jsonldfn: Optional[Union[bool, str]] = False,
-            ttlfn: Optional[Union[bool, str]] = False,
+def process(input_files: str | Path | Sequence[str | Path],
+            domain_cfg: DomainConfiguration | None = None,
+            context_fn: str | Path | None = None,
+            jsonld_fn: bool | str | None = False,
+            ttl_fn: bool | str | None = False,
             batch: bool = False,
             base: str = None,
             skip_on_missing_context: bool = False,
@@ -697,13 +599,13 @@ def process(inputfiles: Union[str, Sequence],
     """
     Performs the JSON-LD uplift process.
 
-    :param inputfiles: list of input, plain JSON files
-    :param context_registry: context registry to use, if any
-    :param contextfn: used to force the YAML context file name for the uplift. If `None`,
+    :param input_files: list of input, plain JSON files
+    :param domain_cfg: domain configuration including uplift definition locations
+    :param context_fn: used to force the YAML context file name for the uplift. If `None`,
            it will be autodetected
-    :param jsonldfn: output file name for the JSON-LD content. If it is `False`, no JSON-LD
+    :param jsonld_fn: output file name for the JSON-LD content. If it is `False`, no JSON-LD
            output will be generated. If it is `None`, output will be written to stdout.
-    :param ttlfn: output file name for the Turtle RDF content. If it is `False`, no Turtle
+    :param ttl_fn: output file name for the Turtle RDF content. If it is `False`, no Turtle
            output will be generated. If it is `None`, output will be written to stdout.
     :param batch: in batch mode, all JSON input files are obtained from the context registry
            and processed
@@ -718,20 +620,20 @@ def process(inputfiles: Union[str, Sequence],
     """
     result = []
     process_id = str(uuid.uuid4())
-    if isinstance(inputfiles, str):
-        inputfiles = (inputfiles,)
+    if isinstance(input_files, str):
+        input_files = (input_files,)
     if batch:
-        logger.info("Input files: %s", inputfiles)
+        logger.info("Input files: %s", input_files)
         remaining_fn: deque = deque()
-        for inputfile in inputfiles:
-            remaining_fn.extend(inputfile.split(','))
+        for input_file in input_files:
+            remaining_fn.extend(input_file.split(','))
         while remaining_fn:
             fn = str(remaining_fn.popleft())
 
             if re.match(r'.*\.ya?ml$', fn):
                 # Context file found, try to find corresponding JSON/JSON-LD file(s)
                 logger.info('Potential YAML context file found: %s', fn)
-                remaining_fn.extend(filenames_from_context(fn, context_registry) or [])
+                remaining_fn.extend(filenames_from_context(fn, domain_config=domain_cfg) or [])
                 continue
 
             if not re.match(r'.*\.json-?(ld)?$', fn):
@@ -741,40 +643,46 @@ def process(inputfiles: Union[str, Sequence],
             try:
                 result += process_file(
                     fn,
-                    jsonldfn=False if jsonldfn is False else None,
-                    ttlfn=False if ttlfn is False else None,
-                    contextfn=None,
-                    context_registry=context_registry,
+                    jsonld_fn=False if jsonld_fn is False else None,
+                    ttl_fn=False if ttl_fn is False else None,
+                    context_fn=None,
                     base=base,
-                    skip_on_missing_context=True,
                     provenance_base_uri=provenance_base_uri,
                     provenance_process_id=process_id,
                     fetch_timeout=fetch_timeout,
                     fetch_url_whitelist=fetch_url_whitelist,
                 )
             except Exception as e:
-                logger.warning("Error processing JSON/JSON-LD file, skipping: %s", getattr(e, 'msg', str(e)))
+                if skip_on_missing_context:
+                    logger.warning("Error processing JSON/JSON-LD file, skipping: %s", getattr(e, 'msg', str(e)))
+                else:
+                    raise
     else:
-        for inputfile in inputfiles:
-            result += process_file(
-                inputfile,
-                jsonldfn=jsonldfn if jsonldfn is not None else '-',
-                ttlfn=ttlfn if ttlfn is not None else '-',
-                contextfn=contextfn,
-                context_registry=context_registry,
-                base=base,
-                skip_on_missing_context=skip_on_missing_context,
-                provenance_base_uri=provenance_base_uri,
-                provenance_process_id=process_id,
-                fetch_timeout=fetch_timeout,
-                fetch_url_whitelist=fetch_url_whitelist,
-            )
+        for input_file in input_files:
+            try:
+                result += process_file(
+                    input_file,
+                    jsonld_fn=jsonld_fn if jsonld_fn is not None else '-',
+                    ttl_fn=ttl_fn if ttl_fn is not None else '-',
+                    context_fn=context_fn,
+                    base=base,
+                    provenance_base_uri=provenance_base_uri,
+                    provenance_process_id=process_id,
+                    fetch_timeout=fetch_timeout,
+                    fetch_url_whitelist=fetch_url_whitelist,
+                )
+            except Exception as e:
+                if skip_on_missing_context:
+                    logger.warning("Error processing JSON/JSON-LD file, skipping: %s", getattr(e, 'msg', str(e)))
+                else:
+                    raise
 
     return result
 
 
 def _process_cmdln():
     parser = argparse.ArgumentParser()
+
     parser.add_argument(
         "input",
         nargs='+',
@@ -812,12 +720,6 @@ def _process_cmdln():
     )
 
     parser.add_argument(
-        '-b',
-        '--base-uri',
-        help='Base URI for JSON-LD',
-    )
-
-    parser.add_argument(
         '-s',
         '--skip-on-missing-context',
         help='Skip files for which a context definition cannot be found (instead of failing)',
@@ -836,11 +738,9 @@ def _process_cmdln():
     )
 
     parser.add_argument(
-        '-r',
-        '--context-registry',
-        action='append',
-        default=[],
-        help='JSON context registry file containing an object of jsonFile:yamlContextFile pairs'
+        '-d',
+        '--domain-config',
+        help='Domain configuration to use for locating uplift contexts'
     )
 
     parser.add_argument(
@@ -863,22 +763,24 @@ def _process_cmdln():
 
     args = parser.parse_args()
 
-    context_registry = ContextRegistryList(*(ContextRegistry(c) for c in args.context_registry))
+    if args.domain_cfg:
+        domain_cfg = DomainConfiguration(args.domain_cfg)
+    else:
+        domain_cfg = None
 
-    outputfiles = process(args.input,
-                          contextfn=args.context,
-                          context_registry=context_registry,
-                          jsonldfn=args.json_ld_file if args.json_ld else False,
-                          ttlfn=args.ttl_file if args.ttl else False,
-                          batch=args.batch,
-                          base=args.base_uri,
-                          skip_on_missing_context=args.skip_on_missing_context,
-                          provenance_base_uri=False if args.no_provenance else args.provenance_base_uri,
-                          fetch_url_whitelist=args.url_whitelist,
-                          )
+    output_files = process(args.input,
+                           context_fn=args.context,
+                           domain_cfg=domain_cfg,
+                           jsonld_fn=args.json_ld_file if args.json_ld else False,
+                           ttl_fn=args.ttl_file if args.ttl else False,
+                           batch=args.batch,
+                           skip_on_missing_context=args.skip_on_missing_context,
+                           provenance_base_uri=False if args.no_provenance else args.provenance_base_uri,
+                           fetch_url_whitelist=args.url_whitelist,
+                           )
 
     if args.fs:
-        print(args.fs.join(str(outputfile) for outputfile in outputfiles))
+        print(args.fs.join(str(output_file) for output_file in output_files))
 
 
 if __name__ == '__main__':

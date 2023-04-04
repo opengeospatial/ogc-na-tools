@@ -20,7 +20,7 @@ This module uses the following [resource roles](https://www.w3.org/TR/dx-prof/#C
 import itertools
 import logging
 from collections import deque
-from typing import Union, Sequence, Optional, Generator, Any, cast
+from typing import Union, Sequence, Optional, Generator, Any, cast, Iterable
 from rdflib import Graph, RDF, PROF, OWL, URIRef, DCTERMS, Namespace, RDFS
 
 from ogc.na import util
@@ -29,6 +29,13 @@ from pathlib import Path
 from ogc.na.validation import ProfileValidationReport, ProfilesValidationReport
 
 PROFROLE = Namespace('http://www.w3.org/ns/dx/prof/role/')
+
+ROLE_ENTAILMENT = PROFROLE.entailment
+ROLE_ENTAILMENT_CLOSURE = PROFROLE['entailment-closure']
+ROLE_VALIDATION = PROFROLE.validation
+ROLE_VALIDATION_CLOSURE = PROFROLE['validation-closure']
+ROLE_ANNOTATION = PROFROLE.annotation
+ROLE_SEMANTIC_UPLIFT = PROFROLE['semantic-uplift']
 
 PROFILES_QUERY = """
     PREFIX prof: <http://www.w3.org/ns/dx/prof/>
@@ -51,30 +58,22 @@ PROFILES_QUERY = """
     } WHERE {
         __SERVICE__ {
             { ?profile a prof:Profile } UNION { ?other prof:isProfileOf ?profile }
-            ?profile prof:hasToken ?token ;
-                prof:hasResource ?resource ;
-                .
+            ?profile prof:hasToken ?token .
             OPTIONAL {
                 { ?profile owl:sameAs+ ?sameAs} UNION { ?sameAs owl:sameAs+ ?profile }
             }
             OPTIONAL { ?profile rdfs:label ?label }
             OPTIONAL { ?profile prof:isProfileOf+ ?ancestor }
             OPTIONAL {
+                ?profile prof:hasResource ?resource .
                 ?resource prof:hasRole ?role ;
                     dct:conformsTo shacl: ;
                     prof:hasArtifact ?artifact ;
                     .
-                FILTER(?role IN (profrole:entailment, 
-                                 profrole:validation))
             } 
             OPTIONAL {
                 ?resource prof:hasRole ?role ;
                     prof:hasArtifact ?artifact ;
-                    .
-                FILTER(?role IN (profrole:entailment,
-                                 profrole:entailment-closure,
-                                 profrole:validation-closure,
-                                 profrole:annotation))
             }
         }
     }
@@ -89,7 +88,8 @@ def find_profiles(g: Graph) -> Generator[URIRef, Any, None]:
 
 class Profile:
 
-    def __init__(self, token: str, profile_of: list[URIRef], label: str | None = None):
+    def __init__(self, uri: URIRef, token: str, profile_of: list[URIRef], label: str | None = None):
+        self.uri = uri
         self.token = token
         self.label = label
         self.profile_of = profile_of
@@ -101,15 +101,20 @@ class Profile:
     def get_artifacts(self, role: URIRef) -> list[URIRef]:
         return self.artifacts.get(role, [])
 
+    def __repr__(self):
+        return f"Profile({str(self.uri)},token={self.token}" \
+               f",profileOf=[{','.join(str(p) for p in self.profile_of)}]" \
+               f",roles=[{','.join(str(k) for k in self.artifacts.keys())}])"
+
 
 class ProfileRegistry:
 
-    def __init__(self, srcs: Union[str, Path, Sequence[Union[str, Path]]],
-                 local_artifact_mappings: dict[str, Union[str, Path]] = None,
+    def __init__(self, srcs: str | Path | Iterable[str | Path],
+                 local_artifact_mappings: dict[str, str | Path] = None,
                  ignore_artifact_errors=False):
 
         assert srcs is not None
-        if isinstance(srcs, str) or not isinstance(srcs, Sequence):
+        if isinstance(srcs, str) or not isinstance(srcs, Iterable):
             self._srcs = (srcs,)
         else:
             self._srcs = srcs
@@ -124,6 +129,71 @@ class ProfileRegistry:
         self._graphs: dict[URIRef, dict[URIRef, tuple[Graph, set[Union[str, Path]]]]] = {}
 
         self.ignore_artifact_errors = ignore_artifact_errors
+
+    def build_profile_chain(self, profiles: Sequence[URIRef | str],
+                            recursive: bool = True,
+                            sort: bool = True) -> list[URIRef]:
+        if not profiles:
+            return list(profiles)
+
+        if not sort:
+            # Only known profiles and remove duplicates
+            known = {URIRef(p) for p in profiles if p in self.profiles}
+            if recursive:
+                pending = set(known)
+                while pending:
+                    prof = self.profiles.get(pending.pop())
+                    for prof_of in prof.profile_of or ():
+                        if prof_of not in known:
+                            pending.add(prof_of)
+                        known.add(prof_of)
+            return list(known)
+
+        # Otherwise, sort DAG
+        # 1. Build dependency tree
+        dependencies: dict[URIRef, set[URIRef] | None] = {}
+        pending = deque(profiles) # using a deque to try and preserve as much of the original order as possible
+        while pending:
+            prof_uri = pending.popleft()
+            if prof_uri in dependencies:
+                # skip if duplicate
+                continue
+            prof = self.profiles.get(prof_uri)
+            if not prof:
+                # skip if unknown
+                continue
+            prof_deps = self.profiles.get(prof_uri).profile_of
+            if not prof_deps:
+                # has no dependencies
+                dependencies[prof_uri] = None
+            if not recursive:
+                # non-recursive => only work with provided profile list
+                prof_deps = (d for d in prof_deps if d in profiles)
+            else:
+                for p in prof_deps:
+                    if p not in pending:
+                        pending.appendleft(p)
+            dependencies[prof_uri] = set(prof_deps)
+
+        result: list[URIRef] = []
+        # 2. Sort dependencies
+        while True:
+            if not dependencies:
+                break
+            removed = {}
+            for parent_uri, child_uris in dependencies.items():
+                if not child_uris:
+                    removed[parent_uri] = True
+            if not removed:
+                raise ValueError('Cycle detected in profile DAG, cannot sort')
+            for rem in removed:
+                del dependencies[rem]
+                result.append(rem)
+            removed = set(removed)
+            for child_uris in dependencies.values():
+                child_uris -= removed
+
+        return result
 
     def _load_profiles(self):
         g: Graph = Graph()
@@ -150,7 +220,7 @@ class ProfileRegistry:
             label = g.value(profile_ref, RDFS.label)
             profile_of: list[URIRef] = cast(list[URIRef], list(g.objects(profile_ref, PROF.isProfileOf)))
 
-            profile = Profile(token, profile_of, label=str(label) if label else None)
+            profile = Profile(profile_ref, token, profile_of, label=str(label) if label else None)
 
             for resource_ref in g.objects(profile_ref, PROF.hasResource):
                 role_ref = g.value(resource_ref, PROF.hasRole)
@@ -161,7 +231,7 @@ class ProfileRegistry:
             for same_as_ref in g.objects(profile_ref, OWL.sameAs):
                 self.profiles[cast(URIRef, same_as_ref)] = profile
 
-    def _apply_mappings(self, uri: str) -> Union[Path, str]:
+    def _apply_mappings(self, uri: str) -> Path | str:
         """
         Returns the longest match in self._local_artifact_mappings (prefixes)
         for a given URI, or the URI itself if not found
@@ -177,13 +247,17 @@ class ProfileRegistry:
                 matchedlocal, matchedpath = l, p / uri[len(l):]
         return matchedpath
 
-    def get_artifacts(self, profile: URIRef, role: URIRef) -> Optional[set[Union[str, Path]]]:
+    def get_artifacts(self, profile: URIRef | str, role: URIRef) -> set[str | Path] | None:
+        if not isinstance(profile, URIRef):
+            profile = URIRef(profile)
         if profile not in self.profiles:
             return None
 
         return set(self._apply_mappings(artifact_ref) for artifact_ref in self.profiles[profile].get_artifacts(role))
 
-    def get_graph(self, profile: URIRef, role: URIRef) -> tuple[Optional[Graph], Optional[set[Union[str, Path]]]]:
+    def get_graph(self, profile: URIRef | str, role: URIRef) -> tuple[Graph | None, set[str | Path] | None]:
+        if not isinstance(profile, URIRef):
+            profile = URIRef(profile)
         if profile not in self.profiles:
             return None, None
 
@@ -218,18 +292,18 @@ class ProfileRegistry:
         profiles = deque(find_profiles(g))
         if additional_profiles:
             profiles.extend(p if isinstance(p, URIRef) else URIRef(p) for p in additional_profiles)
-        seen = set()
+
+        profiles = self.build_profile_chain(profiles, recursive=recursive)
+
         artifacts = set()
-        while profiles:
-            profile_ref = profiles.popleft()
-            rules, rules_artifacts = self.get_graph(profile_ref, PROFROLE.entailment)
-            extra, extra_artifacts = self.get_graph(profile_ref, PROFROLE['entailment-closure'])
+        for profile_ref in profiles:
+            rules, rules_artifacts = self.get_graph(profile_ref, ROLE_ENTAILMENT)
+            extra, extra_artifacts = self.get_graph(profile_ref, ROLE_ENTAILMENT_CLOSURE)
             if rules_artifacts:
                 artifacts.update(rules_artifacts)
             if extra_artifacts:
                 artifacts.update(extra_artifacts)
             g = util.entail(g, rules, extra or None, True)
-            seen.add(profile_ref)
 
             profile = self.profiles.get(profile_ref)
             if recursive and profile and profile.profile_of:
@@ -238,43 +312,38 @@ class ProfileRegistry:
         return g, artifacts
 
     def validate(self, g: Graph,
-                 additional_profiles: Optional[Sequence[str | URIRef]] = None,
+                 additional_profiles: Sequence[str | URIRef] | None = None,
                  recursive: bool = True) -> ProfilesValidationReport:
         result = ProfilesValidationReport()
         profiles = deque(find_profiles(g))
         if additional_profiles:
             profiles.extend(p if isinstance(p, URIRef) else URIRef(p) for p in additional_profiles)
-        seen = set()
-        while profiles:
-            profile_ref = profiles.popleft()
-            if profile_ref in seen:
-                continue
-            seen.add(profile_ref)
+
+        profiles = self.build_profile_chain(profiles, recursive=recursive, sort=False)
+
+        for profile_ref in profiles:
             logger.debug("Validating with %s", str(profile_ref))
             profile = self.profiles.get(profile_ref)
             if not profile:
                 logger.warning("Profile %s not found", profile_ref)
                 # should we fail?
                 continue
-            rules, rules_artifacts = self.get_graph(profile_ref, PROFROLE.validation)
-            extra, extra_artifacts = self.get_graph(profile_ref, PROFROLE['validation-closure'])
+            rules, rules_artifacts = self.get_graph(profile_ref, ROLE_VALIDATION)
+            extra, extra_artifacts = self.get_graph(profile_ref, ROLE_VALIDATION_CLOSURE)
             prof_result = util.validate(g, rules, extra)
             prof_result.used_resources = set(itertools.chain(rules_artifacts or [], extra_artifacts or []))
             result.add(ProfileValidationReport(profile_ref, profile.token, prof_result))
             logger.debug("Adding validation results for %s", profile_ref)
 
-            if recursive and profile.profile_of:
-                profiles.extend([pof for pof in profile.profile_of if pof not in result])
-
         return result
 
-    def get_annotations(self, g: Graph, additional_profiles: Optional[Sequence[URIRef]] = None) -> dict[Path, Graph]:
+    def get_annotations(self, g: Graph, additional_profiles: Sequence[URIRef | str] | None = None) -> dict[Path, Graph]:
         result = {}
         profiles = find_profiles(g)
         if additional_profiles:
             profiles = itertools.chain(profiles, additional_profiles)
         for profile_ref in profiles:
-            artifacts = self.get_artifacts(profile_ref, PROFROLE.annotation)
+            artifacts = self.get_artifacts(profile_ref, ROLE_ANNOTATION)
             for artifact in artifacts:
                 result[artifact] = Graph().parse(artifact)
         return result

@@ -1,32 +1,35 @@
-@prefix : <http://www.example.org/ogc/domain-cfg##> .
-@prefix owl: <http://www.w3.org/2002/07/owl#> .
-@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
-@prefix xml: <http://www.w3.org/XML/1998/namespace> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix :     <http://www.example.org/ogc/domain-cfg##> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix xml:  <http://www.w3.org/XML/1998/namespace> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
 @prefix dcat: <http://www.w3.org/ns/dcat#> .
 @prefix dcfg: <http://www.example.org/ogc/domain-cfg#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @base <http://www.example.org/ogc/domain-cfg#> .
 
-<http://www.example.org/ogc/domain-cfg#> rdf:type owl:Ontology ;
-                                          owl:imports <http://www.w3.org/ns/dcat> .
+<http://www.example.org/ogc/domain-cfg#>
+  rdf:type    owl:Ontology ;
+  owl:imports <http://www.w3.org/ns/dcat> .
 
 #################################################################
 #    Object Properties
 #################################################################
 
 ###  http://www.example.org/ogc/domain-cfg#baseURI
-dcfg:baseURI rdf:type owl:ObjectProperty ;
-             rdfs:subPropertyOf owl:topObjectProperty ;
-             rdfs:domain dcfg:LocalArtifactMapping .
+dcfg:baseURI
+  rdf:type           owl:ObjectProperty ;
+  rdfs:subPropertyOf owl:topObjectProperty ;
+  rdfs:domain        dcfg:LocalArtifactMapping .
 
 
 ###  http://www.example.org/ogc/domain-cfg#localArtifactMapping
-dcfg:localArtifactMapping rdf:type owl:ObjectProperty ;
-                          rdfs:subPropertyOf owl:topObjectProperty ;
-                          rdfs:domain dcfg:DomainConfiguration ;
-                          rdfs:range dcfg:LocalArtifactMapping ;
-                          rdfs:label "has local artifact mapping" .
+dcfg:localArtifactMapping
+  rdf:type           owl:ObjectProperty ;
+  rdfs:subPropertyOf owl:topObjectProperty ;
+  rdfs:domain        dcfg:DomainConfiguration ;
+  rdfs:range         dcfg:LocalArtifactMapping ;
+  rdfs:label         "has local artifact mapping" .
 
 
 #################################################################
@@ -34,30 +37,31 @@ dcfg:localArtifactMapping rdf:type owl:ObjectProperty ;
 #################################################################
 
 ###  http://www.example.org/ogc/domain-cfg#glob
-dcfg:glob rdf:type owl:DatatypeProperty ;
-          rdfs:domain dcat:Dataset ;
-          rdfs:range xsd:string ;
-          rdfs:comment "Defines a glob-style pattern por file name matching." ;
-          rdfs:label "has glob" .
+dcfg:glob
+  rdf:type     owl:DatatypeProperty ;
+  rdfs:domain  dcat:Dataset ;
+  rdfs:range   xsd:string ;
+  rdfs:comment "Defines a glob-style pattern por file name matching." ;
+  rdfs:label   "has glob" .
 
 
 ###  http://www.example.org/ogc/domain-cfg#localPath
-dcfg:localPath rdf:type owl:DatatypeProperty ;
-               rdfs:subPropertyOf owl:topDataProperty ;
-               rdfs:domain [ rdf:type owl:Class ;
-                             owl:unionOf ( dcfg:LocalArtifactMapping
-                                           dcat:Dataset
-                                         )
-                           ] ;
-               rdfs:range xsd:string ;
-               rdfs:label "has local path" .
+dcfg:localPath
+  rdf:type           owl:DatatypeProperty ;
+  rdfs:subPropertyOf owl:topDataProperty ;
+  rdfs:domain        [ rdf:type    owl:Class ;
+                       owl:unionOf ( dcfg:LocalArtifactMapping
+                                     dcat:Dataset ) ] ;
+  rdfs:range         xsd:string ;
+  rdfs:label         "has local path" .
 
 
 ###  http://www.example.org/ogc/domain-cfg#uriRootFilter
-dcfg:uriRootFilter rdf:type owl:DatatypeProperty ;
-                   rdfs:domain dcat:Dataset ;
-                   rdfs:range xsd:string ;
-                   rdfs:label "has URI root filter" .
+dcfg:uriRootFilter
+  rdf:type    owl:DatatypeProperty ;
+  rdfs:domain dcat:Dataset ;
+  rdfs:range  xsd:string ;
+  rdfs:label  "has URI root filter" .
 
 
 #################################################################
@@ -65,14 +69,17 @@ dcfg:uriRootFilter rdf:type owl:DatatypeProperty ;
 #################################################################
 
 ###  http://www.example.org/ogc/domain-cfg#DomainConfiguration
-dcfg:DomainConfiguration rdf:type owl:Class ;
-                         rdfs:subClassOf dcat:Dataset .
+dcfg:DomainConfiguration
+  rdf:type        owl:Class ;
+  rdfs:subClassOf dcat:Dataset .
 
 
 ###  http://www.example.org/ogc/domain-cfg#LocalArtifactMapping
-dcfg:LocalArtifactMapping rdf:type owl:Class ;
-                          owl:disjointWith dcat:Resource ;
-                          rdfs:label "Local artifact mapping" .
+dcfg:LocalArtifactMapping
+  rdf:type         owl:Class ;
+  owl:disjointWith dcat:Resource ;
+  rdfs:label       "Local artifact mapping" .
+
 
 
 ###  http://www.w3.org/ns/dcat#Resource

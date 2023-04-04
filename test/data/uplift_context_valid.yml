@@ -1,0 +1,31 @@
+path-scope: graph
+
+transform: '[to_entries[]|.value+{"@id":("#"+.key),"@type":["MyType", "skos:Concept"]}]'
+
+types:
+  '$[?type="IS"]': [AddedClass, ISClass]
+  '$[?type="DP"]': [AddedClass, DPClass]
+
+base-uri: http://example.org/vocab#
+
+context:
+  '$': [
+    "http://defs-dev.opengis.net/ogc-na/definitions/profiles/resources/dcterms.jsonld",
+    "http://defs-dev.opengis.net/ogc-na/definitions/profiles/resources/skos.jsonld",
+    {
+      "skos": "http://www.w3.org/2004/02/skos/core#",
+      "@vocab": "http://example.org/vocab#",
+      "type": "http://www.opengis.net/def/metamodel/ogc-na/doctype",
+      "alternative": "skos:altLabel",
+      "title": "skos:definition",
+      "description": "rdfs:comment",
+      "date": "dct:created",
+      "URL": "rdfs:seeAlso"
+    }
+  ]
+
+  '$[?type="IS"]': {
+    "@vocab": "http://example.org/vocab3#"
+  }
+
+context-position: before

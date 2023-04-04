@@ -30,7 +30,6 @@ from rdflib import Graph, RDF, SKOS
 from ogc.na.domain_config import DomainConfiguration, DomainConfigurationEntry
 from ogc.na.profile import ProfileRegistry
 from ogc.na.provenance import generate_provenance, ProvenanceMetadata, FileProvenanceMetadata
-from ogc.na.util import validate
 
 logger = logging.getLogger('update_vocabs')
 
@@ -50,26 +49,26 @@ def setup_logging(debug: bool = False):
 
     :param debug: whether to set DEBUG level
     """
-    rootlogger = logging.getLogger()
-    rootlogger.setLevel(logging.DEBUG if debug else logging.INFO)
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG if debug else logging.INFO)
 
     fmt = logging.Formatter(fmt='%(name)s [%(levelname)s] %(message)s')
 
-    hout = logging.StreamHandler(sys.stdout)
-    hout.setLevel(logging.DEBUG)
-    hout.setFormatter(fmt)
-    hout.addFilter(lambda rec: rec.levelno <= logging.INFO)
+    handler_out = logging.StreamHandler(sys.stdout)
+    handler_out.setLevel(logging.DEBUG)
+    handler_out.setFormatter(fmt)
+    handler_out.addFilter(lambda rec: rec.levelno <= logging.INFO)
 
-    herr = logging.StreamHandler(sys.stderr)
-    herr.setLevel(logging.WARNING)
-    herr.setFormatter(fmt)
+    handler_err = logging.StreamHandler(sys.stderr)
+    handler_err.setLevel(logging.WARNING)
+    handler_err.setFormatter(fmt)
 
-    rootlogger.addHandler(hout)
-    rootlogger.addHandler(herr)
+    root_logger.addHandler(handler_out)
+    root_logger.addHandler(handler_err)
 
 
 def load_vocab(vocab: Union[Graph, str, Path], graph_uri: str,
-               graph_store: str, authdetails: tuple[str] = None) -> None:
+               graph_store: str, auth_details: tuple[str] = None) -> None:
     """
     Loads a vocabulary onto a triplestore using the [SPARQL Graph Store
     protocol](https://www.w3.org/TR/sparql11-http-rdf-update/).
@@ -77,7 +76,7 @@ def load_vocab(vocab: Union[Graph, str, Path], graph_uri: str,
     :param vocab: the file or Graph to load
     :param graph_uri: a target graph URI
     :param graph_store: the target SPARQL Graph Store protocol URL
-    :param authdetails: a `(username, password)` tuple for authentication
+    :param auth_details: a `(username, password)` tuple for authentication
     :return:
     """
     # PUT is equivalent to DROP GRAPH + INSERT DATA
@@ -94,7 +93,7 @@ def load_vocab(vocab: Union[Graph, str, Path], graph_uri: str,
         params={
             'graph': graph_uri,
         },
-        auth=authdetails,
+        auth=auth_details,
         headers={
             'Content-type': 'text/turtle',
         },
@@ -119,7 +118,7 @@ def get_graph_uri_for_vocab(g: Graph = None) -> Generator[str, None, None]:
 
 
 def get_entailed_base_path(f: Path, g: Graph, rootpattern: str = '/def/',
-                      entailed_dir: str = DEFAULT_ENTAILED_DIR) -> tuple:
+                           entailed_dir: str = DEFAULT_ENTAILED_DIR) -> tuple:
     """
     Tries to find the base output file path for an entailed version of a source Graph.
 
@@ -218,7 +217,6 @@ def _main():
     parser.add_argument(
         "domain_cfg",
         metavar="domain-cfg",
-        nargs="+",
         help=("Domain configuration (can be a local or remote RDF file, "
               "or a SPARQL endpoint in the form 'sparql:http://example.org/sparql')"),
     )
@@ -334,26 +332,24 @@ def _main():
     if graph_store:
         logger.info(f"Using SPARQL graph store %s with{'' if authdetails else 'out'} authentication", graph_store)
 
-    modlist = []
-    addlist = []
-    dellist = []
+    mod_list = []
+    add_list = []
 
     if args.modified:
-        modlist = args.modified.split(",")
-        logger.info("Modified: %s", modlist)
+        mod_list = args.modified.split(",")
+        logger.info("Modified: %s", mod_list)
 
     if args.added:
-        addlist = args.added.split(",")
-        logger.info("Added: %s", addlist)
+        add_list = args.added.split(",")
+        logger.info("Added: %s", add_list)
 
     if args.removed:
         dellist = args.removed.split(',')
         logger.info("Removed: %s", dellist)
 
-    domaincfg = DomainConfiguration(args.working_directory)
-    for dcfg in args.domain_cfg:
-        domaincfg.load(dcfg, domain=args.domain)
-    if not len(domaincfg):
+    domain_cfg = DomainConfiguration(args.domain_cfg, working_directory=args.working_directory)
+    cfg_entries = domain_cfg.entries
+    if not len(cfg_entries):
         if args.domain:
             logger.warning('No configuration found in %s for domain %s, exiting',
                            args.domaincfg, args.domain)
@@ -361,7 +357,7 @@ def _main():
             logger.warning('No configuration found in %s exiting', args.domaincfg)
         sys.exit(1)
 
-    artifact_mappings = dict(domaincfg.local_artifacts_mapping)
+    artifact_mappings = dict(domain_cfg.local_artifacts_mapping)
     if args.local_artifact_mappings:
         for mappingstr in args.local_artifact_mappings:
             mapping = mappingstr.split('=', 1)
@@ -376,11 +372,11 @@ def _main():
     modified: dict[Path, DomainConfigurationEntry]
     added: dict[Path, DomainConfigurationEntry]
     if args.batch:
-        modified = domaincfg.find_all()
+        modified = cfg_entries.find_all()
         added = {}
     else:
-        modified = domaincfg.find_files(modlist)
-        added = domaincfg.find_files(addlist)
+        modified = cfg_entries.find_entries_for_files(mod_list)
+        added = cfg_entries.find_entries_for_files(add_list)
 
     output_path = Path(args.output_directory) if args.output_directory else None
 
@@ -400,7 +396,7 @@ def _main():
                          [FileProvenanceMetadata(filename=c) for c in args.domain_cfg],
                     start=datetime.now(),
                     end_auto=True,
-                    root_directory=domaincfg.working_directory,
+                    root_directory=domain_cfg.working_directory,
                     batch_activity_id=activity_id,
                     activity_label='Entailment and validation',
                     comment=cmdline,
@@ -468,7 +464,7 @@ def _main():
                                       str(path), str(doc), str(e))
                     versioned_gname = f'{graphname}{n + 1}'
 
-            report.setdefault(os.path.relpath(cfg.localpath), {}) \
+            report.setdefault(cfg.identifier, {}) \
                 .setdefault(report_cat, []).append(os.path.relpath(doc))
 
     for scope, scopereport in report.items():
