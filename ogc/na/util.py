@@ -6,7 +6,7 @@ import os.path
 import shlex
 from glob import glob
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, Union, Any
 
 import requests
 import rfc3987
@@ -15,6 +15,12 @@ from pyshacl import validate as shacl_validate
 from urllib.parse import urlparse
 
 from ogc.na.validation import ValidationReport
+
+import yaml
+try:
+    from yaml import CLoader as YamlLoader, CSafeLoader as SafeYamlLoader
+except ImportError:
+    from yaml import Loader as YamlLoader, SafeLoader as SameYamlLoader
 
 
 def copy_triples(src: Graph, dst: Optional[Graph] = None) -> Graph:
@@ -120,35 +126,32 @@ def isurl(url: str, http_only: bool = False) -> bool:
 
 
 def load_yaml(filename: str | Path = None,
-              content: str | None = None,
-              url: str | None = None) -> dict:
+              content: Any | None = None,
+              url: str | None = None,
+              safe: bool = True) -> dict:
     """
     Loads a YAML file either from a file, a string or a URL.
 
     :param filename: YAML document file name
     :param content: str with YAML contents
     :param url: url from which to retrieve the contents
+    :param safe: whether to use safe YAMl loading
     :return: a dict with the loaded data
     """
 
     if bool(filename) + bool(content) + bool(url) > 1:
         raise ValueError("One (and only one) of filename, contents and url must be provided")
 
-    from yaml import load
-    try:
-        from yaml import CLoader as Loader
-    except ImportError:
-        from yaml import Loader
     if filename:
         with open(filename, 'r') as f:
-            return load(f, Loader=Loader)
+            return yaml.load(f, Loader=SafeYamlLoader if safe else YamlLoader)
     else:
         if url:
             content = requests.get(url).text
-        return load(content, Loader=Loader)
+        return yaml.load(content, Loader=SafeYamlLoader if safe else YamlLoader)
 
 
-def isiri(s: str) -> bool:
+def is_iri(s: str) -> bool:
     try:
         return rfc3987.parse(s, rule='IRI') is not None
     except ValueError:
