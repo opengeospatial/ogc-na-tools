@@ -526,10 +526,10 @@ def find_contexts(filename: Path | str,
 
     # 2. Same filename with yml/yaml extension or autodetect in dir
     for context_path in (
-        filename.with_suffix('yml'),
-        filename.with_suffix('yaml'),
-        filename.with_suffix('').with_suffix('yml'),
-        filename.with_suffix('').with_suffix('yaml'),
+        filename.with_suffix('.yml'),
+        filename.with_suffix('.yaml'),
+        filename.with_suffix('').with_suffix('.yml'),
+        filename.with_suffix('').with_suffix('.yaml'),
         filename.parent / '_json-context.yml',
         filename.parent / '_json-context.yaml',
     ):
@@ -722,6 +722,7 @@ def _process_cmdln():
     parser.add_argument(
         '-s',
         '--skip-on-missing-context',
+        action='store_true',
         help='Skip files for which a context definition cannot be found (instead of failing)',
     )
 
