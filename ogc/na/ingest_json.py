@@ -334,19 +334,21 @@ def generate_graph(input_data: dict | list,
         raise ValueError('context must be provided')
 
     g = Graph()
+    base_uri = None
     for prefix, ns in DEFAULT_NAMESPACES.items():
         g.bind(prefix, Namespace(ns))
 
     jdoc_ld = input_data
     context_list = context if isinstance(context, Sequence) else (context,)
     for context_entry in context_list:
+        base_uri = context_entry.get('base-uri', base_uri)
         jdoc_ld = uplift_json(input_data, context_entry,
                               fetch_timeout=fetch_timeout,
                               fetch_url_whitelist=fetch_url_whitelist)
 
     options = {}
     if not base:
-        if context.get('base-uri'):
+        if base_uri:
             options['base'] = context['base-uri']
         elif '@context' in jdoc_ld:
             # Try to extract from @context
@@ -411,6 +413,7 @@ def process_file(input_fn: str | Path,
         raise IOError(f'Input is not a file ({input_fn})')
 
     contexts = []
+    provenance_contexts = []
     if not context_fn:
         for found_context in (find_contexts(input_fn, domain_config=domain_cfg) or ()):
             if isinstance(found_context, Path):
@@ -419,10 +422,15 @@ def process_file(input_fn: str | Path,
                 # Profile URI
                 artifact_urls = domain_cfg.profile_registry.get_artifacts(found_context, profile.ROLE_SEMANTIC_UPLIFT)
                 if artifact_urls:
-                    contexts.extend(util.load_yaml(a) for a in artifact_urls)
+                    for a in artifact_urls:
+                        contexts.append(util.load_yaml(a))
+                        provenance_contexts.append(a)
 
     elif not isinstance(context_fn, Sequence) or isinstance(context_fn, str):
+        provenance_contexts = (context_fn,)
         contexts = (util.load_yaml(context_fn),)
+    else:
+        provenance_contexts = context_fn
 
     if not contexts:
         raise MissingContextException('No context file provided and one could not be discovered automatically')
@@ -433,7 +441,7 @@ def process_file(input_fn: str | Path,
     provenance_metadata: ProvenanceMetadata | None = None
     if provenance_base_uri is not False:
         used = [FileProvenanceMetadata(filename=input_fn, mime_type='application/json')]
-        used.extend(FileProvenanceMetadata(filename=c, mime_type='application/yaml') for c in context_fn)
+        used.extend(FileProvenanceMetadata(filename=c, mime_type='application/yaml') for c in provenance_contexts)
         provenance_metadata = ProvenanceMetadata(
             used=used,
             batch_activity_id=provenance_process_id,
@@ -595,7 +603,7 @@ def process(input_files: str | Path | Sequence[str | Path],
             skip_on_missing_context: bool = False,
             provenance_base_uri: Optional[Union[str, bool]] = None,
             fetch_timeout: int = 5,
-            fetch_url_whitelist: Optional[Union[Sequence, bool]] = None) -> list[Path]:
+            fetch_url_whitelist: Optional[Union[Sequence, bool]] = None) -> list[UpliftResult]:
     """
     Performs the JSON-LD uplift process.
 
@@ -618,7 +626,7 @@ def process(input_files: str | Path | Sequence[str | Path],
         throw an exception
     :return: a list of JSON-LD and/or Turtle output files
     """
-    result = []
+    result: list[UpliftResult] = []
     process_id = str(uuid.uuid4())
     if isinstance(input_files, str):
         input_files = (input_files,)
@@ -641,7 +649,7 @@ def process(input_files: str | Path | Sequence[str | Path],
                 continue
             logger.info('File %s matches, processing', fn)
             try:
-                result += process_file(
+                result.append(process_file(
                     fn,
                     jsonld_fn=False if jsonld_fn is False else None,
                     ttl_fn=False if ttl_fn is False else None,
@@ -651,7 +659,7 @@ def process(input_files: str | Path | Sequence[str | Path],
                     provenance_process_id=process_id,
                     fetch_timeout=fetch_timeout,
                     fetch_url_whitelist=fetch_url_whitelist,
-                )
+                ))
             except Exception as e:
                 if skip_on_missing_context:
                     logger.warning("Error processing JSON/JSON-LD file, skipping: %s", getattr(e, 'msg', str(e)))
@@ -660,7 +668,7 @@ def process(input_files: str | Path | Sequence[str | Path],
     else:
         for input_file in input_files:
             try:
-                result += process_file(
+                result.append(process_file(
                     input_file,
                     jsonld_fn=jsonld_fn if jsonld_fn is not None else '-',
                     ttl_fn=ttl_fn if ttl_fn is not None else '-',
@@ -670,7 +678,7 @@ def process(input_files: str | Path | Sequence[str | Path],
                     provenance_process_id=process_id,
                     fetch_timeout=fetch_timeout,
                     fetch_url_whitelist=fetch_url_whitelist,
-                )
+                ))
             except Exception as e:
                 if skip_on_missing_context:
                     logger.warning("Error processing JSON/JSON-LD file, skipping: %s", getattr(e, 'msg', str(e)))
@@ -769,19 +777,19 @@ def _process_cmdln():
     else:
         domain_cfg = None
 
-    output_files = process(args.input,
-                           context_fn=args.context,
-                           domain_cfg=domain_cfg,
-                           jsonld_fn=args.json_ld_file if args.json_ld else False,
-                           ttl_fn=args.ttl_file if args.ttl else False,
-                           batch=args.batch,
-                           skip_on_missing_context=args.skip_on_missing_context,
-                           provenance_base_uri=False if args.no_provenance else args.provenance_base_uri,
-                           fetch_url_whitelist=args.url_whitelist,
-                           )
+    result = process(args.input,
+                     context_fn=args.context,
+                     domain_cfg=domain_cfg,
+                     jsonld_fn=args.json_ld_file if args.json_ld else False,
+                     ttl_fn=args.ttl_file if args.ttl else False,
+                     batch=args.batch,
+                     skip_on_missing_context=args.skip_on_missing_context,
+                     provenance_base_uri=False if args.no_provenance else args.provenance_base_uri,
+                     fetch_url_whitelist=args.url_whitelist,
+                     )
 
     if args.fs:
-        print(args.fs.join(str(output_file) for output_file in output_files))
+        print(args.fs.join(str(output_file) for r in result for output_file in r.output_files))
 
 
 if __name__ == '__main__':
