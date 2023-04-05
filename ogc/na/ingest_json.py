@@ -763,8 +763,8 @@ def _process_cmdln():
 
     args = parser.parse_args()
 
-    if args.domain_cfg:
-        domain_cfg = DomainConfiguration(args.domain_cfg)
+    if args.domain_config:
+        domain_cfg = DomainConfiguration(args.domain_config)
     else:
         domain_cfg = None
 
