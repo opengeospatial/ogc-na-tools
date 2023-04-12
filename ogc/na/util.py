@@ -20,7 +20,7 @@ import yaml
 try:
     from yaml import CLoader as YamlLoader, CSafeLoader as SafeYamlLoader
 except ImportError:
-    from yaml import Loader as YamlLoader, SafeLoader as SameYamlLoader
+    from yaml import Loader as YamlLoader, SafeLoader as SafeYamlLoader
 
 
 def copy_triples(src: Graph, dst: Optional[Graph] = None) -> Graph:
