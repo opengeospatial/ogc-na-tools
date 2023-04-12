@@ -428,7 +428,7 @@ class ContextBuilder:
         return own_context
 
 
-def dump_annotated_schemas(annotator: SchemaAnnotator, subdir: Path | str = 'annotated'):
+def dump_annotated_schemas(annotator: SchemaAnnotator, subdir: Path | str = 'annotated') -> list[Path]:
     """
     Creates a "mirror" directory (named `annotated` by default) with the resulting
     schemas annotated by a `SchemaAnnotator`.
@@ -438,6 +438,7 @@ def dump_annotated_schemas(annotator: SchemaAnnotator, subdir: Path | str = 'ann
     """
     wd = Path().resolve()
     subdir = subdir if isinstance(subdir, Path) else Path(subdir)
+    result = []
     for path, schema in annotator.schemas.items():
 
         if isinstance(path, Path):
@@ -454,6 +455,10 @@ def dump_annotated_schemas(annotator: SchemaAnnotator, subdir: Path | str = 'ann
                 json.dump(schema.schema, f, indent=2)
             else:
                 yaml.dump(schema.schema, f, sort_keys=False)
+
+        result.append(outputfn)
+
+    return result
 
 
 def _main():
