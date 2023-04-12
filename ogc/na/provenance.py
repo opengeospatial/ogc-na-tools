@@ -50,6 +50,7 @@ def add_provenance_entity(g: Graph, metadata: FileProvenanceMetadata = None,
                           root_directory: Optional[Union[str, Path]] = None,
                           base_uri: Optional[str] = None) -> URIRef:
     entity = None
+    mime = None
     if metadata:
         mime = metadata.mime_type
 
@@ -85,7 +86,7 @@ def add_provenance_entity(g: Graph, metadata: FileProvenanceMetadata = None,
             try:
                 git_repo = git.Repo(filename, search_parent_directories=True)
                 g.add((entity, DCTERMS.hasVersion, Literal(f"git:{git_repo.head.object.hexsha}")))
-            except (git.InvalidGitRepositoryError, git.NoSuchPathError):
+            except:
                 pass
 
     if not entity:
