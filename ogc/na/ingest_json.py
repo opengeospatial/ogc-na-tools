@@ -628,7 +628,7 @@ def process(input_files: str | Path | Sequence[str | Path],
     """
     result: list[UpliftResult] = []
     process_id = str(uuid.uuid4())
-    if isinstance(input_files, str):
+    if isinstance(input_files, str) or not isinstance(input_files, Sequence):
         input_files = (input_files,)
     if batch:
         logger.info("Input files: %s", input_files)
