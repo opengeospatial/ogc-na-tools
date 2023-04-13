@@ -311,7 +311,11 @@ class SchemaAnnotator:
             if not properties:
                 return
 
+            empty_properties = []
             for prop, prop_value in properties.items():
+                if not prop_value:
+                    empty_properties.append(prop)
+                    continue
                 if prop in terms:
                     prop_value['@id'] = terms[prop]
                 if '$ref' in prop_value:
@@ -327,6 +331,8 @@ class SchemaAnnotator:
                             self._process_schema(url=ref)
                         else:
                             self._process_schema(fn=ref)
+
+            properties.update({p: {'@id': terms[p]} for p in empty_properties})
 
         schema_type = schema.get('type')
 
