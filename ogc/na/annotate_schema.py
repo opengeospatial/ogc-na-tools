@@ -386,11 +386,11 @@ class ContextBuilder:
             if not isinstance(where, dict):
                 return
             for prop, prop_val in where.get('properties', {}).items():
-                if '@id' in prop_val:
+                if ANNOTATION_ID in prop_val:
                     prop_context = {
                         '@id': prop_val[ANNOTATION_ID]
                     }
-                    if '@type' in prop_val:
+                    if ANNOTATION_TYPE in prop_val:
                         prop_context['@type'] = prop_val[ANNOTATION_TYPE]
 
                     if '$ref' in prop_val:
@@ -406,10 +406,13 @@ class ContextBuilder:
         for i in ('allOf', 'anyOf', 'oneOf'):
             l = schema.get(i)
             if isinstance(l, list):
-                for schema_ref in l:
-                    if isinstance(schema_ref, dict) and '$ref' in schema_ref:
-                        ref_fn, ref_url = resolve_ref(schema_ref['$ref'], fn, url, base_url)
-                        merge_dicts(self._build_context(ref_fn, ref_url), own_context)
+                for sub_schema in l:
+                    if isinstance(sub_schema, dict):
+                        if '$ref' in sub_schema:
+                            ref_fn, ref_url = resolve_ref(sub_schema['$ref'], fn, url, base_url)
+                            merge_dicts(self._build_context(ref_fn, ref_url), own_context)
+                        else:
+                            read_properties(sub_schema)
 
         read_properties(schema)
 
@@ -445,7 +448,7 @@ def dump_annotated_schemas(annotator: SchemaAnnotator, subdir: Path | str = 'ann
 
     :param annotator: a `SchemaAnnotator` with the annotated schemas to read
     :param subdir: a name for the mirror directory
-    :param root_dir: root directory for computing relative path to schemas
+    :param root_dir: root directory for computing relative paths to schemas
     """
     wd = (Path(root_dir) if root_dir else Path()).resolve()
     subdir = subdir if isinstance(subdir, Path) else Path(subdir)
