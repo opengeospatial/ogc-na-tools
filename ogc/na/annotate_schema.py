@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
 This module offers functionality to semantically enrich JSON Schemas
-by using `@modelReference` annotations pointing to JSON-LD context documents,
+by using `x-jsonld-context` annotations pointing to JSON-LD context documents,
 and also to build ready-to-use JSON-LD contexts from annotated JSON Schemas.
 
 An example of an annotated JSON schema:
 
 ```yaml
 "$schema": https://json-schema.org/draft/2020-12/schema
-"@modelReference": observation.context.jsonld
+"x-jsonld-context": observation.context.jsonld
 title: Observation
 type: object
 required:
@@ -27,7 +27,7 @@ properties:
     type: string
 ```
 
-... and its linked `@modelReference`:
+... and its linked `x-jsonld-context`:
 
 ```json
 {
@@ -53,15 +53,15 @@ required:
 - observationTime
 properties:
   featureOfInterest:
-    '@id': http://www.w3.org/ns/sosa/featureOfInterest
+    'x-jsonld-id': http://www.w3.org/ns/sosa/featureOfInterest
     type: string
   hasResult:
-    '@id': http://www.w3.org/ns/sosa/hasResult
+    'x-jsonld-id': http://www.w3.org/ns/sosa/hasResult
     type: object
   observationCollection:
     type: string
   observationTime:
-    '@id': http://www.w3.org/ns/sosa/resultTime
+    'x-jsonld-id': http://www.w3.org/ns/sosa/resultTime
     format: date-time
     type: string
 ```
@@ -94,7 +94,7 @@ contain `$ref`s to them).
 
 This module can be run as a script, both for schema annotation and for context generation.
 
-To annotate a schema (that already contains a `@modelReference` to a JSON-LD context resource):
+To annotate a schema (that already contains a `x-jsonld-context` to a JSON-LD context resource):
 
 ```shell
 python -m ogc.na.annotate_schema --file path/to/schema.file.yaml
@@ -132,6 +132,10 @@ except ImportError:
     from yaml import Loader as YamlLoader, Dumper as YamlDumper
 
 logger = logging.getLogger(__name__)
+
+ANNOTATION_CONTEXT = 'x-jsonld-context'
+ANNOTATION_ID = 'x-jsonld-id'
+ANNOTATION_TYPE = 'x-jsonld-type'
 
 
 @dataclasses.dataclass
@@ -268,7 +272,7 @@ def read_context_terms(file: Path | str = None, url: str = None) -> dict[str, st
 class SchemaAnnotator:
     """
     Builds a set of annotated JSON schemas from a collection of input schemas
-    that have `@modelReference`s to JSON-LD context documents.
+    that have `x-jsonld-context`s to JSON-LD context documents.
 
     The results will be stored in the `schemas` property (a dictionary of
     schema-path-or-url -> AnnotatedSchema mappings).
@@ -291,11 +295,11 @@ class SchemaAnnotator:
         contents, base_url = read_contents(fn, url)
         schema, is_json = load_json_yaml(contents)
 
-        contextfn = schema.get('@modelReference')
+        contextfn = schema.get(ANNOTATION_CONTEXT)
         if not contextfn:
             return None
 
-        del schema['@modelReference']
+        del schema[ANNOTATION_CONTEXT]
 
         base_url = schema.get('$id', base_url)
 
@@ -317,7 +321,7 @@ class SchemaAnnotator:
                     empty_properties.append(prop)
                     continue
                 if prop in terms:
-                    prop_value['@id'] = terms[prop]
+                    prop_value[ANNOTATION_ID] = terms[prop]
                 if '$ref' in prop_value:
 
                     ref_fn, ref_url = resolve_ref(prop_value['$ref'], fn, url, base_url)
@@ -332,7 +336,7 @@ class SchemaAnnotator:
                         else:
                             self._process_schema(fn=ref)
 
-            properties.update({p: {'@id': terms[p]} for p in empty_properties})
+            properties.update({p: {ANNOTATION_ID: terms[p]} for p in empty_properties})
 
         schema_type = schema.get('type')
 
@@ -385,10 +389,10 @@ class ContextBuilder:
             for prop, prop_val in where.get('properties', {}).items():
                 if '@id' in prop_val:
                     prop_context = {
-                        '@id': prop_val['@id']
+                        '@id': prop_val[ANNOTATION_ID]
                     }
                     if '@type' in prop_val:
-                        prop_context['@type'] = prop_val['@type']
+                        prop_context['@type'] = prop_val[ANNOTATION_TYPE]
 
                     if '$ref' in prop_val:
                         ref_fn, ref_url = resolve_ref(prop_val['$ref'], fn, url, base_url)
