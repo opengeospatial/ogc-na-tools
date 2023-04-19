@@ -295,20 +295,19 @@ class SchemaAnnotator:
         contents, base_url = read_contents(fn, url)
         schema, is_json = load_json_yaml(contents)
 
-        contextfn = schema.get(ANNOTATION_CONTEXT)
-        if not contextfn:
-            return None
-
-        del schema[ANNOTATION_CONTEXT]
+        context_fn = schema.get(ANNOTATION_CONTEXT)
+        schema.pop(ANNOTATION_CONTEXT, None)
 
         base_url = schema.get('$id', base_url)
 
-        if base_url:
-            contextfn = urljoin(base_url, contextfn)
-            terms = read_context_terms(url=contextfn)
+        if not context_fn:
+            terms = {}
+        elif base_url:
+            context_fn = urljoin(base_url, context_fn)
+            terms = read_context_terms(url=context_fn)
         else:
-            contextfn = Path(fn).parent / contextfn
-            terms = read_context_terms(file=contextfn)
+            context_fn = Path(fn).parent / context_fn
+            terms = read_context_terms(file=context_fn)
 
         def process_properties(obj: dict):
             properties: dict[str, dict] = obj.get('properties') if obj else None
