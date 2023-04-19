@@ -18,9 +18,9 @@ from ogc.na.validation import ValidationReport
 
 import yaml
 try:
-    from yaml import CLoader as YamlLoader, CSafeLoader as SafeYamlLoader
+    from yaml import CLoader as YamlLoader, CSafeLoader as SafeYamlLoader, CDumper as YamlDumper
 except ImportError:
-    from yaml import Loader as YamlLoader, SafeLoader as SafeYamlLoader
+    from yaml import Loader as YamlLoader, SafeLoader as SafeYamlLoader, Dumper as YamlDumper
 
 
 def copy_triples(src: Graph, dst: Optional[Graph] = None) -> Graph:
@@ -125,7 +125,7 @@ def isurl(url: str, http_only: bool = False) -> bool:
     return True
 
 
-def load_yaml(filename: str | Path = None,
+def load_yaml(filename: str | Path | None = None,
               content: Any | None = None,
               url: str | None = None,
               safe: bool = True) -> dict:
@@ -149,6 +149,23 @@ def load_yaml(filename: str | Path = None,
         if url:
             content = requests.get(url).text
         return yaml.load(content, Loader=SafeYamlLoader if safe else YamlLoader)
+
+
+def dump_yaml(content: Any, filename: str | Path | None = None,
+              **kwargs) -> str | None:
+    """
+    Generates YAML output.
+
+    :param content: content to convert to YAML.
+    :param filename: optional filename to dump the content into. If None, string content will be returned.
+    :param kwargs: other args to pass to yaml.dump
+    """
+    kwargs.setdefault('sort_keys', False)
+    if filename:
+        with open(filename, 'w') as f:
+            return yaml.dump(content, f, Dumper=YamlDumper, **kwargs)
+    else:
+        return yaml.dump(content, Dumper=YamlDumper, **kwargs)
 
 
 def is_iri(s: str) -> bool:
