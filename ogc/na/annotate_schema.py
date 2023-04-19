@@ -437,15 +437,17 @@ class ContextBuilder:
         return own_context
 
 
-def dump_annotated_schemas(annotator: SchemaAnnotator, subdir: Path | str = 'annotated') -> list[Path]:
+def dump_annotated_schemas(annotator: SchemaAnnotator, subdir: Path | str = 'annotated',
+                           root_dir: Path | str | None = None) -> list[Path]:
     """
     Creates a "mirror" directory (named `annotated` by default) with the resulting
     schemas annotated by a `SchemaAnnotator`.
 
     :param annotator: a `SchemaAnnotator` with the annotated schemas to read
     :param subdir: a name for the mirror directory
+    :param root_dir: root directory for computing relative path to schemas
     """
-    wd = Path().resolve()
+    wd = (Path(root_dir) if root_dir else Path()).resolve()
     subdir = subdir if isinstance(subdir, Path) else Path(subdir)
     result = []
     for path, schema in annotator.schemas.items():
