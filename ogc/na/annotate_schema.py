@@ -124,7 +124,7 @@ from typing import Any, AnyStr
 from urllib.parse import urlparse, urljoin
 import yaml
 import requests
-from ogc.na.util import is_url, merge_dicts
+from ogc.na.util import is_url, merge_dicts, load_yaml
 
 try:
     from yaml import CLoader as YamlLoader, CDumper as YamlDumper
@@ -136,6 +136,7 @@ logger = logging.getLogger(__name__)
 ANNOTATION_CONTEXT = 'x-jsonld-context'
 ANNOTATION_ID = 'x-jsonld-id'
 ANNOTATION_TYPE = 'x-jsonld-type'
+REF_ROOT_MARKER = '$_ROOT_/'
 
 
 @dataclasses.dataclass
@@ -182,23 +183,29 @@ def load_json_yaml(contents: str | bytes) -> tuple[Any, bool]:
         obj = json.loads(contents)
         is_json = True
     except ValueError:
-        obj = yaml.load(contents, Loader=YamlLoader)
+        obj = load_yaml(content=contents)
         is_json = False
 
     return obj, is_json
 
 
 def resolve_ref(ref: str, fn_from: str | Path | None = None, url_from: str | None = None,
-                base_url: str | None = None) -> tuple[Path | None, str | None]:
+                base_url: str | None = None, ref_root: Path | None = None) -> tuple[Path | None, str | None]:
     """
     Resolves a `$ref`
     :param ref: the `$ref` to resolve
     :param fn_from: original name of the file containing the `$ref` (when it is a file)
     :param url_from: original URL of the document containing the `$ref` (when it is a URL)
     :param base_url: base URL of the document containing the `$ref` (if any)
+    :param ref_root: base path to resolve $_ROOT_ refs
     :return: a tuple of (Path, str) with only one None entry (the Path if the resolved
     reference is a file, or the str if it is a URL)
     """
+    if ref.startswith(REF_ROOT_MARKER):
+        if not ref_root:
+            ref_root = Path()
+        return ref_root / ref[len(REF_ROOT_MARKER):], None
+
     base_url = base_url or url_from
     if is_url(ref):
         return None, ref
@@ -206,7 +213,7 @@ def resolve_ref(ref: str, fn_from: str | Path | None = None, url_from: str | Non
         return None, urljoin(base_url, ref)
     else:
         fn_from = fn_from if isinstance(fn_from, Path) else Path(fn_from)
-        ref = (fn_from.parent / ref).resolve()
+        ref = (fn_from.resolve().parent / ref).resolve()
         return ref, None
 
 
@@ -279,7 +286,7 @@ class SchemaAnnotator:
     """
 
     def __init__(self, fn: Path | str | None = None, url: str | None = None,
-                 follow_refs: bool = True):
+                 follow_refs: bool = True, ref_root: Path | str | None = None):
         """
         :param fn: file path to load (root schema)
         :param url: URL to load (root schema)
@@ -287,6 +294,7 @@ class SchemaAnnotator:
         """
         self.schemas: dict[str | Path, AnnotatedSchema] = {}
         self.bundled_schema = None
+        self.ref_root = Path(ref_root) if ref_root else None
         self._follow_refs = follow_refs
 
         self._process_schema(fn, url)
