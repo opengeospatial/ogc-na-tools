@@ -138,7 +138,7 @@ class ProfileRegistry:
 
         if not sort:
             # Only known profiles and remove duplicates
-            known = {URIRef(p) for p in profiles if p in self.profiles}
+            known = {URIRef(p): True for p in profiles if p in self.profiles}
             if recursive:
                 pending = set(known)
                 while pending:
@@ -146,7 +146,7 @@ class ProfileRegistry:
                     for prof_of in prof.profile_of or ():
                         if prof_of not in known:
                             pending.add(prof_of)
-                        known.add(prof_of)
+                        known[prof_of] = True
             return list(known)
 
         # Otherwise, sort DAG
