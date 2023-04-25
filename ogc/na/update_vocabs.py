@@ -127,6 +127,7 @@ def get_entailed_base_path(f: Path, g: Graph, rootpattern: str = '/def/',
     :param rootpattern: a root pattern to filter candidate URIs
     :param entailed_dir: the name of the base entailed files directory
     """
+
     if not rootpattern:
         # just assume filename is going to be fine
         return (f.parent / entailed_dir / f,
@@ -155,6 +156,8 @@ def get_entailed_base_path(f: Path, g: Graph, rootpattern: str = '/def/',
         logger.warning('File %s contains no concept schemes matching domain path %s; using filename',
                        str(f), rootpattern)
         canonical_filename = f.name
+    elif canonical_filename.startswith('/'):
+        canonical_filename = canonical_filename[1:]
 
     return (f.parent / entailed_dir / Path(canonical_filename),
             canonical_filename, conceptscheme)
