@@ -4,6 +4,7 @@ This module contains classes to load RDF domain configuration files (DCAT-like c
 defining how to find and select files for processing.
 """
 
+from __future__ import annotations
 import logging
 import os
 from pathlib import Path

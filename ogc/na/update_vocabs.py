@@ -15,6 +15,7 @@ please refer to the
 for usage details on the latter.
 """
 
+from __future__ import annotations
 import argparse
 import logging
 import os

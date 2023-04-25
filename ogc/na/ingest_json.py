@@ -24,6 +24,7 @@ name but `.yml` extension will be used, if it exists.
 If no context definition file is found after performing the previous 3 steps, then the file will
 be skipped.
 """
+from __future__ import annotations
 import argparse
 import json
 import logging

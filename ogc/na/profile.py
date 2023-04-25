@@ -17,6 +17,7 @@ This module uses the following [resource roles](https://www.w3.org/TR/dx-prof/#C
 * `profrole:annotation` is loaded as additional ontological annotation data.
 
 """
+from __future__ import annotations
 import itertools
 import logging
 from collections import deque

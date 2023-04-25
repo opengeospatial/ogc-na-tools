@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 import mimetypes
 from dataclasses import dataclass
 from datetime import datetime

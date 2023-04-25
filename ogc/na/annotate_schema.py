@@ -113,6 +113,7 @@ The resulting context will be printed to the standard output.
 
 """
 
+from __future__ import annotations
 import argparse
 import dataclasses
 import functools

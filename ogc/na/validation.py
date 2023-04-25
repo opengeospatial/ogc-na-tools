@@ -3,6 +3,7 @@
 This module defines auxiliary classes to represent [pySHACL](https://github.com/RDFLib/pySHACL)
 validation reports.
 """
+from __future__ import annotations
 from pathlib import Path
 from typing import Union, Iterable
 
