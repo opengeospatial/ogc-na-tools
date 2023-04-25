@@ -6,7 +6,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Union, Optional, Sequence
 
-import git
+from rdflib.term import Node
+
+try:
+    import git
+except ImportError:
+    git = None
 from rdflib import Graph, URIRef, Literal, DCTERMS, RDF, RDFS, PROV, BNode
 
 from ogc.na import __version__, __url__
@@ -35,7 +40,7 @@ class ProvenanceMetadata:
     comment: str = None
 
 
-def add_provenance_agent(g: Graph, module_name: str = None) -> URIRef:
+def add_provenance_agent(g: Graph, module_name: str = None) -> Node:
     agent = BNode()
     g.add((agent, RDFS.seeAlso, URIRef(__url__)))
     g.add((agent, RDF.type, PROV.Agent))
@@ -84,11 +89,12 @@ def add_provenance_entity(g: Graph, metadata: FileProvenanceMetadata = None,
             else:
                 entity = URIRef(uri)
 
-            try:
-                git_repo = git.Repo(filename, search_parent_directories=True)
-                g.add((entity, DCTERMS.hasVersion, Literal(f"git:{git_repo.head.object.hexsha}")))
-            except:
-                pass
+            if git:
+                try:
+                    git_repo = git.Repo(filename, search_parent_directories=True)
+                    g.add((entity, DCTERMS.hasVersion, Literal(f"git:{git_repo.head.object.hexsha}")))
+                except:
+                    pass
 
     if not entity:
         entity = BNode()
