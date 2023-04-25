@@ -294,7 +294,7 @@ class ConfigurationEntryList(list[CE]):
                 result[p] = e
         return result
 
-    def find_all_files(self) -> 'dict[Path, ConfigurationEntry]':
+    def find_all(self) -> 'dict[Path, ConfigurationEntry]':
         """
         Find all the files referenced by this configuration entry list, including
         their DomainConfigurationEntry.
