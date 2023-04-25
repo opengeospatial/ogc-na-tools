@@ -13,9 +13,18 @@ description = "OGC Naming Authority tools"
 readme = "README.md"
 requires-python = ">=3.7"
 dynamic = ["dependencies", "version"]
+keywords = ["ogc", "ogc-na", "naming authority", "ogc rainbow", "definitions server"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Utilities",
+    "Topic :: Software Development :: Libraries",
+]
 
 [project.urls]
-"Homepage" = "https://www.ogc.org/def-server"
+"Homepage" = "https://github.com/opengeospatial/ogc-na-tools/"
+"Documentation" = "https://opengeospatial.github.com/ogc-na-tools/"
+"Repository" = "https://github.com/opengeospatial/ogc-na-tools.git"
 
 [tool.setuptools]
 include-package-data = true
