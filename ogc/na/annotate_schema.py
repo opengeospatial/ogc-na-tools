@@ -450,7 +450,8 @@ class ContextBuilder:
 
 
 def dump_annotated_schemas(annotator: SchemaAnnotator, subdir: Path | str = 'annotated',
-                           root_dir: Path | str | None = None) -> list[Path]:
+                           root_dir: Path | str | None = None,
+                           output_fn_transform: Callable[[Path], Path] | None = None) -> list[Path]:
     """
     Creates a "mirror" directory (named `annotated` by default) with the resulting
     schemas annotated by a `SchemaAnnotator`.
@@ -471,6 +472,8 @@ def dump_annotated_schemas(annotator: SchemaAnnotator, subdir: Path | str = 'ann
             outputfn = parsed.path
 
         outputfn = subdir / outputfn
+        if output_fn_transform:
+            outputfn = output_fn_transform(outputfn)
         outputfn.parent.mkdir(parents=True, exist_ok=True)
 
         with open(outputfn, 'w') as f:
