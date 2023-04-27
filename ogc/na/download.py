@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
 import argparse
-import json
 import logging
-from pathlib import Path
-from typing import Sequence, Iterable
-from urllib import request
-import sys
 import os
+import sys
+from pathlib import Path
+from typing import Iterable
 from urllib.parse import urlparse
 
 import requests
@@ -42,19 +41,27 @@ def download_file(url: str,
             f.write(r.content)
 
 
-def download_files(spec: Iterable[dict] | str | Path,
+def download_files(spec: dict | Iterable[dict] | str | Path,
                    object_diff: bool = True,
                    ignore_diff_errors: bool = True):
 
     if isinstance(spec, str) or isinstance(spec, Path):
         spec = util.load_yaml(filename=spec)
 
+    if 'json-downloads' in spec:
+        spec = spec['json-downloads']
+
+    if not spec:
+        return
+
     if not isinstance(spec, Iterable):
         raise ValueError('Unknown spec type: {}'.format(type(spec)))
 
     for entry in spec:
+        entry_object_diff = entry.get('object-diff', object_diff)
         download_file(entry['url'], entry['dest'],
-                      object_diff=object_diff, ignore_diff_errors=ignore_diff_errors)
+                      object_diff=entry_object_diff,
+                      ignore_diff_errors=ignore_diff_errors)
 
 
 def _process_cmdln():
@@ -101,7 +108,7 @@ def _process_cmdln():
                       object_diff=not args.disable_diff,
                       ignore_diff_errors=not args.fail_on_diff_error)
     elif args.spec:
-        download_files(args.spec)
+        download_files(spec=args.spec)
     else:
         parser.print_usage()
 
