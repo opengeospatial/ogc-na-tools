@@ -344,7 +344,7 @@ class SchemaAnnotator:
                         else:
                             self._process_schema(fn=ref)
 
-            properties.update({p: {ANNOTATION_ID: terms[p]} for p in empty_properties})
+            properties.update({p: {ANNOTATION_ID: terms[p]} for p in empty_properties if p in terms})
 
         schema_type = schema.get('type')
 
@@ -395,7 +395,7 @@ class ContextBuilder:
             if not isinstance(where, dict):
                 return
             for prop, prop_val in where.get('properties', {}).items():
-                if ANNOTATION_ID in prop_val:
+                if isinstance(prop_val, dict) and ANNOTATION_ID in prop_val:
                     prop_context = {
                         '@id': prop_val[ANNOTATION_ID]
                     }
