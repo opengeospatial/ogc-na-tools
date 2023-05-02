@@ -1,0 +1,13 @@
+{
+  "@context": {
+    "prop": "http://example.com/props/",
+    "propA": "prop:a",
+    "propB": {
+      "@id": "prop:b",
+      "@context": {
+        "propD": "prop:d-inner"
+      }
+    },
+    "propD": "prop:d"
+  }
+}

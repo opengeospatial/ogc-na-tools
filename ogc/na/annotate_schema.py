@@ -116,16 +116,15 @@ The resulting context will be printed to the standard output.
 from __future__ import annotations
 import argparse
 import dataclasses
-import functools
 import json
 import logging
 import sys
 from pathlib import Path
-from typing import Any, AnyStr
+from typing import Any, AnyStr, Callable
 from urllib.parse import urlparse, urljoin
 import yaml
 import requests
-from ogc.na.util import is_url, merge_dicts, load_yaml
+from ogc.na.util import is_url, merge_dicts, load_yaml, LRUCache
 
 try:
     from yaml import CLoader as YamlLoader, CDumper as YamlDumper
@@ -138,6 +137,8 @@ ANNOTATION_CONTEXT = 'x-jsonld-context'
 ANNOTATION_ID = 'x-jsonld-id'
 ANNOTATION_TYPE = 'x-jsonld-type'
 REF_ROOT_MARKER = '$_ROOT_/'
+
+context_term_cache = LRUCache(maxsize=20)
 
 
 @dataclasses.dataclass
@@ -218,24 +219,29 @@ def resolve_ref(ref: str, fn_from: str | Path | None = None, url_from: str | Non
         return ref, None
 
 
-@functools.lru_cache(maxsize=20)
-def read_context_terms(file: Path | str = None, url: str = None) -> dict[str, str]:
+def read_context_terms(ctx: Path | str | dict) -> dict[str, str]:
     """
     Reads all the terms from a JSON-LD context document.
 
-    :param file: file path to load
-    :param url: URL to load
+    :param ctx: file path (Path), URL (str) or dictionary (dict) to load
     :return: a dictionary with term -> URI mappings
     """
+
+    cached = context_term_cache.get(ctx)
+    if cached:
+        return cached
+
     context: dict[str, Any] | None = None
 
-    if file:
-        with open(file) as f:
+    if isinstance(ctx, Path):
+        with open(ctx) as f:
             context = json.load(f).get('@context')
-    elif url:
-        r = requests.get(url)
+    elif isinstance(ctx, str):
+        r = requests.get(ctx)
         r.raise_for_status()
         context = r.json().get('@context')
+    elif ctx:
+        context = ctx.get('@context')
 
     if not context:
         return {}
@@ -274,6 +280,7 @@ def read_context_terms(file: Path | str = None, url: str = None) -> dict[str, st
         if pref in result:
             result[term] = f"{result[pref]}{suf}"
 
+    context_term_cache[ctx] = result
     return result
 
 
@@ -287,7 +294,8 @@ class SchemaAnnotator:
     """
 
     def __init__(self, fn: Path | str | None = None, url: str | None = None,
-                 follow_refs: bool = True, ref_root: Path | str | None = None):
+                 follow_refs: bool = True, ref_root: Path | str | None = None,
+                 context: str | Path | dict | None = None):
         """
         :param fn: file path to load (root schema)
         :param url: URL to load (root schema)
@@ -297,6 +305,7 @@ class SchemaAnnotator:
         self.bundled_schema = None
         self.ref_root = Path(ref_root) if ref_root else None
         self._follow_refs = follow_refs
+        self._provided_context = context
 
         self._process_schema(fn, url)
 
@@ -309,14 +318,15 @@ class SchemaAnnotator:
 
         base_url = schema.get('$id', base_url)
 
-        if not context_fn:
-            terms = {}
-        elif base_url:
-            context_fn = urljoin(base_url, context_fn)
-            terms = read_context_terms(url=context_fn)
-        else:
-            context_fn = Path(fn).parent / context_fn
-            terms = read_context_terms(file=context_fn)
+        terms = read_context_terms(self._provided_context)
+
+        if context_fn:
+            if base_url:
+                context_fn = urljoin(base_url, context_fn)
+                terms.update(read_context_terms(context_fn))
+            else:
+                context_fn = Path(fn).parent / context_fn
+                terms.update(read_context_terms(context_fn))
 
         def process_properties(obj: dict):
             properties: dict[str, dict] = obj.get('properties') if obj else None
@@ -330,7 +340,7 @@ class SchemaAnnotator:
                     continue
                 if prop in terms:
                     prop_value[ANNOTATION_ID] = terms[prop]
-                if '$ref' in prop_value:
+                if '$ref' in prop_value and self._follow_refs:
 
                     ref_fn, ref_url = resolve_ref(prop_value['$ref'], fn, url, base_url)
                     ref = ref_fn or ref_url
@@ -459,6 +469,7 @@ def dump_annotated_schemas(annotator: SchemaAnnotator, subdir: Path | str = 'ann
     :param annotator: a `SchemaAnnotator` with the annotated schemas to read
     :param subdir: a name for the mirror directory
     :param root_dir: root directory for computing relative paths to schemas
+    :param output_fn_transform: optional callable to transform the output path
     """
     wd = (Path(root_dir) if root_dir else Path()).resolve()
     subdir = subdir if isinstance(subdir, Path) else Path(subdir)

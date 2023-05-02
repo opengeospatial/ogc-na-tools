@@ -7,7 +7,8 @@ import os.path
 import shlex
 from glob import glob
 from pathlib import Path
-from typing import Optional, Union, Any
+from time import time
+from typing import Optional, Union, Any, Hashable
 
 import requests
 import rfc3987
@@ -18,6 +19,7 @@ from urllib.parse import urlparse
 from ogc.na.validation import ValidationReport
 
 import yaml
+
 try:
     from yaml import CLoader as YamlLoader, CSafeLoader as SafeYamlLoader, CDumper as YamlDumper
 except ImportError:
@@ -206,3 +208,32 @@ def glob_list_split(s: str, exclude_dirs: bool = True, recursive: bool = False) 
                 if not exclude_dirs or os.path.isfile(fn):
                     result.append(fn)
     return result
+
+
+class LRUCache:
+
+    def __init__(self, maxsize: int = 10):
+        self._cache: dict[Hashable, Any] = {}
+        self._last_access: dict[Hashable, float] = {}
+        self._maxsize = maxsize
+
+    def __contains__(self, item):
+        return item in self._cache
+
+    def __len__(self):
+        return len(self._cache)
+
+    def get(self, key, default=None):
+        if not isinstance(key, Hashable):
+            return default
+        return self._cache.get(key, default)
+
+    def __setitem__(self, key, value):
+        if not isinstance(key, Hashable):
+            return
+        if len(self._cache) >= self._maxsize and key not in self._cache:
+            key_to_remove = min(self._last_access, key=self._last_access.get)
+            del self._cache[key_to_remove]
+            del self._last_access[key_to_remove]
+        self._cache[key] = value
+        self._last_access[key] = time()

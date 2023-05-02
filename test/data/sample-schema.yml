@@ -1,0 +1,12 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+description: Sensor, Observation, Sample, and Actuator (SOSA)
+x-jsonld-context: sample-context.jsonld
+type: object
+properties:
+  propA: {}
+  propB:
+    type: object
+    propD: {}
+  propC:
+    $ref: sample-schema-prop-c.yml
+  propD: {}
