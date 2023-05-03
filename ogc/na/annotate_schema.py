@@ -118,6 +118,7 @@ import argparse
 import dataclasses
 import json
 import logging
+import re
 import sys
 from pathlib import Path
 from typing import Any, AnyStr, Callable
@@ -136,6 +137,7 @@ logger = logging.getLogger(__name__)
 ANNOTATION_CONTEXT = 'x-jsonld-context'
 ANNOTATION_ID = 'x-jsonld-id'
 ANNOTATION_TYPE = 'x-jsonld-type'
+ANNOTATION_PREFIXES = 'x-jsonld-prefixes'
 REF_ROOT_MARKER = '$_ROOT_/'
 
 context_term_cache = LRUCache(maxsize=20)
@@ -219,7 +221,7 @@ def resolve_ref(ref: str, fn_from: str | Path | None = None, url_from: str | Non
         return ref, None
 
 
-def read_context_terms(ctx: Path | str | dict) -> dict[str, str]:
+def read_context_terms(ctx: Path | str | dict) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
     """
     Reads all the terms from a JSON-LD context document.
 
@@ -244,44 +246,70 @@ def read_context_terms(ctx: Path | str | dict) -> dict[str, str]:
         context = ctx.get('@context')
 
     if not context:
-        return {}
+        return {}, {}, {}
 
-    result: dict[str, str] = {}
-    pending: dict[str, list] = {}
+    result: dict[str, str | tuple[str, str]] = {}
+    types: dict[str, str | tuple[str, str]] = {}
 
     vocab = context.get('@vocab')
+
+    def expand_uri(uri: str) -> str | tuple[str, str] | None:
+        if not uri:
+            return None
+
+        if ':' in uri:
+            # either URI or prefix:suffix
+            pref, suf = uri.split(':', 1)
+            if suf.startswith('//') or pref == 'urn':
+                # assume full URI
+                return uri
+            else:
+                # prefix:suffix -> add to pending for expansion
+                return pref, suf
+        elif vocab:
+            # append term_val to vocab to get URI
+            return f"{vocab}{term_id}"
+        else:
+            return uri
 
     for term, term_val in context.items():
         if not term.startswith("@"):
             # assume term
+            term_type = None
             if isinstance(term_val, str):
                 term_id = term_val
             elif isinstance(term_val, dict):
                 term_id = term_val.get('@id')
+                term_type = term_val.get('@type')
             else:
                 term_id = None
 
-            if term_id:
-                if ':' in term_id:
-                    # either URI or prefix:suffix
-                    pref, suf = term_id.split(':', 1)
-                    if suf.startswith('//'):
-                        # assume URI -> add to result
-                        result[term] = term_id
-                    else:
-                        # prefix:suffix -> add to pending for expansion
-                        pending[term] = [pref, suf]
-                elif vocab:
-                    # append term_val to vocab to get URI
-                    result[term] = f"{vocab}{term_id}"
+            expanded_id = expand_uri(term_id)
+            if expanded_id:
+                result[term] = expanded_id
+            expanded_type = expand_uri(term_type)
+            if expanded_type:
+                types[term] = expanded_type
 
-    for term, term_val in pending.items():
-        pref, suf = term_val
-        if pref in result:
-            result[term] = f"{result[pref]}{suf}"
+    prefixes = {}
 
-    context_term_cache[ctx] = result
-    return result
+    def expand_result(d: dict[str, str | tuple[str, str]]) -> dict[str, str]:
+        r = {}
+        for term, term_val in d.items():
+            if isinstance(term_val, str):
+                r[term] = term_val
+            else:
+                pref, suf = term_val
+                if pref in result:
+                    r[term] = f"{result[pref]}{suf}"
+                    prefixes[pref] = result[pref]
+        return r
+
+    expanded_types = expand_result(types)
+    expanded_terms = expand_result(result)
+
+    context_term_cache[ctx] = expanded_terms, prefixes, expanded_types
+    return expanded_terms, prefixes, expanded_types
 
 
 class SchemaAnnotator:
@@ -318,21 +346,24 @@ class SchemaAnnotator:
 
         base_url = schema.get('$id', base_url)
 
-        terms = None
+        terms = {}
+        prefixes = {}
+        types = {}
 
         if context_fn != self._provided_context or not (isinstance(context_fn, Path)
                                                         and isinstance(self._provided_context, Path)
                                                         and self._provided_context.resolve() == context_fn.resolve()):
             # Only load the provided context if it's different from the schema-referenced one
-            terms = read_context_terms(self._provided_context)
+            terms, prefixes, types = read_context_terms(self._provided_context)
 
         if context_fn:
             if base_url:
                 context_fn = urljoin(base_url, str(context_fn))
-                terms.update(read_context_terms(context_fn))
             else:
                 context_fn = Path(fn).parent / context_fn
-                terms.update(read_context_terms(context_fn))
+
+            for e in zip((terms, prefixes, types), read_context_terms(context_fn)):
+                e[0].update(e[1])
 
         def process_properties(obj: dict):
             properties: dict[str, dict] = obj.get('properties') if obj else None
@@ -346,6 +377,8 @@ class SchemaAnnotator:
                     continue
                 if prop in terms:
                     prop_value[ANNOTATION_ID] = terms[prop]
+                    if prop in types:
+                        prop_value[ANNOTATION_TYPE] = types[prop]
                 if '$ref' in prop_value and self._follow_refs:
 
                     ref_fn, ref_url = resolve_ref(prop_value['$ref'], fn, url, base_url)
@@ -382,6 +415,9 @@ class SchemaAnnotator:
 
         process_subschema(schema)
 
+        if prefixes:
+            schema[ANNOTATION_PREFIXES] = prefixes
+
         self.schemas[fn or url] = AnnotatedSchema(
             source=fn or url,
             is_json=is_json,
@@ -417,7 +453,32 @@ class ContextBuilder:
 
         base_url = schema.get('$id', base_url)
 
+        prefixes = schema.get(ANNOTATION_PREFIXES, {}).items()
+        rev_prefixes = {v: k for k, v in prefixes}
+
+        def compact_uri(uri: str) -> str:
+            if uri.startswith('@'):
+                # JSON-LD keyword
+                return uri
+            parts = urlparse(uri)
+            if parts.fragment:
+                pref, suf = uri.rsplit('#', 1)
+                pref += '#'
+            elif len(parts.path) > 1:
+                pref, suf = uri.rsplit('/', 1)
+                pref += '/'
+            else:
+                return uri
+
+            if pref in rev_prefixes:
+                return f"{rev_prefixes[pref]}:{suf}"
+            else:
+                return uri
+
         own_context = {}
+
+        if prefixes:
+            own_context.update(prefixes)
 
         def read_properties(where: dict):
             if not isinstance(where, dict):
@@ -425,10 +486,10 @@ class ContextBuilder:
             for prop, prop_val in where.get('properties', {}).items():
                 if isinstance(prop_val, dict) and ANNOTATION_ID in prop_val:
                     prop_context = {
-                        '@id': prop_val[ANNOTATION_ID]
+                        '@id': compact_uri(prop_val[ANNOTATION_ID])
                     }
                     if ANNOTATION_TYPE in prop_val:
-                        prop_context['@type'] = prop_val[ANNOTATION_TYPE]
+                        prop_context['@type'] = compact_uri(prop_val[ANNOTATION_TYPE])
 
                     if '$ref' in prop_val:
                         ref_fn, ref_url = resolve_ref(prop_val['$ref'], fn, url, base_url)
