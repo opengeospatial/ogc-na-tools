@@ -318,11 +318,17 @@ class SchemaAnnotator:
 
         base_url = schema.get('$id', base_url)
 
-        terms = read_context_terms(self._provided_context)
+        terms = None
+
+        if context_fn != self._provided_context or not (isinstance(context_fn, Path)
+                                                        and isinstance(self._provided_context, Path)
+                                                        and self._provided_context.resolve() == context_fn.resolve()):
+            # Only load the provided context if it's different from the schema-referenced one
+            terms = read_context_terms(self._provided_context)
 
         if context_fn:
             if base_url:
-                context_fn = urljoin(base_url, context_fn)
+                context_fn = urljoin(base_url, str(context_fn))
                 terms.update(read_context_terms(context_fn))
             else:
                 context_fn = Path(fn).parent / context_fn
@@ -330,8 +336,8 @@ class SchemaAnnotator:
 
         def process_properties(obj: dict):
             properties: dict[str, dict] = obj.get('properties') if obj else None
-            if not properties:
-                return
+            if not isinstance(properties, dict):
+                raise ValueError('"properties" must be a dictionary')
 
             empty_properties = []
             for prop, prop_value in properties.items():
@@ -356,13 +362,25 @@ class SchemaAnnotator:
 
             properties.update({p: {ANNOTATION_ID: terms[p]} for p in empty_properties if p in terms})
 
-        schema_type = schema.get('type')
+        def process_subschema(subschema):
 
-        if schema_type == 'object':
-            process_properties(schema)
-        elif schema_type == 'array':
-            for k in ('prefixItems', 'items', 'contains'):
-                process_properties(schema.get(k))
+            schema_type = subschema.get('type')
+            if not schema_type and 'properties' in subschema:
+                schema_type = 'object'
+
+            if schema_type == 'object':
+                process_properties(subschema)
+            elif schema_type == 'array':
+                for k in ('prefixItems', 'items', 'contains'):
+                    process_properties(subschema.get(k))
+
+            for defs_prop in ('$defs', 'definitions'):
+                defs_value = subschema.get(defs_prop)
+                if isinstance(defs_value, dict):
+                    for defs_entry in defs_value.values():
+                        process_subschema(defs_entry)
+
+        process_subschema(schema)
 
         self.schemas[fn or url] = AnnotatedSchema(
             source=fn or url,
