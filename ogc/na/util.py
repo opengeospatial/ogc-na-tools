@@ -107,7 +107,7 @@ def validate(g: Graph, shacl_graph: Graph, extra: Optional[Graph] = None) -> Val
                                            advanced=True))
 
 
-def isurl(url: str, http_only: bool = False) -> bool:
+def is_url(url: str, http_only: bool = False) -> bool:
     """
     Checks whether a string is a valid URL.
 
@@ -188,14 +188,6 @@ def merge_dicts(src: dict, dst: dict) -> dict:
         else:
             dst[k] = v
     return dst
-
-
-def is_url(s: str) -> bool:
-    try:
-        url = urlparse(s)
-        return bool(url.scheme and url.netloc)
-    except ValueError:
-        return False
 
 
 def glob_list_split(s: str, exclude_dirs: bool = True, recursive: bool = False) -> list[str]:

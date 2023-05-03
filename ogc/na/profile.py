@@ -202,7 +202,7 @@ class ProfileRegistry:
             if isinstance(src, str) and src.startswith('sparql:'):
                 endpoint = src[len('sparql:'):]
                 logger.info("Fetching profiles from SPARQL endpoint %s", endpoint)
-                assert util.isurl(endpoint)
+                assert util.is_url(endpoint, http_only=True)
                 s = g.query(PROFILES_QUERY.replace('__SERVICE__', f"SERVICE <{endpoint}>")).graph
                 util.copy_triples(s, g)
             else:
