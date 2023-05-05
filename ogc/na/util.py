@@ -8,7 +8,7 @@ import shlex
 from glob import glob
 from pathlib import Path
 from time import time
-from typing import Optional, Union, Any, Hashable
+from typing import Optional, Union, Any, Mapping, Hashable
 
 import requests
 import rfc3987
@@ -112,7 +112,7 @@ def is_url(url: str, http_only: bool = False) -> bool:
     Checks whether a string is a valid URL.
 
     :param url: the input string
-    :param http_only: whether to only accept HTTP and HTTPS URL's as valid
+    :param http_only: whether to only accept HTTP and HTTPS URLs as valid
     :return: `True` if this is a valid URL, otherwise `False`
     """
     if not url:
@@ -161,7 +161,7 @@ def dump_yaml(content: Any, filename: str | Path | None = None,
 
     :param content: content to convert to YAML.
     :param filename: optional filename to dump the content into. If None, string content will be returned.
-    :param kwargs: other args to pass to yaml.dump
+    :param kwargs: other args to pass to `yaml.dump()`
     """
     kwargs.setdefault('sort_keys', False)
     if filename:
@@ -229,3 +229,13 @@ class LRUCache:
             del self._last_access[key_to_remove]
         self._cache[key] = value
         self._last_access[key] = time()
+
+
+def deep_update(orig_dict: dict, with_dict: dict, replace: bool = False) -> dict:
+    dest = orig_dict if replace else {**orig_dict}
+    for k, v in with_dict.items():
+        if isinstance(v, Mapping):
+            dest[k] = deep_update(orig_dict.get(k, {}), with_dict, replace)
+        else:
+            dest[k] = v
+    return dest

@@ -50,6 +50,7 @@ from rdflib.namespace import Namespace, DefinedNamespace
 from ogc.na import util, profile
 from ogc.na.domain_config import UpliftConfigurationEntry, DomainConfiguration
 from ogc.na.provenance import ProvenanceMetadata, FileProvenanceMetadata, generate_provenance
+from ogc.na.input_filters import apply_input_filter
 
 logger = logging.getLogger(__name__)
 
@@ -393,7 +394,8 @@ def process_file(input_fn: str | Path,
         If False, no Turtle output will be generated.
     :param context_fn: YAML context filename. If None, will be autodetected:
         1. From a file with the same name but yml/yaml extension (test.json -> test.yml)
-        2. From a _json-context.yml/_json-context.yaml file in the same directory
+        2. From the domain_cfg
+        3. From a _json-context.yml/_json-context.yaml file in the same directory
     :param domain_cfg: domain configuration with uplift definition locations
     :param base: base URI for JSON-LD
     :param provenance_base_uri: base URI for provenance resources
@@ -436,8 +438,15 @@ def process_file(input_fn: str | Path,
     if not contexts:
         raise MissingContextException('No context file provided and one could not be discovered automatically')
 
-    with open(input_fn, 'r') as j:
-        input_data = json.load(j)
+    # Apply input filter of first context only (if any)
+    input_filters = contexts[0].get('input-filter')
+    if input_filters:
+        if not isinstance(input_filters, dict):
+            raise ValueError('input-filter must be an object')
+        input_data = apply_input_filter(input_fn, input_filters)
+    else:
+        with open(input_fn, 'r') as j:
+            input_data = json.load(j)
 
     provenance_metadata: ProvenanceMetadata | None = None
     if provenance_base_uri is not False:
@@ -635,7 +644,10 @@ def process(input_files: str | Path | Sequence[str | Path],
         logger.info("Input files: %s", input_files)
         remaining_fn: deque = deque()
         for input_file in input_files:
-            remaining_fn.extend(input_file.split(','))
+            if isinstance(input_file, str):
+                remaining_fn.extend(input_file.split(','))
+            else:
+                remaining_fn.append(input_file)
         while remaining_fn:
             fn = str(remaining_fn.popleft())
 
@@ -645,9 +657,6 @@ def process(input_files: str | Path | Sequence[str | Path],
                 remaining_fn.extend(filenames_from_context(fn, domain_config=domain_cfg) or [])
                 continue
 
-            if not re.match(r'.*\.json-?(ld)?$', fn):
-                logger.debug('File %s does not match, skipping', fn)
-                continue
             logger.info('File %s matches, processing', fn)
             try:
                 result.append(process_file(
