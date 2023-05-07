@@ -651,7 +651,7 @@ def process(input_files: str | Path | Sequence[str | Path],
         while remaining_fn:
             fn = str(remaining_fn.popleft())
 
-            if not fn or not os.path.isfile():
+            if not fn or not os.path.isfile(fn):
                 continue
 
             if re.match(r'.*\.ya?ml$', fn):
@@ -706,7 +706,7 @@ def _process_cmdln():
 
     parser.add_argument(
         "input",
-        nargs='+',
+        nargs='*',
         help="Source file (instead of service)",
     )
 
@@ -783,6 +783,12 @@ def _process_cmdln():
         help='Regular expression for URL whitelisting'
     )
 
+    parser.add_argument(
+        '--use-git-status',
+        action='store_true',
+        help='Use git status for obtaining batch filenames'
+    )
+
     args = parser.parse_args()
 
     if args.domain_config:
@@ -790,7 +796,12 @@ def _process_cmdln():
     else:
         domain_cfg = None
 
-    result = process(args.input,
+    input_files = args.input
+    if args.batch and args.use_git_status:
+        git_status = util.git_status()
+        input_files = git_status['added'] + git_status['modified'] + [r[1] for r in git_status['renamed']]
+
+    result = process(input_files,
                      context_fn=args.context,
                      domain_cfg=domain_cfg,
                      jsonld_fn=args.json_ld_file if args.json_ld else False,

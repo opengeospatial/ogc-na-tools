@@ -12,6 +12,7 @@ from typing import Optional, Union, Any, Mapping, Hashable
 
 import requests
 import rfc3987
+import git
 from rdflib import Graph
 from pyshacl import validate as shacl_validate
 from urllib.parse import urlparse
@@ -239,3 +240,24 @@ def deep_update(orig_dict: dict, with_dict: dict, replace: bool = False) -> dict
         else:
             dest[k] = v
     return dest
+
+
+def git_status(repo_path: str | Path = '.'):
+    repo = git.Repo(repo_path)
+    added = repo.untracked_files
+    modified = []
+    deleted = []
+    renamed = []
+    for diff in repo.head.commit.diff(None):
+        if diff.change_type == 'D':
+            deleted.append(diff.a_path)
+        elif diff.change_type == 'M':
+            modified.append(diff.a_path)
+        elif diff.chhange_type == 'R':
+            renamed.append((diff.a_path, diff.b_path))
+    return {
+        'added': added,
+        'modified': modified,
+        'deleted': deleted,
+        'renamed': renamed,
+    }
