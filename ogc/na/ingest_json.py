@@ -651,6 +651,9 @@ def process(input_files: str | Path | Sequence[str | Path],
         while remaining_fn:
             fn = str(remaining_fn.popleft())
 
+            if not fn or not os.path.isfile():
+                continue
+
             if re.match(r'.*\.ya?ml$', fn):
                 # Context file found, try to find corresponding JSON/JSON-LD file(s)
                 logger.info('Potential YAML context file found: %s', fn)
