@@ -368,6 +368,8 @@ def generate_graph(input_data: dict | list,
                 base = jdoc_ld['@context'].get('@base')
     if base:
         options['base'] = base
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug('Uplifted JSON:\n%s', json.dumps(jdoc_ld, indent=2))
     g.parse(data=json.dumps(jdoc_ld), format='json-ld')
     expanded = jsonld.expand(jdoc_ld, options)
 
@@ -447,6 +449,9 @@ def process_file(input_fn: str | Path,
     else:
         with open(input_fn, 'r') as j:
             input_data = json.load(j)
+
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.debug('Input data:\n%s', json.dumps(input_data, indent=2))
 
     provenance_metadata: ProvenanceMetadata | None = None
     if provenance_base_uri is not False:
@@ -613,7 +618,8 @@ def process(input_files: str | Path | Sequence[str | Path],
             skip_on_missing_context: bool = False,
             provenance_base_uri: Optional[Union[str, bool]] = None,
             fetch_timeout: int = 5,
-            fetch_url_whitelist: Optional[Union[Sequence, bool]] = None) -> list[UpliftResult]:
+            fetch_url_whitelist: Optional[Union[Sequence, bool]] = None,
+            debug: bool = False) -> list[UpliftResult]:
     """
     Performs the JSON-LD uplift process.
 
@@ -789,6 +795,12 @@ def _process_cmdln():
         help='Use git status for obtaining batch filenames'
     )
 
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Enable debug mode'
+    )
+
     args = parser.parse_args()
 
     if args.domain_config:
@@ -800,6 +812,9 @@ def _process_cmdln():
     if args.batch and args.use_git_status:
         git_status = util.git_status()
         input_files = git_status['added'] + git_status['modified'] + [r[1] for r in git_status['renamed']]
+
+    if args.debug:
+        logger.setLevel(logging.DEBUG)
 
     result = process(input_files,
                      context_fn=args.context,
