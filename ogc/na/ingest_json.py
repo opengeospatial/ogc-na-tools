@@ -15,7 +15,7 @@ The details for each of these operations are declared inside context definition 
 which are YAML documents containing specifications for the uplift workflow. For each input
 JSON file, its corresponding YAML context definition is detected at runtime:
 
-1. A [context definition registry][ogc.na.ingest_json.ContextRegistry] can be used,
+1. A [domain configuration][ogc.na.domain_config.DomainConfiguration] can be used,
 which is a JSON (or YAML) document that defines JSON file to context definition mappings.
 2. If no registry is used or the input file is not in the registry, a file with the same
 name but `.yml` extension will be used, if it exists.

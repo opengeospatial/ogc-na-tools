@@ -281,7 +281,7 @@ class ConfigurationEntryList(list[CE]):
     def find_entries_for_files(self, fns: list[str | Path]) -> 'dict[Path, ConfigurationEntry]':
         """
         Find the configuration entries associated to a list of files. Similar
-        to [find_file()][ogc.na.domain_config.ConfigurationEntryList.find_file]
+        to [find_entry_for_file()][ogc.na.domain_config.ConfigurationEntryList.find_entry_for_file]
         but with a list of files.
 
         :param fns: a list of files to find
