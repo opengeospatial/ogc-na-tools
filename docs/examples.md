@@ -69,6 +69,17 @@ _:semanticUplift a dcat:Dataset, dcfg:UpliftConfiguration;
 # Sample single-file JSON-LD context
 # Processing order is transform -> types -> context
 
+# Input filters allow reading files with a format other than JSON/JSON-LD.
+# Every filter has its own configuration options.
+# When using input filters, the output will be an object with two entries, "metadata" 
+# (with metadata about the original file, the filter configuration, etc.), and "data"
+# (with the data read from the input document). 
+input-filter:
+  csv:
+    skip-rows: 2
+    trim-values: true
+    
+
 # `path-scope` affects how ingest_json treats JSON-LD documents (e.g. when chaining uplifts).
 # It can be `graph` (transformations and paths act on `@graph`, if any, instead of on the
 # whole file) or `document` (do not treat JSON-LD files differently, process "as is").
