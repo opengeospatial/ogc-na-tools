@@ -272,12 +272,14 @@ def uplift_json(data: dict | list, context: dict,
             for item in items:
                 item.value['@context'] = _get_injected_context(item.value, val, context_position)
 
-    if global_context or scoped_graph:
+    if (global_context and not isinstance(data_graph, dict)) or scoped_graph:
         return {
             '@context': _get_injected_context(data, global_context, context_position),
             '@graph': data_graph,
         }
     else:
+        if global_context:
+            data_graph['@context'] = _get_injected_context(data, global_context, context_position)
         return data_graph
 
 
