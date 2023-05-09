@@ -791,10 +791,16 @@ def _process_cmdln():
         help='Enable debug mode'
     )
 
+    parser.add_argument(
+        '--use-cwd',
+        action='store_true',
+        help='Use working directory as glob root in domain configurations'
+    )
+
     args = parser.parse_args()
 
     if args.domain_config:
-        domain_cfg = DomainConfiguration(args.domain_config)
+        domain_cfg = DomainConfiguration(args.domain_config, Path() if args.use_cwd else None)
     else:
         domain_cfg = None
 
