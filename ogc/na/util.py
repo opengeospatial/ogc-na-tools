@@ -232,11 +232,13 @@ class LRUCache:
         self._last_access[key] = time()
 
 
-def deep_update(orig_dict: dict, with_dict: dict, replace: bool = False) -> dict:
+def deep_update(orig_dict: dict, with_dict: Mapping, replace: bool = False) -> dict:
+    if not isinstance(orig_dict, Mapping):
+        return with_dict
     dest = orig_dict if replace else {**orig_dict}
     for k, v in with_dict.items():
         if isinstance(v, Mapping):
-            dest[k] = deep_update(orig_dict.get(k, {}), with_dict, replace)
+            dest[k] = deep_update(orig_dict.get(k, {}), v, replace)
         else:
             dest[k] = v
     return dest

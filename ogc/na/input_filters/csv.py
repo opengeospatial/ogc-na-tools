@@ -36,8 +36,14 @@ DEFAULT_CONF = {
 }
 
 
-def apply_filter(content: bytes, conf: dict[str, Any] | None) -> dict[str, Any] | list:
+def apply_filter(content: bytes, conf: dict[str, Any] | None) -> tuple[dict[str, Any] | list, dict[str, Any] | None]:
     conf = util.deep_update(DEFAULT_CONF, conf) if conf else DEFAULT_CONF
+
+    metadata = {
+        'filter': {
+            'conf': conf,
+        },
+    }
 
     textio = StringIO(content.decode('utf-8'))
     reader = csv.reader(textio, delimiter=conf['delimiter'], quotechar=conf['quotechar'])
@@ -50,7 +56,8 @@ def apply_filter(content: bytes, conf: dict[str, Any] | None) -> dict[str, Any] 
             next(reader, None)
         headers = next(reader, [])
         if not headers:
-            return []
+            return [], None
+        metadata['headers'] = headers
 
     # Skip requested rows
     for i in range(conf['skip-rows']):
@@ -68,4 +75,4 @@ def apply_filter(content: bytes, conf: dict[str, Any] | None) -> dict[str, Any] 
         else:
             result.append(dict(zip(headers, row)))
 
-    return result
+    return result, metadata
