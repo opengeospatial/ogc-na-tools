@@ -607,8 +607,7 @@ def process(input_files: str | Path | Sequence[str | Path],
             skip_on_missing_context: bool = False,
             provenance_base_uri: Optional[Union[str, bool]] = None,
             fetch_timeout: int = 5,
-            fetch_url_whitelist: Optional[Union[Sequence, bool]] = None,
-            debug: bool = False) -> list[UpliftResult]:
+            fetch_url_whitelist: Optional[Union[Sequence, bool]] = None) -> list[UpliftResult]:
     """
     Performs the JSON-LD uplift process.
 
@@ -667,6 +666,7 @@ def process(input_files: str | Path | Sequence[str | Path],
                     provenance_process_id=process_id,
                     fetch_timeout=fetch_timeout,
                     fetch_url_whitelist=fetch_url_whitelist,
+                    domain_cfg=domain_cfg,
                 ))
             except Exception as e:
                 if skip_on_missing_context:
@@ -686,6 +686,7 @@ def process(input_files: str | Path | Sequence[str | Path],
                     provenance_process_id=process_id,
                     fetch_timeout=fetch_timeout,
                     fetch_url_whitelist=fetch_url_whitelist,
+                    domain_cfg=domain_cfg,
                 ))
             except Exception as e:
                 if skip_on_missing_context:
