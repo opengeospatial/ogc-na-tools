@@ -38,7 +38,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from os import scandir
 from pathlib import Path
-from typing import Union, Optional, Sequence, cast, Iterable
+from typing import Union, Optional, Sequence, cast, Iterable, Any
 
 import jq
 from jsonpath_ng.ext import parse as json_path_parse
@@ -138,7 +138,6 @@ class UpliftResult:
     input_file: Path = None
     uplifted_json: dict | list = None
     graph: Graph = None
-    expanded_jsonld: dict | list = None
     output_files: list[Path] = field(default_factory=list)
 
 
@@ -314,7 +313,7 @@ def _get_injected_context(node: dict, ctx: Union[dict, list] = None, position: s
 
 
 def generate_graph(input_data: dict | list,
-                   context: dict | Sequence[dict] = None,
+                   context: dict[str, Any] | Sequence[dict] = None,
                    base: str | None = None,
                    fetch_timeout: int = 5,
                    fetch_url_whitelist: Sequence[str] | bool | None = None) -> UpliftResult:
@@ -373,9 +372,8 @@ def generate_graph(input_data: dict | list,
     if logger.isEnabledFor(logging.DEBUG):
         logger.debug('Uplifted JSON:\n%s', json.dumps(jdoc_ld, indent=2))
     g.parse(data=json.dumps(jdoc_ld), format='json-ld')
-    expanded = jsonld.expand(jdoc_ld, options)
 
-    return UpliftResult(graph=g, expanded_jsonld=expanded, uplifted_json=jdoc_ld)
+    return UpliftResult(graph=g, uplifted_json=jdoc_ld)
 
 
 def process_file(input_fn: str | Path,
@@ -479,7 +477,7 @@ def process_file(input_fn: str | Path,
     # False = do not generate
     # None = auto filename
     # - = stdout
-    if ttl_fn or ttl_fn is None:
+    if ttl_fn is not False:
         if ttl_fn == '-':
             if provenance_metadata:
                 provenance_metadata.output = FileProvenanceMetadata(mime_type='text/turtle', use_bnode=False)
@@ -501,28 +499,17 @@ def process_file(input_fn: str | Path,
     # False = do not generate
     # None = auto filename
     # "-" = stdout
-    if jsonld_fn or jsonld_fn is None:
+    if jsonld_fn is not False:
         if jsonld_fn == '-':
-            if provenance_metadata:
-                provenance_metadata.generated = FileProvenanceMetadata(mime_type='application/ld+json', use_bnode=False)
-                uplift_result.expanded_jsonld = add_jsonld_provenance(uplift_result.expanded_jsonld,
-                                                                      provenance_metadata)
-            print(uplift_result.expanded_jsonld)
+            print(json.dumps(uplift_result.uplifted_json, indent=2))
         else:
             if not jsonld_fn:
                 jsonld_fn = input_fn.with_suffix('.jsonld') \
                     if input_fn.suffix != '.jsonld' \
                     else input_fn.with_suffix(input_fn.suffix + '.jsonld')
-            if provenance_metadata:
-                provenance_metadata.generated = FileProvenanceMetadata(
-                    filename=jsonld_fn,
-                    mime_type='application/ld+json',
-                    use_bnode=False,
-                )
-                uplift_result.expanded_jsonld = add_jsonld_provenance(uplift_result.expanded_jsonld,
-                                                                      provenance_metadata)
+
             with open(jsonld_fn, 'w') as f:
-                json.dump(uplift_result.expanded_jsonld, f, indent=2)
+                json.dump(uplift_result.uplifted_json, f, indent=2)
             uplift_result.output_files.append(jsonld_fn)
 
     return uplift_result
