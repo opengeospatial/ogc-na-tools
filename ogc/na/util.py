@@ -255,7 +255,7 @@ def git_status(repo_path: str | Path = '.'):
             deleted.append(diff.a_path)
         elif diff.change_type == 'M':
             modified.append(diff.a_path)
-        elif diff.chhange_type == 'R':
+        elif diff.change_type == 'R':
             renamed.append((diff.a_path, diff.b_path))
     return {
         'added': added,
