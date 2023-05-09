@@ -30,6 +30,7 @@ _:OGC-NA-Catalog a dcat:Catalog ;
     "path/to/profile.ttl" ;
 .
 
+# A dcfg:DomainConfiguration will be used for semantic entailment and validation (update_vocabs)
 _:conceptSchemes a dcat:Dataset, dcfg:DomainConfiguration ;
   dct:identifier "conceptSchemes" ;
   dct:description "Set of terms registered with OGC NA not covered by specialised domains" ;
@@ -46,6 +47,7 @@ _:conceptSchemes a dcat:Dataset, dcfg:DomainConfiguration ;
   dct:conformsTo profiles:vocprez_ogc, profiles:skos_conceptscheme ;
 .
 
+# A dcfg:UpliftConfiguration will be used for semantic uplift (ingest_json)
 _:semanticUplift a dcat:Dataset, dcfg:UpliftConfiguration;
   dct:identifier "semanticUplift" ;
   dct:description "Semantic uplift configuration" ;
@@ -56,9 +58,9 @@ _:semanticUplift a dcat:Dataset, dcfg:UpliftConfiguration;
   # List of profiles (with semantic uplift artifacts) and/or files to 
   # use as uplift definitions
   dcfg:hasUpliftDefinition
-    [ dcfg:order 1; dcfg:file "path/to/file.yaml" ],             # Local file
+    [ dcfg:order 1; dcfg:file "path/to/file.yaml" ],             # Local file, from working directory
     [ dcfg:order 2; dcfg:profile profiles:vocprez_ogc ],         # Profile
-    [ dcfg:order 3; dcfg:file "path/to/another/definition.yaml"] # Local file
+    [ dcfg:order 3; dcfg:file "path/to/another/definition.yaml"] # Local file, from working directory
   ;
 .
 ```
@@ -138,54 +140,7 @@ context:
 
 # `context-position` dictates where the new context will be added if `@context` is already present
 # at any of the specified paths. Can be `before` (a new entry, with lower precedence, will be preprended
-# to any existing `@context`) or `after` (a new entry, with higher precedence, will be appended to any
-# existing `@context`). It has no effect for plan JSON documents. 
+# to any existing `@context`; this is the default behavior) or `after` (a new entry, with higher 
+# precedence, will be appended to any existing `@context`). It has no effect for plain JSON documents. 
 context-position: before
 ```
-
-## Sample JSON-LD context registry
-
-The following example defines 3 profile sources (two from local files and one from a SPARQL endpoint),
-and 3 domain configurations for semantic uplifts:
-
-* One for JSON documents inside `domain1` and all its subdirectories, using a definition from a profile (`profileY`)
-  and then another from a file. 
-* Another one for JSON documents inside `domain2` (but not its subdirectories), using only a definition from a file
-  (`profileZ`).
-* A third one for JSON documents inside `domain3`, using two profile definitions sequentially (first from `profileQ`
-and then from `profileR`).
-
-Additionally, 2 local artifact mappings are declared, telling the profile artifact resolver to map
-the `http://example.com/base/1` URL to the `artifacts/base/1` directory, and `http://example.com/another/base/`
-to `artifacts/another/base`.
-
-```json
-{
-  "contexts": {
-    "domain1/**/*.json": [
-      { "profile": "http://example.com/profileY" },
-      { "file": "domain1/common.yml" }
-    ],
-    "domain2/*.json": { "profile": "http://example.com/profileZ" },
-    "domain3/*.json": [
-      { "profile": "http://example.com/profileQ" },
-      { "profile": "http://example.com/profileR" }
-    ]
-  },
-  
-  "profileSources": [
-    { "file": "profiles/my-profile.ttl" },
-    { "file": "also-supports-globs/*.ttl" },
-    { "sparql":  "http://example.com/sparql" }
-  ],
-  
-  "localArtifactMappings": [
-      { "http://example.com/base/1": "artifacts/base/1" },
-      { "http://example.com/another/base/": "artifacts/another/base" }
-  ]
-}
-```
-
-YAML syntax is also supported.
-
-**Note**: The use of profiles is optional for context registries and can be omitted.
