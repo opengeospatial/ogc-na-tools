@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 from typing import Union, Optional, Sequence, cast, IO, TypeVar
 
+import wcmatch.glob
 from rdflib import Graph, Namespace, URIRef, DCTERMS, DCAT, Literal
 from wcmatch.glob import globmatch
 
@@ -212,7 +213,7 @@ class DomainConfiguration:
         return self
 
     def __len__(self):
-        return len(self.entries)
+        return len(self.entries) + len(self.uplift_entries)
 
 
 class ConfigurationEntry:
@@ -234,7 +235,7 @@ class ConfigurationEntry:
         if not isinstance(fn, Path):
             fn = Path(fn)
         fn = os.path.relpath(fn.resolve(), self.working_directory)
-        return globmatch(fn, self.globs)
+        return globmatch(fn, self.globs, flags=wcmatch.glob.G)
 
 
 class DomainConfigurationEntry(ConfigurationEntry):
