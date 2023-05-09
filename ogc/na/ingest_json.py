@@ -801,6 +801,9 @@ def _process_cmdln():
     if args.batch and args.use_git_status:
         git_status = util.git_status()
         input_files = git_status['added'] + git_status['modified'] + [r[1] for r in git_status['renamed']]
+    elif not input_files:
+        print("Error: no input files provided")
+        sys.exit(1)
 
     if args.debug:
         logger.setLevel(logging.DEBUG)
