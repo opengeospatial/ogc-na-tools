@@ -3,8 +3,9 @@
 This module contains classes to perform JSON-LD uplifting operations, facilitating
 the conversion of standard JSON into JSON-LD.
 
-JSON-LD uplifting is done in 3 steps:
+JSON-LD uplifting is done in 4 steps:
 
+* Input filter pre-processing (e.g., csv). This step is *optional*.
 * Initial transformation using [jq](https://stedolan.github.io/jq/manual/) expressions (`transform`).
 * Class annotation (adding `@type` to the root object and/or to specific nodes, using
   [jsonpath-ng](https://pypi.org/project/jsonpath-ng/) expressions) (`types`).
