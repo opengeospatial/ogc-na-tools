@@ -792,15 +792,14 @@ def _process_cmdln():
     )
 
     parser.add_argument(
-        '--use-cwd',
-        action='store_true',
-        help='Use working directory as glob root in domain configurations'
+        '--work-dir',
+        help='Set root directory for globs in domain configurations'
     )
 
     args = parser.parse_args()
 
     if args.domain_config:
-        domain_cfg = DomainConfiguration(args.domain_config, Path() if args.use_cwd else None)
+        domain_cfg = DomainConfiguration(args.domain_config, args.work_dir)
     else:
         domain_cfg = None
 
