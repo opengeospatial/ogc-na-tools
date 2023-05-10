@@ -245,8 +245,11 @@ def uplift_json(data: dict | list, context: dict,
         # Allow for transform lists to do sequential transformations
         if isinstance(transform, str):
             transform = (transform,)
-        for t in transform:
-            data_graph = json.loads(jq.compile(t).input(data_graph).text())
+        for i, t in enumerate(transform):
+            tranformed_txt = jq.compile(t).input(data_graph).text()
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug('After transform %d:\n%s', i + 1, tranformed_txt)
+            data_graph = json.loads(tranformed_txt)
 
     # Add types
     types = context.get('types', {})
