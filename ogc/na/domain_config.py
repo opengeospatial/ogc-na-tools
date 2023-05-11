@@ -27,7 +27,8 @@ DOMAIN_CFG_QUERY = """
     CONSTRUCT {
         ?catalog dcat:dataset ?domainCfg ;
             dcfg:localArtifactMapping ?mapping ;
-            dcfg:hasProfileSource ?profileSource .
+            dcfg:hasProfileSource ?profileSource ;
+            dcfg:ignoreProfileArtifactErrors ?ignoreProfileArtifactErrors .
         ?domainCfg a ?configType ;
             dcfg:glob ?glob ;
             dcfg:uriRootFilter ?uriRootFilter ;
@@ -77,11 +78,14 @@ DOMAIN_CFG_QUERY = """
             OPTIONAL {
                 ?catalog dcfg:hasProfileSource ?profileSource
             }
+            OPTIONAL {
+                ?catalog dcfg:ignoreProfileArtifactErrors ?ignoreProfileArtifactErrors
+            }
         }
   }
 """
 
-logger = logging.getLogger('domain_config')
+logger = logging.getLogger('ogc.na.domain_config')
 
 
 class DomainConfiguration:
@@ -140,9 +144,14 @@ class DomainConfiguration:
 
         cfg_graph = g.query(DOMAIN_CFG_QUERY.replace('__SERVICE__', service)).graph
 
+        ignore_profile_artifact_errors = False
+
         prof_sources: set[str | Path] = set()
         for catalog_ref in cfg_graph.subjects(DCAT.dataset):
             logger.debug("Found catalog %s", catalog_ref)
+
+            if bool(cfg_graph.value(catalog_ref, DCFG.ignoreProfileArtifactErrors)):
+                ignore_profile_artifact_errors = True
 
             # Local artifacts mapping
             for mapping_ref in cfg_graph.objects(catalog_ref, DCFG.localArtifactMapping):
@@ -160,7 +169,8 @@ class DomainConfiguration:
                 else:
                     prof_sources.add(self.working_directory / p.value)
 
-        self.profile_registry = ProfileRegistry(prof_sources)
+        self.profile_registry = ProfileRegistry(prof_sources,
+                                                ignore_artifact_errors=ignore_profile_artifact_errors)
 
         for cfg_ref in cfg_graph.objects(predicate=DCAT.dataset):
 
