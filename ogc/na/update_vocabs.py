@@ -28,6 +28,7 @@ from typing import Union, Generator
 import requests
 from rdflib import Graph, RDF, SKOS
 
+from ogc.na import util
 from ogc.na.domain_config import DomainConfiguration, DomainConfigurationEntry
 from ogc.na.profile import ProfileRegistry
 from ogc.na.provenance import generate_provenance, ProvenanceMetadata, FileProvenanceMetadata
@@ -266,7 +267,7 @@ def _main():
         "-b",
         "--batch",
         action='store_true',
-        help="Batch entail all vocabs ( use -f to force overwrite of existing entailments )",
+        help="Batch entail all vocabs",
     )
 
     parser.add_argument(
@@ -319,6 +320,12 @@ def _main():
         help='Base URI for provenance metadata',
     )
 
+    parser.add_argument(
+        '--use-git-status',
+        action='store_true',
+        help='Use git status for obtaining batch filenames'
+    )
+
     args = parser.parse_args()
 
     setup_logging(args.debug)
@@ -339,17 +346,23 @@ def _main():
     mod_list = []
     add_list = []
 
-    if args.modified:
-        mod_list = args.modified.split(",")
-        logger.info("Modified: %s", mod_list)
+    if args.use_git_status:
+        git_status = util.git_status()
+        add_list = git_status['added']
+        mod_list = git_status['modified'] + [r[1] for r in git_status['renamed']]
+        logger.info("Using git status\n - added: %s\n - modified: %s", add_list, mod_list)
+    else:
+        if args.modified:
+            mod_list = args.modified.split(",")
+            logger.info("Modified: %s", mod_list)
 
-    if args.added:
-        add_list = args.added.split(",")
-        logger.info("Added: %s", add_list)
+        if args.added:
+            add_list = args.added.split(",")
+            logger.info("Added: %s", add_list)
 
-    if args.removed:
-        dellist = args.removed.split(',')
-        logger.info("Removed: %s", dellist)
+        if args.removed:
+            dellist = args.removed.split(',')
+            logger.info("Removed: %s", dellist)
 
     domain_cfg = DomainConfiguration(args.domain_cfg, working_directory=args.working_directory)
     cfg_entries = domain_cfg.entries
