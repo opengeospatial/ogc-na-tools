@@ -131,8 +131,8 @@ def get_entailed_base_path(f: Path, g: Graph, rootpattern: str = '/def/',
 
     if not rootpattern:
         # just assume filename is going to be fine
-        return (f.parent / entailed_dir / f,
-                f.name, get_graph_uri_for_vocab(g))
+        return (f.parent / entailed_dir / f.name,
+                f.name, next(get_graph_uri_for_vocab(g), None))
 
     canonical_filename = None
     conceptscheme = None
