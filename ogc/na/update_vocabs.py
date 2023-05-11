@@ -32,7 +32,7 @@ from ogc.na.domain_config import DomainConfiguration, DomainConfigurationEntry
 from ogc.na.profile import ProfileRegistry
 from ogc.na.provenance import generate_provenance, ProvenanceMetadata, FileProvenanceMetadata
 
-logger = logging.getLogger('update_vocabs')
+logger = logging.getLogger('ogc.na.update_vocabs')
 
 ENTAILED_FORMATS = [
     {'extension': 'ttl', 'format': 'ttl', 'mime': 'text/turtle'},
@@ -356,9 +356,9 @@ def _main():
     if not len(cfg_entries):
         if args.domain:
             logger.warning('No configuration found in %s for domain %s, exiting',
-                           args.domaincfg, args.domain)
+                           args.domain_cfg, args.domain)
         else:
-            logger.warning('No configuration found in %s exiting', args.domaincfg)
+            logger.warning('No configuration found in %s exiting', args.domain_cfg)
         sys.exit(1)
 
     artifact_mappings = dict(domain_cfg.local_artifacts_mapping)
@@ -369,9 +369,7 @@ def _main():
                 raise Exception(f"Invalid local artifact mapping: {mappingstr}")
             artifact_mappings[mapping[0]] = mapping[1]
 
-    profile_registry = ProfileRegistry(args.profile_source,
-                                       local_artifact_mappings=artifact_mappings,
-                                       ignore_artifact_errors=True)
+    profile_registry = domain_cfg.profile_registry
 
     modified: dict[Path, DomainConfigurationEntry]
     added: dict[Path, DomainConfigurationEntry]
@@ -396,8 +394,8 @@ def _main():
                 provenance_metadata = None
             else:
                 provenance_metadata = ProvenanceMetadata(
-                    used=[FileProvenanceMetadata(filename=doc)] +
-                         [FileProvenanceMetadata(filename=c) for c in args.domain_cfg],
+                    used=[FileProvenanceMetadata(filename=doc),
+                          FileProvenanceMetadata(filename=args.domain_cfg)],
                     start=datetime.now(),
                     end_auto=True,
                     root_directory=domain_cfg.working_directory,
