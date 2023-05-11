@@ -69,13 +69,12 @@ PROFILES_QUERY = """
                 ?profile prof:hasResource ?resource .
                 ?resource prof:hasRole ?role ;
                     dct:conformsTo shacl: ;
-                    prof:hasArtifact ?artifact ;
-                    .
+                    prof:hasArtifact ?artifact
+                OPTIONAL {
+                    ?resource prof:hasRole ?role ;
+                        prof:hasArtifact ?artifact
+                }
             } 
-            OPTIONAL {
-                ?resource prof:hasRole ?role ;
-                    prof:hasArtifact ?artifact ;
-            }
         }
     }
 """
@@ -135,7 +134,7 @@ class ProfileRegistry:
                             recursive: bool = True,
                             sort: bool = True) -> list[URIRef]:
         if not profiles:
-            return list(profiles)
+            return []
 
         if not sort:
             # Only known profiles and remove duplicates
