@@ -79,11 +79,15 @@ PROFILES_QUERY = """
     }
 """
 
-logger = logging.getLogger('domain_config')
+logger = logging.getLogger('ogc.na.profile')
 
 
 def find_profiles(g: Graph) -> Generator[URIRef, Any, None]:
     return (o for s, o in g.subject_objects(DCTERMS.conformsTo) if isinstance(o, URIRef))
+
+
+class ArtifactError(Exception):
+    pass
 
 
 class Profile:
@@ -143,10 +147,11 @@ class ProfileRegistry:
                 pending = set(known)
                 while pending:
                     prof = self.profiles.get(pending.pop())
-                    for prof_of in prof.profile_of or ():
-                        if prof_of not in known:
-                            pending.add(prof_of)
-                        known[prof_of] = True
+                    if prof:
+                        for prof_of in prof.profile_of or ():
+                            if prof_of not in known:
+                                pending.add(prof_of)
+                            known[prof_of] = True
             return list(known)
 
         # Otherwise, sort DAG
@@ -156,13 +161,13 @@ class ProfileRegistry:
         while pending:
             prof_uri = pending.popleft()
             if prof_uri in dependencies:
-                # skip if duplicate
+                # skip if already processed
                 continue
             prof = self.profiles.get(prof_uri)
             if not prof:
                 # skip if unknown
                 continue
-            prof_deps = self.profiles.get(prof_uri).profile_of
+            prof_deps = (d for d in self.profiles.get(prof_uri).profile_of if d in self.profiles)
             if not prof_deps:
                 # has no dependencies
                 dependencies[prof_uri] = None
@@ -185,7 +190,8 @@ class ProfileRegistry:
                 if not child_uris:
                     removed[parent_uri] = True
             if not removed:
-                raise ValueError('Cycle detected in profile DAG, cannot sort')
+                dependencies_str = '; '.join(f"{p} <- {', '.join(str(c) for c in cs)}" for p, cs in dependencies.items())
+                raise ValueError(f'Cycle detected in profile DAG, cannot sort: {dependencies_str}')
             for rem in removed:
                 del dependencies[rem]
                 result.append(rem)
@@ -224,6 +230,8 @@ class ProfileRegistry:
 
             for resource_ref in g.objects(profile_ref, PROF.hasResource):
                 role_ref = g.value(resource_ref, PROF.hasRole)
+                if not role_ref:
+                    continue
                 for artifact_ref in g.objects(resource_ref, PROF.hasArtifact):
                     profile.add_artifact(role_ref, cast(URIRef, artifact_ref))
 
@@ -330,7 +338,14 @@ class ProfileRegistry:
                 continue
             rules, rules_artifacts = self.get_graph(profile_ref, ROLE_VALIDATION)
             extra, extra_artifacts = self.get_graph(profile_ref, ROLE_VALIDATION_CLOSURE)
-            prof_result = util.validate(g, rules, extra)
+            try:
+                prof_result = util.validate(g, rules, extra)
+            except Exception as e:
+                all_artifacts = {
+                    'rules': [str(a) for a in rules_artifacts],
+                    'extra': [str(a) for a in extra_artifacts],
+                }
+                raise ArtifactError('Error performing SHACL validation', all_artifacts) from e
             prof_result.used_resources = set(itertools.chain(rules_artifacts or [], extra_artifacts or []))
             result.add(ProfileValidationReport(profile_ref, profile.token, prof_result))
             logger.debug("Adding validation results for %s", profile_ref)
