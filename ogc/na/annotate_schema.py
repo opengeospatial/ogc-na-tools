@@ -501,16 +501,25 @@ class ContextBuilder:
 
                     own_context[prop] = prop_context
 
+        def process_subschema(ss):
+            if isinstance(ss, dict):
+                if '$ref' in ss:
+                    ref_fn, ref_url = resolve_ref(ss['$ref'], fn, url, base_url)
+                    merge_dicts(self._build_context(ref_fn, ref_url), own_context)
+                else:
+                    read_properties(ss)
+
         for i in ('allOf', 'anyOf', 'oneOf'):
             l = schema.get(i)
             if isinstance(l, list):
                 for sub_schema in l:
-                    if isinstance(sub_schema, dict):
-                        if '$ref' in sub_schema:
-                            ref_fn, ref_url = resolve_ref(sub_schema['$ref'], fn, url, base_url)
-                            merge_dicts(self._build_context(ref_fn, ref_url), own_context)
-                        else:
-                            read_properties(sub_schema)
+                    process_subschema(sub_schema)
+
+        for i in ('$defs', 'definitions'):
+            d = schema.get(i)
+            if isinstance(d, dict):
+                for sub_schema in d.values():
+                    process_subschema(sub_schema)
 
         read_properties(schema)
 
