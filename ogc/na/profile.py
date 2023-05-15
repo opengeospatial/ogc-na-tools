@@ -54,6 +54,7 @@ PROFILES_QUERY = """
             rdfs:label ?label ;
             .
         ?resource prof:hasRole ?role ;
+            dct:conformsTo shacl: ;
             prof:hasArtifact ?artifact ;
             .
     } WHERE {
@@ -61,7 +62,7 @@ PROFILES_QUERY = """
             { ?profile a prof:Profile } UNION { ?other prof:isProfileOf ?profile }
             ?profile prof:hasToken ?token .
             OPTIONAL {
-                { ?profile owl:sameAs+ ?sameAs} UNION { ?sameAs owl:sameAs+ ?profile }
+                { ?profile owl:sameAs+ ?sameAs } UNION { ?sameAs owl:sameAs+ ?profile }
             }
             OPTIONAL { ?profile rdfs:label ?label }
             OPTIONAL { ?profile prof:isProfileOf+ ?ancestor }
@@ -130,7 +131,8 @@ class ProfileRegistry:
         self.profiles: dict[URIRef, Profile] = {}
         self._load_profiles()
         # Cache of { profile: { role: Graph } }
-        self._graphs: dict[URIRef, dict[URIRef, tuple[Graph, set[Union[str, Path]]]]] = {}
+        self._graphs: dict[URIRef, dict[URIRef,
+                           tuple[Graph, set[Union[str, Path]], set[Union[str, Path]]]]] = {}
 
         self.ignore_artifact_errors = ignore_artifact_errors
 
