@@ -367,6 +367,8 @@ class SchemaAnnotator:
 
         def process_properties(obj: dict):
             properties: dict[str, dict] = obj.get('properties') if obj else None
+            if not properties:
+                return
             if not isinstance(properties, dict):
                 raise ValueError('"properties" must be a dictionary')
 
