@@ -310,6 +310,7 @@ class ProfileRegistry:
 
         artifacts = set()
         for profile_ref in profiles:
+            logger.info('Entailing with %s', profile_ref)
             rules, rules_artifacts, failed_artifacts = self.get_graph(profile_ref, ROLE_ENTAILMENT)
             extra, extra_artifacts, failed_artifacts = self.get_graph(profile_ref, ROLE_ENTAILMENT_CLOSURE)
             if rules_artifacts:
@@ -317,10 +318,6 @@ class ProfileRegistry:
             if extra_artifacts:
                 artifacts.update(extra_artifacts)
             g = util.entail(g, rules, extra or None, True)
-
-            profile = self.profiles.get(profile_ref)
-            if recursive and profile and profile.profile_of:
-                profiles.extend(profile.profile_of)
 
         return g, artifacts
 
@@ -335,7 +332,7 @@ class ProfileRegistry:
         profiles = self.build_profile_chain(profiles, recursive=recursive, sort=False)
 
         for profile_ref in profiles:
-            logger.debug("Validating with %s", str(profile_ref))
+            logger.info("Validating with %s", str(profile_ref))
             profile = self.profiles.get(profile_ref)
             if not profile:
                 logger.warning("Profile %s not found", profile_ref)
