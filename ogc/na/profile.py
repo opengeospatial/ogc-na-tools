@@ -27,7 +27,7 @@ from rdflib import Graph, RDF, PROF, OWL, URIRef, DCTERMS, Namespace, RDFS
 from ogc.na import util
 from pathlib import Path
 
-from ogc.na.validation import ProfileValidationReport, ProfilesValidationReport
+from ogc.na.validation import ProfileValidationReport, ProfilesValidationReport, ValidationReport
 
 PROFROLE = Namespace('http://www.w3.org/ns/dx/prof/role/')
 
@@ -265,11 +265,12 @@ class ProfileRegistry:
 
         return set(self._apply_mappings(artifact_ref) for artifact_ref in self.profiles[profile].get_artifacts(role))
 
-    def get_graph(self, profile: URIRef | str, role: URIRef) -> tuple[Graph | None, set[str | Path] | None]:
+    def get_graph(self, profile: URIRef | str, role: URIRef) \
+            -> tuple[Graph | None, set[str | Path] | None, set[str | Path] | None]:
         if not isinstance(profile, URIRef):
             profile = URIRef(profile)
         if profile not in self.profiles:
-            return None, None
+            return None, None, None
 
         prof_graphs = self._graphs.setdefault(profile, {})
 
@@ -278,6 +279,7 @@ class ProfileRegistry:
 
         g = Graph()
         artifacts = set()
+        failed_artifacts = set()
         for artifact in self.get_artifacts(profile, role):
             try:
                 g.parse(artifact)
@@ -286,11 +288,12 @@ class ProfileRegistry:
                 if self.ignore_artifact_errors:
                     logger.warning("Error when retrieving or parsing artifact %s: %s",
                                    artifact, str(e))
+                    failed_artifacts.add(artifact)
                 else:
                     raise Exception(f"Error when retrieving or parsing artifact {artifact}") from e
 
-            prof_graphs[role] = g, artifacts
-        return g, artifacts
+            prof_graphs[role] = g, artifacts, failed_artifacts
+        return g, artifacts, failed_artifacts
 
     def entail(self, g: Graph,
                additional_profiles: Optional[Sequence[str | URIRef]] = None,
@@ -307,8 +310,8 @@ class ProfileRegistry:
 
         artifacts = set()
         for profile_ref in profiles:
-            rules, rules_artifacts = self.get_graph(profile_ref, ROLE_ENTAILMENT)
-            extra, extra_artifacts = self.get_graph(profile_ref, ROLE_ENTAILMENT_CLOSURE)
+            rules, rules_artifacts, failed_artifacts = self.get_graph(profile_ref, ROLE_ENTAILMENT)
+            extra, extra_artifacts, failed_artifacts = self.get_graph(profile_ref, ROLE_ENTAILMENT_CLOSURE)
             if rules_artifacts:
                 artifacts.update(rules_artifacts)
             if extra_artifacts:
@@ -323,7 +326,7 @@ class ProfileRegistry:
 
     def validate(self, g: Graph,
                  additional_profiles: Sequence[str | URIRef] | None = None,
-                 recursive: bool = True) -> ProfilesValidationReport:
+                 recursive: bool = True, log_artifact_errors: bool = False) -> ProfilesValidationReport:
         result = ProfilesValidationReport()
         profiles = deque(find_profiles(g))
         if additional_profiles:
@@ -338,17 +341,29 @@ class ProfileRegistry:
                 logger.warning("Profile %s not found", profile_ref)
                 # should we fail?
                 continue
-            rules, rules_artifacts = self.get_graph(profile_ref, ROLE_VALIDATION)
-            extra, extra_artifacts = self.get_graph(profile_ref, ROLE_VALIDATION_CLOSURE)
+            rules, rules_artifacts, failed_rules_artifacts = self.get_graph(profile_ref, ROLE_VALIDATION)
+            extra, extra_artifacts, failed_extra_artifacts = self.get_graph(profile_ref, ROLE_VALIDATION_CLOSURE)
+            failed_artifacts = failed_rules_artifacts | failed_extra_artifacts
             try:
                 prof_result = util.validate(g, rules, extra)
             except Exception as e:
-                all_artifacts = {
-                    'rules': [str(a) for a in rules_artifacts],
-                    'extra': [str(a) for a in extra_artifacts],
-                }
-                raise ArtifactError('Error performing SHACL validation', all_artifacts) from e
+                if log_artifact_errors:
+                    err_text = f"Error performing SHACL validation: {e}\n"
+                    if rules_artifacts:
+                        err_text += 'Used rules artifacts:\n' + '\n - '.join((str(s) for s in rules_artifacts))
+                    if extra_artifacts:
+                        err_text += 'Used extra artifacts:\n' + '\n - '.join((str(s) for s in extra_artifacts))
+                    prof_result = ValidationReport((False, Graph(), err_text))
+                else:
+                    all_artifacts = {
+                        'rules': [str(a) for a in rules_artifacts],
+                        'extra': [str(a) for a in extra_artifacts],
+                    }
+                    raise ArtifactError('Error performing SHACL validation', all_artifacts) from e
+
             prof_result.used_resources = set(itertools.chain(rules_artifacts or [], extra_artifacts or []))
+            if failed_artifacts:
+                prof_result.text += "\n# Failed artifacts\n" + '\n'.join(str(a) for a in failed_artifacts) + '\n'
             result.add(ProfileValidationReport(profile_ref, profile.token, prof_result))
             logger.debug("Adding validation results for %s", profile_ref)
 

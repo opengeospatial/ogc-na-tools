@@ -420,7 +420,7 @@ def _main():
 
             origg = Graph().parse(doc)
             newg, entail_artifacts = profile_registry.entail(origg, cfg.conforms_to)
-            validation_result = profile_registry.validate(newg, cfg.conforms_to)
+            validation_result = profile_registry.validate(newg, cfg.conforms_to, log_artifact_errors=True)
 
             if provenance_metadata:
                 def add_artifact(a: Union[str, Path]):
