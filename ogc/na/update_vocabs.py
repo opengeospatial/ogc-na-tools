@@ -443,11 +443,12 @@ def _main():
 
             docrelpath = Path(os.path.relpath(doc, args.working_directory))
             if output_path:
-                output_doc = output_path / docrelpath
-                entailment_dir = (output_doc.parent / args.entailment_directory).resolve()
+                output_doc = output_path.resolve() / docrelpath
+                entailment_dir = output_doc.parent / args.entailment_directory
+                output_doc = entailment_dir / output_doc.name
             else:
-                entailment_dir = args.entailment_directory
-                output_doc = doc
+                entailment_dir = Path(args.entailment_directory).resolve()
+                output_doc = entailment_dir / doc.name
 
             os.makedirs(output_doc.parent, exist_ok=True)
             os.makedirs(entailment_dir, exist_ok=True)
