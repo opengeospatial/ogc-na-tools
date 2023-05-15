@@ -326,6 +326,12 @@ def _main():
         help='Use git status for obtaining batch filenames'
     )
 
+    parser.add_argument(
+        '--auth',
+        help="Authentication for uploading data to the triplestore in 'username:password' format. "
+             "Alternatively, you can set the DB_USERNAME and DB_PASSWORD env variables."
+    )
+
     args = parser.parse_args()
 
     setup_logging(args.debug)
@@ -337,7 +343,9 @@ def _main():
         sys.exit(-1)
 
     authdetails = None
-    if 'DB_USERNAME' in os.environ:
+    if args.auth:
+        authdetails = args.auth.split(':', maxsplit=1)
+    elif 'DB_USERNAME' in os.environ:
         authdetails = (os.environ["DB_USERNAME"], os.environ.get("DB_PASSWORD", ""))
 
     if graph_store:
