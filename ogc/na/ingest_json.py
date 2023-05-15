@@ -263,6 +263,11 @@ def uplift_json(data: dict | list, context: dict,
                 item.value['@type'] = [existing] + type_list
             else:
                 item.value['@type'].extend(type_list)
+            item_types = item.value.get('@type')
+            if not item_types:
+                item.value.pop('@type', None)
+            elif isinstance(item_types, Sequence) and not isinstance(item_types, str) and len(item_types) == 1:
+                item.value['@type'] = item_types[0]
 
     # Add contexts
     context_list = context.get('context', {})
