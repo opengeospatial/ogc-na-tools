@@ -402,11 +402,15 @@ class SchemaAnnotator:
                     prop_value[ANNOTATION_ID] = terms[prop]
                     if prop in types:
                         prop_value[ANNOTATION_TYPE] = types[prop]
-                self._follow_ref(prop_value, fn, url, base_url)
+
+                process_subschema(prop_value)
 
             properties.update({p: {ANNOTATION_ID: terms[p]} for p in empty_properties if p in terms})
 
         def process_subschema(subschema):
+
+            if not subschema:
+                return
 
             self._follow_ref(subschema, fn, url, base_url)
 
@@ -426,7 +430,7 @@ class SchemaAnnotator:
                 process_properties(subschema)
             elif schema_type == 'array':
                 for k in ('prefixItems', 'items', 'contains'):
-                    process_properties(subschema.get(k))
+                    process_subschema(subschema.get(k))
 
             # Annotate $defs
             for defs_prop in ('$defs', 'definitions'):
@@ -453,7 +457,7 @@ class ContextBuilder:
     """
 
     def __init__(self, fn: Path | str | None = None, url: str | None = None,
-                 compact: bool = True):
+                 compact: bool = True, ref_mapper: Callable[[str], str] | None = None):
         """
         :param fn: file to load the annotated schema from
         :param url: URL to load the annotated schema from
@@ -461,6 +465,7 @@ class ContextBuilder:
         self.context = {'@context': {}}
         self._parsed_schemas: dict[str | Path, dict] = {}
         self.compact = compact
+        self._ref_mapper = ref_mapper
 
         context = self._build_context(fn, url)
         self.context = {'@context': context}
@@ -502,7 +507,7 @@ class ContextBuilder:
         if prefixes:
             own_context.update(prefixes)
 
-        def read_properties(where: dict):
+        def read_properties(where: dict, into_context: dict):
             if not isinstance(where, dict):
                 return
             for prop, prop_val in where.get('properties', {}).items():
@@ -513,56 +518,56 @@ class ContextBuilder:
                     if ANNOTATION_TYPE in prop_val:
                         prop_context['@type'] = compact_uri(prop_val[ANNOTATION_TYPE])
 
-                    if '$ref' in prop_val:
-                        ref_fn, ref_url = resolve_ref(prop_val['$ref'], fn, url, base_url)
-                        prop_context['@context'] = self._build_context(ref_fn, ref_url)
+                    process_subschema(prop_val, prop_context.setdefault('@context', {}))
 
-                    if len(prop_context) == 1:
+                    if not prop_context['@context']:
+                        prop_context.pop('@context', None)
+
+                    if isinstance(prop_context, dict) and len(prop_context) == 1:
                         # shorten to just the id
                         prop_context = next(iter(prop_context.values()))
 
-                    own_context[prop] = prop_context
+                    into_context[prop] = prop_context
 
-        def process_subschema(ss):
+        def process_subschema(ss, into_context: dict):
+
             if isinstance(ss, dict):
                 if '$ref' in ss:
                     ref_fn, ref_url = resolve_ref(ss['$ref'], fn, url, base_url)
                     merge_dicts(self._build_context(ref_fn, ref_url), own_context)
-                read_properties(ss)
+                read_properties(ss, into_context)
 
-        for i in ('allOf', 'anyOf', 'oneOf'):
-            l = schema.get(i)
-            if isinstance(l, list):
-                for sub_schema in l:
-                    process_subschema(sub_schema)
+                for i in ('allOf', 'anyOf', 'oneOf'):
+                    l = ss.get(i)
+                    if isinstance(l, list):
+                        for sub_schema in l:
+                            process_subschema(sub_schema, into_context)
 
-        for i in ('$defs', 'definitions'):
-            d = schema.get(i)
-            if isinstance(d, dict):
-                for sub_schema in d.values():
-                    process_subschema(sub_schema)
+                for i in ('$defs', 'definitions'):
+                    d = ss.get(i)
+                    if isinstance(d, dict):
+                        for sub_schema in d.values():
+                            process_subschema(sub_schema, into_context)
 
-        read_properties(schema)
+        process_subschema(schema, own_context)
 
         if self.compact:
-            context_props = set(own_context.keys())
-            compact_context = {}
-            for prop, prop_val in own_context.items():
-                compact_context[prop] = prop_val
-                if not isinstance(prop_val, dict):
-                    continue
-                prop_context = prop_val.pop('@context', None)
-                if not isinstance(prop_context, dict):
-                    continue
-                for term, term_val in prop_context.items():
-                    if not term.startswith('@') and term in context_props:
-                        compact_context.setdefault(prop, {}).setdefault('@context', {})[term] = term_val
-                    else:
-                        compact_context[term] = term_val
-                if len(compact_context[prop]) == 1 and '@id' in compact_context[prop]:
-                    compact_context[prop] = compact_context[prop]['@id']
 
-            own_context = compact_context
+            def compact_branch(branch, existing_terms):
+
+                for term in list(branch.keys()):
+                    if term[0] == '@':
+                        # skip special terms
+                        continue
+                    if term in existing_terms and existing_terms[term] == branch[term]:
+                        # same term exists in ancestor -> delete
+                        del branch[term]
+
+                for term, term_value in branch.items():
+                    if isinstance(term_value, dict) and '@context' in term_value:
+                        compact_branch(term_value['@context'], {**existing_terms, **branch})
+
+            compact_branch(own_context, {})
 
         self._parsed_schemas[fn or url] = own_context
         return own_context
