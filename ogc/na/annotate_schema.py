@@ -323,7 +323,8 @@ class SchemaAnnotator:
 
     def __init__(self, fn: Path | str | None = None, url: str | None = None,
                  follow_refs: bool = True, ref_root: Path | str | None = None,
-                 context: str | Path | dict | None = None):
+                 context: str | Path | dict | None = None,
+                 ref_mapper: Callable[[str], str] | None = None):
         """
         :param fn: file path to load (root schema)
         :param url: URL to load (root schema)
@@ -334,8 +335,28 @@ class SchemaAnnotator:
         self.ref_root = Path(ref_root) if ref_root else None
         self._follow_refs = follow_refs
         self._provided_context = context
+        self._ref_mapper = ref_mapper
 
         self._process_schema(fn, url)
+
+    def _follow_ref(self, subschema, schema_fn: Path, schema_url: str, base_url: str | None):
+        if not isinstance(subschema, dict) or '$ref' not in subschema:
+            return
+
+        if self._ref_mapper:
+            subschema['$ref'] = self._ref_mapper(subschema['$ref'])
+
+        if not self._follow_refs:
+            return
+
+        ref_fn, ref_url = resolve_ref(subschema['$ref'], schema_fn, schema_url, base_url)
+        ref = ref_fn or ref_url
+
+        if ref in self.schemas:
+            logger.info(' >> Found $ref to already-processed schema: %s', ref)
+        else:
+            logger.info(' >> Found $ref to new schema: %s', ref)
+            self._process_schema(url=ref_url, fn=ref_fn)
 
     def _process_schema(self, fn: Path | str | None = None, url: str | None = None):
         contents, base_url = read_contents(fn, url)
@@ -381,24 +402,22 @@ class SchemaAnnotator:
                     prop_value[ANNOTATION_ID] = terms[prop]
                     if prop in types:
                         prop_value[ANNOTATION_TYPE] = types[prop]
-                if '$ref' in prop_value and self._follow_refs:
-
-                    ref_fn, ref_url = resolve_ref(prop_value['$ref'], fn, url, base_url)
-                    ref = ref_fn or ref_url
-
-                    if ref in self.schemas:
-                        logger.info(' >> Found $ref to already-processed schema: %s', ref)
-                    else:
-                        logger.info(' >> Found $ref to new schema: %s', prop_value['$ref'])
-                        if ref_url:
-                            self._process_schema(url=ref)
-                        else:
-                            self._process_schema(fn=ref)
+                self._follow_ref(prop_value, fn, url, base_url)
 
             properties.update({p: {ANNOTATION_ID: terms[p]} for p in empty_properties if p in terms})
 
         def process_subschema(subschema):
 
+            self._follow_ref(subschema, fn, url, base_url)
+
+            # Annotate oneOf, allOf, anyOf
+            for p in ('oneOf', 'allOf', 'anyOf'):
+                collection = subschema.get(p)
+                if collection and isinstance(collection, list):
+                    for entry in collection:
+                        process_subschema(entry)
+
+            # Annotate main schema
             schema_type = subschema.get('type')
             if not schema_type and 'properties' in subschema:
                 schema_type = 'object'
@@ -409,6 +428,7 @@ class SchemaAnnotator:
                 for k in ('prefixItems', 'items', 'contains'):
                     process_properties(subschema.get(k))
 
+            # Annotate $defs
             for defs_prop in ('$defs', 'definitions'):
                 defs_value = subschema.get(defs_prop)
                 if isinstance(defs_value, dict):
@@ -508,8 +528,7 @@ class ContextBuilder:
                 if '$ref' in ss:
                     ref_fn, ref_url = resolve_ref(ss['$ref'], fn, url, base_url)
                     merge_dicts(self._build_context(ref_fn, ref_url), own_context)
-                else:
-                    read_properties(ss)
+                read_properties(ss)
 
         for i in ('allOf', 'anyOf', 'oneOf'):
             l = schema.get(i)
