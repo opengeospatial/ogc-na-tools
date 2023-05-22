@@ -159,7 +159,7 @@ class ProfileRegistry:
         # Otherwise, sort DAG
         # 1. Build dependency tree
         dependencies: dict[URIRef, set[URIRef] | None] = {}
-        pending = deque(profiles) # using a deque to try and preserve as much of the original order as possible
+        pending = deque(profiles)  # using a deque to try and preserve as much of the original order as possible
         while pending:
             prof_uri = pending.popleft()
             if prof_uri in dependencies:
@@ -169,13 +169,13 @@ class ProfileRegistry:
             if not prof:
                 # skip if unknown
                 continue
-            prof_deps = (d for d in self.profiles.get(prof_uri).profile_of if d in self.profiles)
+            prof_deps = [d for d in self.profiles.get(prof_uri).profile_of if d in self.profiles]
             if not prof_deps:
                 # has no dependencies
                 dependencies[prof_uri] = None
             if not recursive:
                 # non-recursive => only work with provided profile list
-                prof_deps = (d for d in prof_deps if d in profiles)
+                prof_deps = [d for d in prof_deps if d in profiles]
             else:
                 for p in prof_deps:
                     if p not in pending:
@@ -192,7 +192,8 @@ class ProfileRegistry:
                 if not child_uris:
                     removed[parent_uri] = True
             if not removed:
-                dependencies_str = '; '.join(f"{p} <- {', '.join(str(c) for c in cs)}" for p, cs in dependencies.items())
+                dependencies_str = '; '.join(
+                    f"{p} <- {', '.join(str(c) for c in cs)}" for p, cs in dependencies.items())
                 raise ValueError(f'Cycle detected in profile DAG, cannot sort: {dependencies_str}')
             for rem in removed:
                 del dependencies[rem]
