@@ -458,13 +458,14 @@ class ContextBuilder:
         """
         self.context = {'@context': {}}
         self._parsed_schemas: dict[str | Path, dict] = {}
-        self.compact = compact
         self._ref_mapper = ref_mapper
 
-        context = self._build_context(fn, url)
+        context = self._build_context(fn, url, compact)
         self.context = {'@context': context}
 
-    def _build_context(self, fn: Path | str | None = None, url: str | None = None) -> dict:
+    def _build_context(self, fn: Path | str | None = None,
+                       url: str | None = None,
+                       compact: bool = True) -> dict:
         parsed = self._parsed_schemas.get(fn, self._parsed_schemas.get(url))
         if parsed:
             return parsed
@@ -517,10 +518,6 @@ class ContextBuilder:
                     if not prop_context['@context']:
                         prop_context.pop('@context', None)
 
-                    if isinstance(prop_context, dict) and len(prop_context) == 1:
-                        # shorten to just the id
-                        prop_context = next(iter(prop_context.values()))
-
                     if prop_context:
                         into_context[prop] = prop_context
 
@@ -533,7 +530,7 @@ class ContextBuilder:
 
                     if ref_fn or re.sub(r'#.*', '', ref_url) != url:
                         # Only follow ref if it's not to this same document
-                        merge_dicts(self._build_context(ref_fn, ref_url), own_context)
+                        merge_dicts(self._build_context(ref_fn, ref_url, False), own_context)
 
                 read_properties(ss, into_context)
 
@@ -551,7 +548,7 @@ class ContextBuilder:
 
         process_subschema(schema, own_context)
 
-        if self.compact:
+        if compact:
 
             def compact_branch(branch, existing_terms):
 
@@ -563,9 +560,13 @@ class ContextBuilder:
                         # same term exists in ancestor -> delete
                         del branch[term]
 
-                for term, term_value in branch.items():
-                    if isinstance(term_value, dict) and '@context' in term_value:
-                        compact_branch(term_value['@context'], {**existing_terms, **branch})
+                for term in list(branch.keys()):
+                    term_value = branch[term]
+                    if isinstance(term_value, dict):
+                        if len(term_value) == 1 and '@id' in term_value:
+                            branch[term] = term_value['@id']
+                        elif '@context' in term_value:
+                            compact_branch(term_value['@context'], {**existing_terms, **branch})
 
             compact_branch(own_context, {})
 
