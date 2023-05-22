@@ -23,7 +23,7 @@ class InputFiltersCSVTest(unittest.TestCase):
             'skip-rows': 0,
             'header-row': 0,
         }
-        rows = csv.apply_filter(WITH_HEADERS, cfg)
+        rows = csv.apply_filter(WITH_HEADERS, cfg)[0]
         self.assertEqual(len(rows), 87)
         self.assertEqual(rows[0], {
             'Year': '1968',
@@ -37,7 +37,7 @@ class InputFiltersCSVTest(unittest.TestCase):
         })
 
         cfg['skip-rows'] = 3
-        rows = csv.apply_filter(WITH_HEADERS, cfg)
+        rows = csv.apply_filter(WITH_HEADERS, cfg)[0]
         self.assertEqual(len(rows), 84)
         self.assertEqual(rows[0], {
             'Year': '1971',
@@ -52,7 +52,7 @@ class InputFiltersCSVTest(unittest.TestCase):
 
         cfg['skip-rows'] = 0
         cfg['header-row'] = 2
-        rows = csv.apply_filter(WITH_HEADERS, cfg)
+        rows = csv.apply_filter(WITH_HEADERS, cfg)[0]
         self.assertEqual(len(rows), 85)
         self.assertEqual(rows[0], {
             '1970': '1970',
@@ -65,22 +65,22 @@ class InputFiltersCSVTest(unittest.TestCase):
             'rows': 'list',
             'skip-rows': 0,
         }
-        rows = csv.apply_filter(WITH_HEADERS, cfg)
+        rows = csv.apply_filter(WITH_HEADERS, cfg)[0]
         self.assertEqual(len(rows), 88)
         self.assertEqual(rows[0], ['Year', 'Score', 'Title'])
         self.assertEqual(rows[10], ['1977', '47', '1900'])
         cfg['skip-rows'] = 1
-        rows = csv.apply_filter(WITH_HEADERS, cfg)
+        rows = csv.apply_filter(WITH_HEADERS, cfg)[0]
         self.assertEqual(len(rows), 87)
         self.assertEqual(rows[0], ['1968', '86', "Greetings"])
         self.assertEqual(rows[3], ['1971', '40', "Born to Win"])
         cfg['header-row'] = 2  # should have no effect
-        self.assertEqual(rows, csv.apply_filter(WITH_HEADERS, cfg))
+        self.assertEqual(rows, csv.apply_filter(WITH_HEADERS, cfg)[0])
 
         cfg['skip-rows'] = 0
-        rows = csv.apply_filter(NO_HEADERS, cfg)
+        rows = csv.apply_filter(NO_HEADERS, cfg)[0]
         self.assertEqual(len(rows), 6)
         self.assertEqual(rows[0], ['John', 'Doe', '120 jefferson st.', 'Riverside', ' NJ', ' 08075'])
         cfg['trim-values'] = True
-        rows = csv.apply_filter(NO_HEADERS, cfg)
+        rows = csv.apply_filter(NO_HEADERS, cfg)[0]
         self.assertEqual(rows[0], ['John', 'Doe', '120 jefferson st.', 'Riverside', 'NJ', '08075'])
