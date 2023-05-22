@@ -505,14 +505,14 @@ class ContextBuilder:
             if not isinstance(where, dict):
                 return
             for prop, prop_val in where.get('properties', {}).items():
-                if isinstance(prop_val, dict) and ANNOTATION_ID in prop_val:
-                    prop_context = {
-                        '@id': compact_uri(prop_val[ANNOTATION_ID])
-                    }
-                    if ANNOTATION_TYPE in prop_val:
-                        prop_context['@type'] = compact_uri(prop_val[ANNOTATION_TYPE])
+                if isinstance(prop_val, dict):
+                    prop_context: dict[str, Any] = {'@context': {}}
+                    if ANNOTATION_ID in prop_val:
+                        prop_context['@id'] = compact_uri(prop_val[ANNOTATION_ID])
+                        if ANNOTATION_TYPE in prop_val:
+                            prop_context['@type'] = compact_uri(prop_val[ANNOTATION_TYPE])
 
-                    process_subschema(prop_val, prop_context.setdefault('@context', {}))
+                    process_subschema(prop_val, prop_context['@context'])
 
                     if not prop_context['@context']:
                         prop_context.pop('@context', None)
@@ -521,14 +521,20 @@ class ContextBuilder:
                         # shorten to just the id
                         prop_context = next(iter(prop_context.values()))
 
-                    into_context[prop] = prop_context
+                    if prop_context:
+                        into_context[prop] = prop_context
 
         def process_subschema(ss, into_context: dict):
 
             if isinstance(ss, dict):
-                if '$ref' in ss:
+                if '$ref' in ss and ss['$ref'][0] != '#':
+                    # we skip local $refs
                     ref_fn, ref_url = resolve_ref(ss['$ref'], fn, url, base_url)
-                    merge_dicts(self._build_context(ref_fn, ref_url), own_context)
+
+                    if ref_fn or re.sub(r'#.*', '', ref_url) != url:
+                        # Only follow ref if it's not to this same document
+                        merge_dicts(self._build_context(ref_fn, ref_url), own_context)
+
                 read_properties(ss, into_context)
 
                 for i in ('allOf', 'anyOf', 'oneOf'):
@@ -674,7 +680,15 @@ def _main():
             print(json.dumps(ctx_builder.context, indent=2))
     else:
         annotator = SchemaAnnotator(fn=args.file, url=args.url, follow_refs=not args.no_follow_refs)
-        dump_annotated_schemas(annotator, args.output)
+        if args.stdout:
+            write_separator = len(annotator.schemas) > 1
+            for path, schema in annotator.schemas.items():
+                if write_separator:
+                    print('---')
+                print('#', path)
+                print(dump_yaml(schema.schema))
+        else:
+            dump_annotated_schemas(annotator, args.output)
 
 
 if __name__ == '__main__':
