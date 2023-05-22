@@ -389,7 +389,7 @@ class SchemaAnnotator:
 
             empty_properties = []
             for prop, prop_value in properties.items():
-                if not prop_value:
+                if not prop_value or prop_value is True:
                     empty_properties.append(prop)
                     continue
                 if prop in terms:
