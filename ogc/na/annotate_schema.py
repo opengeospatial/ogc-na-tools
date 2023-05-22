@@ -123,14 +123,8 @@ import sys
 from pathlib import Path
 from typing import Any, AnyStr, Callable
 from urllib.parse import urlparse, urljoin
-import yaml
 import requests
-from ogc.na.util import is_url, merge_dicts, load_yaml, LRUCache
-
-try:
-    from yaml import CLoader as YamlLoader, CDumper as YamlDumper
-except ImportError:
-    from yaml import Loader as YamlLoader, Dumper as YamlDumper
+from ogc.na.util import is_url, merge_dicts, load_yaml, LRUCache, dump_yaml
 
 logger = logging.getLogger(__name__)
 
@@ -591,23 +585,23 @@ def dump_annotated_schemas(annotator: SchemaAnnotator, subdir: Path | str = 'ann
     for path, schema in annotator.schemas.items():
 
         if isinstance(path, Path):
-            outputfn = path.resolve().relative_to(wd)
+            output_fn = path.resolve().relative_to(wd)
         else:
             parsed = urlparse(str(path))
-            outputfn = parsed.path
+            output_fn = parsed.path
 
-        outputfn = subdir / outputfn
+        output_fn = subdir / output_fn
         if output_fn_transform:
-            outputfn = output_fn_transform(outputfn)
-        outputfn.parent.mkdir(parents=True, exist_ok=True)
+            output_fn = output_fn_transform(output_fn)
+        output_fn.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(outputfn, 'w') as f:
-            if schema.is_json:
+        if schema.is_json:
+            with open(output_fn, 'w') as f:
                 json.dump(schema.schema, f, indent=2)
-            else:
-                yaml.dump(schema.schema, f, sort_keys=False)
+        else:
+            dump_yaml(schema.schema, output_fn)
 
-        result.append(outputfn)
+        result.append(output_fn)
 
     return result
 
@@ -655,6 +649,12 @@ def _main():
         '--context-batch',
         help="Write JSON-LD context to a file with the same name and .jsonld extension (implies --build-context)",
         action='store_true',
+    )
+
+    parser.add_argument(
+        '--stdout',
+        action='store_true',
+        help='Dump schemas to stdout'
     )
 
     args = parser.parse_args()
