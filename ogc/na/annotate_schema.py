@@ -123,7 +123,10 @@ import sys
 from pathlib import Path
 from typing import Any, AnyStr, Callable
 from urllib.parse import urlparse, urljoin
+
+import jsonschema
 import requests
+
 from ogc.na.util import is_url, merge_dicts, load_yaml, LRUCache, dump_yaml
 
 logger = logging.getLogger(__name__)
@@ -306,6 +309,10 @@ def read_context_terms(ctx: Path | str | dict) -> tuple[dict[str, str], dict[str
     return expanded_terms, prefixes, expanded_types
 
 
+def validate_schema(schema: Any):
+    jsonschema.validators.validator_for(schema).check_schema(schema)
+
+
 class SchemaAnnotator:
     """
     Builds a set of annotated JSON schemas from a collection of input schemas
@@ -355,6 +362,16 @@ class SchemaAnnotator:
     def _process_schema(self, fn: Path | str | None = None, url: str | None = None):
         contents, base_url = read_contents(fn, url)
         schema, is_json = load_json_yaml(contents)
+
+        try:
+            if '$schema' in schema and all(x not in schema for x in ('schema', 'openapi')):
+                validate_schema(schema)
+        except jsonschema.exceptions.SchemaError as e:
+            if fn:
+                msg = f"Could not parse schema from file {fn}"
+            else:
+                msg = f"Could not parse schema from URL {url}"
+            raise ValueError(msg) from e
 
         context_fn = schema.get(ANNOTATION_CONTEXT)
         schema.pop(ANNOTATION_CONTEXT, None)
