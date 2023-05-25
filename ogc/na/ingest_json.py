@@ -346,44 +346,43 @@ def generate_graph(input_data: dict | list,
     if not isinstance(input_data, dict) and not isinstance(input_data, list):
         raise ValueError('input_data must be a list or dictionary')
 
-    if not context:
-        raise ValueError('context must be provided')
-
     g = Graph()
-    base_uri = None
-    for prefix, ns in DEFAULT_NAMESPACES.items():
-        g.bind(prefix, Namespace(ns))
-
     jdoc_ld = input_data
-    context_list = context if isinstance(context, Sequence) else (context,)
-    for context_entry in context_list:
-        base_uri = context_entry.get('base-uri', base_uri)
-        jdoc_ld = uplift_json(input_data, context_entry,
-                              fetch_timeout=fetch_timeout,
-                              fetch_url_whitelist=fetch_url_whitelist)
+    if context:
+        base_uri = None
+        for prefix, ns in DEFAULT_NAMESPACES.items():
+            g.bind(prefix, Namespace(ns))
 
-    options = {}
-    if not base:
-        if base_uri:
-            options['base'] = context['base-uri']
-        elif '@context' in jdoc_ld:
-            # Try to extract from @context
-            # If it is a list, iterate until @base is found
-            base = None
-            if isinstance(jdoc_ld['@context'], list):
-                for entry in jdoc_ld['@context']:
-                    if not isinstance(entry, dict):
-                        continue
-                    base = entry.get('@base')
-                    if base:
-                        break
-            else:
-                # If not a list, just look @base up
-                base = jdoc_ld['@context'].get('@base')
-    if base:
-        options['base'] = base
-    if logger.isEnabledFor(logging.DEBUG):
-        logger.debug('Uplifted JSON:\n%s', json.dumps(jdoc_ld, indent=2))
+        context_list = context if isinstance(context, Sequence) else (context,)
+        for context_entry in context_list:
+            base_uri = context_entry.get('base-uri', base_uri)
+            jdoc_ld = uplift_json(input_data, context_entry,
+                                  fetch_timeout=fetch_timeout,
+                                  fetch_url_whitelist=fetch_url_whitelist)
+
+        options = {}
+        if not base:
+            if base_uri:
+                options['base'] = context['base-uri']
+            elif '@context' in jdoc_ld:
+                # Try to extract from @context
+                # If it is a list, iterate until @base is found
+                base = None
+                if isinstance(jdoc_ld['@context'], list):
+                    for entry in jdoc_ld['@context']:
+                        if not isinstance(entry, dict):
+                            continue
+                        base = entry.get('@base')
+                        if base:
+                            break
+                else:
+                    # If not a list, just look @base up
+                    base = jdoc_ld['@context'].get('@base')
+        if base:
+            options['base'] = base
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug('Uplifted JSON:\n%s', json.dumps(jdoc_ld, indent=2))
+
     g.parse(data=json.dumps(jdoc_ld), format='json-ld')
 
     return UpliftResult(graph=g, uplifted_json=jdoc_ld)
