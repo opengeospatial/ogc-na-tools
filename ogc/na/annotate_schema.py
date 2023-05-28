@@ -325,7 +325,7 @@ class SchemaAnnotator:
     def __init__(self, fn: Path | str | None = None, url: str | None = None,
                  follow_refs: bool = True, ref_root: Path | str | None = None,
                  context: str | Path | dict | None = None,
-                 ref_mapper: Callable[[str], str] | None = None):
+                 ref_mapper: Callable[[str, Any], str] | None = None):
         """
         :param fn: file path to load (root schema)
         :param url: URL to load (root schema)
@@ -345,7 +345,7 @@ class SchemaAnnotator:
             return
 
         if self._ref_mapper:
-            subschema['$ref'] = self._ref_mapper(subschema['$ref'])
+            subschema['$ref'] = self._ref_mapper(subschema['$ref'], subschema)
 
         if not self._follow_refs:
             return
