@@ -65,7 +65,7 @@ PROFILES_QUERY = """
                 { ?profile owl:sameAs+ ?sameAs } UNION { ?sameAs owl:sameAs+ ?profile }
             }
             OPTIONAL { ?profile rdfs:label ?label }
-            OPTIONAL { ?profile prof:isProfileOf+ ?ancestor }
+            OPTIONAL { ?profile prof:isProfileOf ?ancestor }
             OPTIONAL {
                 ?profile prof:hasResource ?resource .
                 ?resource prof:hasRole ?role ;
@@ -97,7 +97,7 @@ class Profile:
         self.uri = uri
         self.token = token
         self.label = label
-        self.profile_of = profile_of
+        self.profile_of = [p for p in profile_of if p != uri]
         self.artifacts: dict[URIRef, list[str]] = {}
 
     def add_artifact(self, role: URIRef, href: URIRef):

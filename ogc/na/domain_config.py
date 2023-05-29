@@ -172,7 +172,7 @@ class DomainConfiguration:
                 if p.value.startswith('sparql:'):
                     prof_sources.add(p.value)
                 else:
-                    prof_sources.add(self.working_directory / p.value)
+                    prof_sources.update(self.working_directory.glob(p.value))
 
             if self._profile_sources:
                 prof_sources.update(self._profile_sources)
