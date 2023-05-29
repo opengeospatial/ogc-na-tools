@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Union, Optional, Sequence, cast, IO, TypeVar
+from typing import Union, Optional, Sequence, cast, IO, TypeVar, Iterable
 
 import wcmatch.glob
 from rdflib import Graph, Namespace, URIRef, DCTERMS, DCAT, Literal
@@ -106,7 +106,9 @@ class DomainConfiguration:
     from profile artifacts or from files.
     """
 
-    def __init__(self, source: Union[Graph, str, Path, IO], working_directory: str | Path = None):
+    def __init__(self, source: Union[Graph, str, Path, IO], working_directory: str | Path = None,
+                 profile_sources: str | Path | Iterable[str | Path] | None = None,
+                 ignore_artifact_errors=False):
         """
         Creates a new DomainConfiguration, optionally specifying the working directory.
 
@@ -124,6 +126,9 @@ class DomainConfiguration:
         self.uplift_entries = UpliftConfigurationEntryList()
         self.local_artifacts_mapping = {}
         self.profile_registry: ProfileRegistry | None = None
+        self._profile_sources = profile_sources
+        self._ignore_artifact_errors = ignore_artifact_errors
+
         self._load(source)
 
     def _load(self, source: Union[Graph, str, IO]):
@@ -144,7 +149,7 @@ class DomainConfiguration:
 
         cfg_graph = g.query(DOMAIN_CFG_QUERY.replace('__SERVICE__', service)).graph
 
-        ignore_profile_artifact_errors = False
+        ignore_profile_artifact_errors = self._ignore_artifact_errors
 
         prof_sources: set[str | Path] = set()
         for catalog_ref in cfg_graph.subjects(DCAT.dataset):
@@ -168,6 +173,9 @@ class DomainConfiguration:
                     prof_sources.add(p.value)
                 else:
                     prof_sources.add(self.working_directory / p.value)
+
+            if self._profile_sources:
+                prof_sources.update(self._profile_sources)
 
         self.profile_registry = ProfileRegistry(prof_sources,
                                                 ignore_artifact_errors=ignore_profile_artifact_errors)

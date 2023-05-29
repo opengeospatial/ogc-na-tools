@@ -205,6 +205,7 @@ class ProfileRegistry:
         return result
 
     def _load_profiles(self):
+        logger.debug("Loading profiles from %s", [str(x) for x in self._srcs])
         g: Graph = Graph()
         for src in self._srcs:
             if isinstance(src, str) and src.startswith('sparql:'):
@@ -241,6 +242,11 @@ class ProfileRegistry:
             self.profiles[profile_ref] = profile
             for same_as_ref in g.objects(profile_ref, OWL.sameAs):
                 self.profiles[cast(URIRef, same_as_ref)] = profile
+
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Profiles loaded: %s", [str(p) for p in self.profiles])
+        else:
+            logger.info(f"Loaded {len(self.profiles)}")
 
     def _apply_mappings(self, uri: str) -> Path | str:
         """

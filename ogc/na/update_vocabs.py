@@ -30,7 +30,6 @@ from rdflib import Graph, RDF, SKOS
 
 from ogc.na import util
 from ogc.na.domain_config import DomainConfiguration, DomainConfigurationEntry
-from ogc.na.profile import ProfileRegistry
 from ogc.na.provenance import generate_provenance, ProvenanceMetadata, FileProvenanceMetadata
 
 logger = logging.getLogger('ogc.na.update_vocabs')
@@ -332,6 +331,12 @@ def _main():
              "Alternatively, you can set the DB_USERNAME and DB_PASSWORD env variables."
     )
 
+    parser.add_argument(
+        '--ignore-artifact-errors',
+        action='store_true',
+        help='Ignore errors when retrieving profile artifacts'
+    )
+
     args = parser.parse_args()
 
     setup_logging(args.debug)
@@ -344,7 +349,7 @@ def _main():
 
     authdetails = None
     if args.auth:
-        authdetails = args.auth.split(':', maxsplit=1)
+        authdetails = tuple(args.auth.split(':', maxsplit=1))
     elif 'DB_USERNAME' in os.environ:
         authdetails = (os.environ["DB_USERNAME"], os.environ.get("DB_PASSWORD", ""))
 
@@ -372,7 +377,9 @@ def _main():
             dellist = args.removed.split(',')
             logger.info("Removed: %s", dellist)
 
-    domain_cfg = DomainConfiguration(args.domain_cfg, working_directory=args.working_directory)
+    domain_cfg = DomainConfiguration(args.domain_cfg, working_directory=args.working_directory,
+                                     profile_sources=args.profile_source,
+                                     ignore_artifact_errors=args.ignore_artifact_errors)
     cfg_entries = domain_cfg.entries
     if not len(cfg_entries):
         if args.domain:
@@ -486,6 +493,7 @@ def _main():
                     except Exception as e:
                         logging.error("Failed to upload %s for %s: %s",
                                       str(path), str(doc), str(e))
+                        raise e
                     versioned_gname = f'{graphname}{n + 1}'
 
             report.setdefault(cfg.identifier, {}) \
