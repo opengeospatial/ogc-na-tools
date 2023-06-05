@@ -12,7 +12,7 @@ from typing import Optional, Union, Any, Mapping, Hashable
 
 import requests
 import rfc3987
-import git
+
 from rdflib import Graph
 from pyshacl import validate as shacl_validate
 from urllib.parse import urlparse
@@ -245,6 +245,7 @@ def deep_update(orig_dict: dict, with_dict: Mapping, replace: bool = False) -> d
 
 
 def git_status(repo_path: str | Path = '.'):
+    import git
     repo = git.Repo(repo_path)
     added = repo.untracked_files
     modified = []
