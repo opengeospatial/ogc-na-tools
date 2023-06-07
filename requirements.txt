@@ -10,3 +10,4 @@ requests
 jsonschema
 GitPython==3.1.29
 rfc3987
+requests_cache

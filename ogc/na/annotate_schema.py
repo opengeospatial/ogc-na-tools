@@ -125,7 +125,7 @@ from typing import Any, AnyStr, Callable
 from urllib.parse import urlparse, urljoin
 
 import jsonschema
-import requests
+import requests_cache
 
 from ogc.na.util import is_url, merge_dicts, load_yaml, LRUCache, dump_yaml
 
@@ -138,6 +138,7 @@ ANNOTATION_PREFIXES = 'x-jsonld-prefixes'
 REF_ROOT_MARKER = '$_ROOT_/'
 
 context_term_cache = LRUCache(maxsize=20)
+requests_session = requests_cache.CachedSession('ogc.na.annotate_schema', expire_after=180)
 
 
 @dataclasses.dataclass
@@ -166,7 +167,7 @@ def read_contents(fn: Path | str | None = None, url: str | None = None) -> tuple
             contents = f.read()
     else:
         base_url = url
-        r = requests.get(url)
+        r = requests_session.get(url)
         r.raise_for_status()
         contents = r.content
 
@@ -236,7 +237,7 @@ def read_context_terms(ctx: Path | str | dict) -> tuple[dict[str, str], dict[str
         with open(ctx) as f:
             context = json.load(f).get('@context')
     elif isinstance(ctx, str):
-        r = requests.get(ctx)
+        r = requests_session.get(ctx)
         r.raise_for_status()
         context = r.json().get('@context')
     elif ctx:
