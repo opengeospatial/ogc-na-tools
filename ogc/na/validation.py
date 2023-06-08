@@ -6,7 +6,11 @@ validation reports.
 from __future__ import annotations
 from pathlib import Path
 from typing import Union, Iterable
+from urllib.parse import urlsplit
+from urllib.request import urlopen
 
+import jsonschema
+import requests
 from rdflib import URIRef, Graph
 
 from ogc.na import util
@@ -100,3 +104,22 @@ class ProfilesValidationReport:
     @property
     def used_resources(self):
         return set(r for report in self.reports for r in report.used_resources)
+
+
+class YamlSchemaRefResolver(jsonschema.validators.RefResolver):
+
+    def resolve_remote(self, uri):
+        scheme = urlsplit(uri).scheme
+
+        if scheme in self.handlers:
+            result = self.handlers[scheme](uri)
+        elif scheme in ["http", "https"]:
+            result = util.load_yaml(content=requests.get(uri).content)
+        else:
+            # Otherwise, pass off to urllib and assume utf-8
+            with urlopen(uri) as url:
+                result = util.load_yaml(content=url.read().decode("utf-8"))
+
+        if self.cache_remote:
+            self.store[uri] = result
+        return result
