@@ -135,10 +135,11 @@ ANNOTATION_CONTEXT = 'x-jsonld-context'
 ANNOTATION_ID = 'x-jsonld-id'
 ANNOTATION_TYPE = 'x-jsonld-type'
 ANNOTATION_PREFIXES = 'x-jsonld-prefixes'
+ANNOTATION_EXTRA_TERMS = 'x-jsonld-extra-terms'
 REF_ROOT_MARKER = '$_ROOT_/'
 
 context_term_cache = LRUCache(maxsize=20)
-requests_session = requests_cache.CachedSession('ogc.na.annotate_schema', expire_after=180)
+requests_session = requests_cache.CachedSession('ogc.na.annotate_schema', backend='memory', expire_after=180)
 
 
 @dataclasses.dataclass
@@ -382,6 +383,7 @@ class SchemaAnnotator:
         terms = {}
         prefixes = {}
         types = {}
+        used_terms = set()
 
         if context_fn != self._provided_context or not (isinstance(context_fn, Path)
                                                         and isinstance(self._provided_context, Path)
@@ -412,6 +414,7 @@ class SchemaAnnotator:
                     continue
                 if prop in terms:
                     prop_value[ANNOTATION_ID] = terms[prop]
+                    used_terms.add(prop)
                     if prop in types:
                         prop_value[ANNOTATION_TYPE] = types[prop]
 
@@ -455,6 +458,10 @@ class SchemaAnnotator:
 
         if prefixes:
             schema[ANNOTATION_PREFIXES] = prefixes
+
+        unused_terms = set(terms) - set(prefixes) - used_terms
+        extra_terms = {t: terms[t] for t in unused_terms}
+        schema[ANNOTATION_EXTRA_TERMS] = extra_terms
 
         self.schemas[fn or url] = AnnotatedSchema(
             source=fn or url,
@@ -565,6 +572,14 @@ class ContextBuilder:
                             process_subschema(sub_schema, into_context)
 
         process_subschema(schema, own_context)
+
+        if ANNOTATION_EXTRA_TERMS in schema:
+            for term, term_context in schema[ANNOTATION_EXTRA_TERMS].items():
+                if term not in own_context:
+                    if isinstance(term_context, str):
+                        own_context[term] = compact_uri(term_context)
+                    else:
+                        own_context[term] = term_context
 
         if compact:
 
