@@ -23,7 +23,7 @@ classifiers = [
 
 [project.urls]
 "Homepage" = "https://github.com/opengeospatial/ogc-na-tools/"
-"Documentation" = "https://opengeospatial.github.com/ogc-na-tools/"
+"Documentation" = "https://opengeospatial.github.io/ogc-na-tools/"
 "Repository" = "https://github.com/opengeospatial/ogc-na-tools.git"
 
 [tool.setuptools]
