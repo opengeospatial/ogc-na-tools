@@ -676,6 +676,7 @@ def process(input_files: str | Path | Sequence[str | Path],
     """
     result: list[UpliftResult] = []
     process_id = str(uuid.uuid4())
+    workdir = Path()
     if isinstance(input_files, str) or not isinstance(input_files, Sequence):
         input_files = (input_files,)
     if batch:
@@ -683,7 +684,7 @@ def process(input_files: str | Path | Sequence[str | Path],
         remaining_fn: deque = deque()
         for input_file in input_files:
             if isinstance(input_file, str):
-                remaining_fn.extend(input_file.split(','))
+                remaining_fn.extend([y for x in input_file.split(',') for y in workdir.glob(x)])
             else:
                 remaining_fn.append(input_file)
         while remaining_fn:
