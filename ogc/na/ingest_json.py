@@ -53,6 +53,7 @@ from ogc.na import util, profile
 from ogc.na.domain_config import UpliftConfigurationEntry, DomainConfiguration
 from ogc.na.provenance import ProvenanceMetadata, FileProvenanceMetadata, generate_provenance
 from ogc.na.input_filters import apply_input_filter
+from ogc.na.util import is_iri
 
 logger = logging.getLogger(__name__)
 
@@ -367,6 +368,17 @@ def generate_graph(input_data: dict | list,
                                   fetch_timeout=fetch_timeout,
                                   fetch_url_whitelist=fetch_url_whitelist,
                                   transform_args=transform_args)
+            if 'context' in context_entry:
+                if '$' in context_entry['context']:
+                    root_ctx = context_entry['context']['$']
+                elif '.' in context_entry['context']:
+                    root_ctx = context_entry['context']['.']
+                else:
+                    continue
+
+                for term, term_val in root_ctx.items():
+                    if isinstance(term_val, str) and re.match(r'.*[#/:]$', term_val) and is_iri(term_val):
+                        g.bind(term, term_val)
 
         options = {}
         if not base:
