@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import Union, Optional, Sequence, cast, Iterable, Any
 
 import jq
+import pyld.jsonld
 from jsonpath_ng.ext import parse as json_path_parse
 from jsonschema import validate as json_validate
 from pyld import jsonld
@@ -159,7 +160,9 @@ def _document_loader(secure: bool = False,
     return loader
 
 
-def validate_context(context: Union[dict, str] = None, filename: Union[str, Path] = None) -> dict:
+def validate_context(context: Union[dict, str] = None,
+                     filename: Union[str, Path] = None,
+                     transform_args: dict | None = None) -> dict:
     if not context and not filename:
         return {}
     if bool(context) == bool(filename):
@@ -178,7 +181,7 @@ def validate_context(context: Union[dict, str] = None, filename: Union[str, Path
         transform = [transform]
     for i, t in enumerate(transform):
         try:
-            jq.compile(t)
+            jq.compile(t, args=transform_args)
         except Exception as e:
             raise ValidationError(cause=e,
                                   msg=f"Error compiling jq expression for transform at index {i}",
@@ -213,7 +216,8 @@ def add_jsonld_provenance(json_doc: Union[dict, list], metadata: ProvenanceMetad
 
 def uplift_json(data: dict | list, context: dict,
                 fetch_timeout: int = 5,
-                fetch_url_whitelist: Optional[Union[Sequence, bool]] = None) -> dict:
+                fetch_url_whitelist: Optional[Union[Sequence, bool]] = None,
+                transform_args: dict | None = None) -> dict:
     """
     Transform a JSON document loaded in a dict, and embed JSON-LD context into it.
 
@@ -226,6 +230,7 @@ def uplift_json(data: dict | list, context: dict,
     :param fetch_url_whitelist: list of regular expressions to filter referenced JSON-LD context URLs before
         retrieving them. If None, it will not be used; if empty sequence or False, remote fetching operations will
         throw an exception.
+    :param transform_args: Additional arguments to pass as variables to the jq transform
     :return: the transformed and JSON-LD-enriched data
     """
 
@@ -233,7 +238,7 @@ def uplift_json(data: dict | list, context: dict,
 
     jsonld.set_document_loader(_document_loader(timeout=fetch_timeout, url_whitelist=fetch_url_whitelist))
 
-    validate_context(context)
+    validate_context(context, transform_args=transform_args)
 
     # Check whether @graph scoping is necessary for transformations and paths
     scoped_graph = context.get('scope', 'graph') == 'graph' and '@graph' in data
@@ -246,7 +251,7 @@ def uplift_json(data: dict | list, context: dict,
         if isinstance(transform, str):
             transform = (transform,)
         for i, t in enumerate(transform):
-            tranformed_txt = jq.compile(t).input(data_graph).text()
+            tranformed_txt = jq.compile(t, args=transform_args).input(data_graph).text()
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug('After transform %d:\n%s', i + 1, tranformed_txt)
             data_graph = json.loads(tranformed_txt)
@@ -329,7 +334,8 @@ def generate_graph(input_data: dict | list,
                    context: dict[str, Any] | Sequence[dict] = None,
                    base: str | None = None,
                    fetch_timeout: int = 5,
-                   fetch_url_whitelist: Sequence[str] | bool | None = None) -> UpliftResult:
+                   fetch_url_whitelist: Sequence[str] | bool | None = None,
+                   transform_args: dict | None = None) -> UpliftResult:
     """
     Create a graph from an input JSON document and a YAML context definition file.
 
@@ -340,6 +346,7 @@ def generate_graph(input_data: dict | list,
     :param fetch_url_whitelist: list of regular expressions to filter referenced JSON-LD context URLs before
         retrieving them. If None, it will not be used; if empty sequence or False, remote fetching operations will
         throw an exception.
+    :param transform_args: Additional arguments to pass as variables to the jq transform
     :return: a tuple with the resulting RDFLib Graph and the JSON-LD enriched file name
     """
 
@@ -358,7 +365,8 @@ def generate_graph(input_data: dict | list,
             base_uri = context_entry.get('base-uri', base_uri)
             jdoc_ld = uplift_json(input_data, context_entry,
                                   fetch_timeout=fetch_timeout,
-                                  fetch_url_whitelist=fetch_url_whitelist)
+                                  fetch_url_whitelist=fetch_url_whitelist,
+                                  transform_args=transform_args)
 
         options = {}
         if not base:
@@ -383,7 +391,7 @@ def generate_graph(input_data: dict | list,
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug('Uplifted JSON:\n%s', json.dumps(jdoc_ld, indent=2))
 
-    g.parse(data=json.dumps(jdoc_ld), format='json-ld')
+    g.parse(data=json.dumps(pyld.jsonld.expand(jdoc_ld)), format='json-ld')
 
     return UpliftResult(graph=g, uplifted_json=jdoc_ld)
 
@@ -397,7 +405,8 @@ def process_file(input_fn: str | Path,
                  provenance_base_uri: str | bool | None = None,
                  provenance_process_id: str | None = None,
                  fetch_timeout: int = 5,
-                 fetch_url_whitelist: bool | Sequence[str] | None = None) -> UpliftResult | None:
+                 fetch_url_whitelist: bool | Sequence[str] | None = None,
+                 transform_args: dict | None = None) -> UpliftResult | None:
     """
     Process input file and generate output RDF files.
 
@@ -418,6 +427,7 @@ def process_file(input_fn: str | Path,
     :param fetch_url_whitelist: list of regular expressions to filter referenced JSON-LD context URLs before
         retrieving them. If None, it will not be used; if empty sequence or False, remote fetching operations will
         throw an exception
+    :param transform_args: Additional arguments to pass as variables to the jq transform
     :return: List of output files created
     """
 
@@ -448,6 +458,7 @@ def process_file(input_fn: str | Path,
         contexts = (util.load_yaml(context_fn),)
     else:
         provenance_contexts = context_fn
+        contexts = [util.load_yaml(fn) for fn in context_fn]
 
     if not contexts:
         raise MissingContextException('No context file provided and one could not be discovered automatically')
@@ -478,11 +489,18 @@ def process_file(input_fn: str | Path,
             end_auto=True,
         )
 
+    if transform_args is None:
+        transform_args = {}
+    transform_args['filename'] = str(input_fn.resolve())
+    transform_args['basename'] = str(input_fn.name)
+    transform_args['dirname'] = str(input_fn.resolve().parent)
+
     uplift_result = generate_graph(input_data,
                                    context=contexts,
                                    base=base,
                                    fetch_timeout=fetch_timeout,
-                                   fetch_url_whitelist=fetch_url_whitelist)
+                                   fetch_url_whitelist=fetch_url_whitelist,
+                                   transform_args=transform_args)
 
     uplift_result.input_file = input_fn
 
@@ -619,7 +637,8 @@ def process(input_files: str | Path | Sequence[str | Path],
             skip_on_missing_context: bool = False,
             provenance_base_uri: Optional[Union[str, bool]] = None,
             fetch_timeout: int = 5,
-            fetch_url_whitelist: Optional[Union[Sequence, bool]] = None) -> list[UpliftResult]:
+            fetch_url_whitelist: Optional[Union[Sequence, bool]] = None,
+            transform_args: dict | None = None) -> list[UpliftResult]:
     """
     Performs the JSON-LD uplift process.
 
@@ -640,6 +659,7 @@ def process(input_files: str | Path | Sequence[str | Path],
     :param fetch_url_whitelist: list of regular expressions to filter referenced JSON-LD context URLs before
         retrieving them. If None, it will not be used; if empty sequence or False, remote fetching operations will
         throw an exception
+    :param transform_args: Additional arguments to pass as variables to the jq transform
     :return: a list of JSON-LD and/or Turtle output files
     """
     result: list[UpliftResult] = []
@@ -679,6 +699,7 @@ def process(input_files: str | Path | Sequence[str | Path],
                     fetch_timeout=fetch_timeout,
                     fetch_url_whitelist=fetch_url_whitelist,
                     domain_cfg=domain_cfg,
+                    transform_args=transform_args,
                 ))
             except Exception as e:
                 if skip_on_missing_context:
@@ -699,6 +720,7 @@ def process(input_files: str | Path | Sequence[str | Path],
                     fetch_timeout=fetch_timeout,
                     fetch_url_whitelist=fetch_url_whitelist,
                     domain_cfg=domain_cfg,
+                    transform_args=transform_args,
                 ))
             except Exception as e:
                 if skip_on_missing_context:
@@ -808,6 +830,12 @@ def _process_cmdln():
         help='Set root directory for globs in domain configurations'
     )
 
+    parser.add_argument(
+        '--transform-arg',
+        nargs='*',
+        help='Additional argument to pass to the jq transforms in the form variable=value'
+    )
+
     args = parser.parse_args()
 
     if args.domain_config:
@@ -826,6 +854,10 @@ def _process_cmdln():
     if args.debug:
         logger.setLevel(logging.DEBUG)
 
+    transform_args = None
+    if args.transform_arg:
+        transform_args = dict((e.split('=', 1) for e in args.transform_arg))
+
     result = process(input_files,
                      context_fn=args.context,
                      domain_cfg=domain_cfg,
@@ -835,7 +867,8 @@ def _process_cmdln():
                      skip_on_missing_context=args.skip_on_missing_context,
                      provenance_base_uri=False if args.no_provenance else args.provenance_base_uri,
                      fetch_url_whitelist=args.url_whitelist,
-                     )
+                     transform_args=transform_args,
+             )
 
     if args.fs:
         print(args.fs.join(str(output_file) for r in result for output_file in r.output_files))
