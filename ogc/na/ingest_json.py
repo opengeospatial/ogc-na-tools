@@ -684,7 +684,11 @@ def process(input_files: str | Path | Sequence[str | Path],
         remaining_fn: deque = deque()
         for input_file in input_files:
             if isinstance(input_file, str):
-                remaining_fn.extend([y for x in input_file.split(',') for y in workdir.glob(x)])
+                for x in filter(lambda x: x, input_file.split(',')):
+                    if '?' in x or '#' in x:
+                        remaining_fn.extend(workdir.glob(x))
+                    else:
+                        remaining_fn.append(x)
             else:
                 remaining_fn.append(input_file)
         while remaining_fn:
