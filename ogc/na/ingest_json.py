@@ -377,7 +377,10 @@ def generate_graph(input_data: dict | list,
                     continue
 
                 for term, term_val in root_ctx.items():
-                    if isinstance(term_val, str) and re.match(r'.*[#/:]$', term_val) and is_iri(term_val):
+                    if not term.startswith('@') \
+                            and isinstance(term_val, str) \
+                            and re.match(r'.+[#/:]$', term_val) \
+                            and is_iri(term_val):
                         g.bind(term, term_val)
 
         options = {}
