@@ -186,8 +186,10 @@ def merge_dicts(src: dict, dst: dict) -> dict:
         if isinstance(v, dict):
             node = dst.setdefault(k, {})
             merge_dicts(v, node)
-        else:
+        elif isinstance(dst, dict):
             dst[k] = v
+        else:
+            dst = { k: v }
     return dst
 
 
