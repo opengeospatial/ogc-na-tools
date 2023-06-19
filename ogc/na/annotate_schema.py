@@ -461,7 +461,8 @@ class SchemaAnnotator:
 
         unused_terms = set(terms) - set(prefixes) - used_terms
         extra_terms = {t: terms[t] for t in unused_terms}
-        schema[ANNOTATION_EXTRA_TERMS] = extra_terms
+        if extra_terms:
+            schema[ANNOTATION_EXTRA_TERMS] = extra_terms
 
         self.schemas[fn or url] = AnnotatedSchema(
             source=fn or url,
