@@ -131,9 +131,9 @@ from ogc.na.util import is_url, merge_dicts, load_yaml, LRUCache, dump_yaml
 
 logger = logging.getLogger(__name__)
 
+ANNOTATION_PREFIX = 'x-jsonld-'
 ANNOTATION_CONTEXT = 'x-jsonld-context'
 ANNOTATION_ID = 'x-jsonld-id'
-ANNOTATION_TYPE = 'x-jsonld-type'
 ANNOTATION_PREFIXES = 'x-jsonld-prefixes'
 ANNOTATION_EXTRA_TERMS = 'x-jsonld-extra-terms'
 REF_ROOT_MARKER = '$_ROOT_/'
@@ -220,12 +220,13 @@ def resolve_ref(ref: str, fn_from: str | Path | None = None, url_from: str | Non
         return ref, None
 
 
-def read_context_terms(ctx: Path | str | dict) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+def read_context_terms(ctx: Path | str | dict) -> tuple[dict[str, str], dict[str, str], dict[str, dict[str, Any]]]:
     """
     Reads all the terms from a JSON-LD context document.
 
     :param ctx: file path (Path), URL (str) or dictionary (dict) to load
-    :return: a dictionary with term -> URI mappings
+    :return: a tuple with 1) a dict with term to URI mappings, 2) a dict with prefix to URI mappings,
+      and 3) a nested dict with property to keyword-value mappings
     """
 
     cached = context_term_cache.get(ctx)
@@ -248,7 +249,7 @@ def read_context_terms(ctx: Path | str | dict) -> tuple[dict[str, str], dict[str
         return {}, {}, {}
 
     result: dict[str, str | tuple[str, str]] = {}
-    types: dict[str, str | tuple[str, str]] = {}
+    keywords: dict[str, dict[str, Any]] = {}
 
     vocab = context.get('@vocab')
 
@@ -274,21 +275,17 @@ def read_context_terms(ctx: Path | str | dict) -> tuple[dict[str, str], dict[str
     for term, term_val in context.items():
         if not term.startswith("@"):
             # assume term
-            term_type = None
             if isinstance(term_val, str):
                 term_id = term_val
             elif isinstance(term_val, dict):
                 term_id = term_val.get('@id')
-                term_type = term_val.get('@type')
+                keywords[term] = {k: v for k, v in term_val.items() if k.startswith('@') and k != '@id'}
             else:
                 term_id = None
 
             expanded_id = expand_uri(term_id)
             if expanded_id:
                 result[term] = expanded_id
-            expanded_type = expand_uri(term_type)
-            if expanded_type:
-                types[term] = expanded_type
 
     prefixes = {}
 
@@ -304,11 +301,17 @@ def read_context_terms(ctx: Path | str | dict) -> tuple[dict[str, str], dict[str
                     prefixes[pref] = result[pref]
         return r
 
-    expanded_types = expand_result(types)
+    for keyword, keyword_val in keywords.items():
+        if keyword_val.get('@type'):
+            if isinstance(keyword_val['@type'], str):
+                keyword_val['@type'] = expand_uri(keyword_val['@type'])
+            elif isinstance(keyword_val['@type'], list):
+                keyword_val['@type'] = [expand_uri(t) for t in keyword_val['@type']]
+
     expanded_terms = expand_result(result)
 
-    context_term_cache[ctx] = expanded_terms, prefixes, expanded_types
-    return expanded_terms, prefixes, expanded_types
+    context_term_cache[ctx] = expanded_terms, prefixes, keywords
+    return expanded_terms, prefixes, keywords
 
 
 def validate_schema(schema: Any):
@@ -382,14 +385,14 @@ class SchemaAnnotator:
 
         terms = {}
         prefixes = {}
-        types = {}
+        keywords = {}
         used_terms = set()
 
         if context_fn != self._provided_context or not (isinstance(context_fn, Path)
                                                         and isinstance(self._provided_context, Path)
                                                         and self._provided_context.resolve() == context_fn.resolve()):
             # Only load the provided context if it's different from the schema-referenced one
-            terms, prefixes, types = read_context_terms(self._provided_context)
+            terms, prefixes, keywords = read_context_terms(self._provided_context)
 
         if context_fn:
             if base_url:
@@ -397,7 +400,7 @@ class SchemaAnnotator:
             else:
                 context_fn = Path(fn).parent / context_fn
 
-            for e in zip((terms, prefixes, types), read_context_terms(context_fn)):
+            for e in zip((terms, prefixes, keywords), read_context_terms(context_fn)):
                 e[0].update(e[1])
 
         def process_properties(obj: dict):
@@ -415,8 +418,9 @@ class SchemaAnnotator:
                 if prop in terms:
                     prop_value[ANNOTATION_ID] = terms[prop]
                     used_terms.add(prop)
-                    if prop in types:
-                        prop_value[ANNOTATION_TYPE] = types[prop]
+                    if keywords.get(prop):
+                        for kw, kw_term in keywords[prop].items():
+                            prop_value[ANNOTATION_PREFIX + kw[1:]] = kw_term
 
                 process_subschema(prop_value)
 
@@ -536,8 +540,9 @@ class ContextBuilder:
                     prop_context: dict[str, Any] = {'@context': {}}
                     if ANNOTATION_ID in prop_val:
                         prop_context['@id'] = compact_uri(prop_val[ANNOTATION_ID])
-                        if ANNOTATION_TYPE in prop_val:
-                            prop_context['@type'] = compact_uri(prop_val[ANNOTATION_TYPE])
+                        for term, term_val in prop_val.items():
+                            if term.startswith(ANNOTATION_PREFIX):
+                                prop_context['@' + term[len(ANNOTATION_PREFIX):]] = term_val
 
                     process_subschema(prop_val, prop_context['@context'])
 
