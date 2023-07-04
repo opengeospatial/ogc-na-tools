@@ -279,7 +279,7 @@ def read_context_terms(ctx: Path | str | dict) -> tuple[dict[str, str], dict[str
                 term_id = term_val
             elif isinstance(term_val, dict):
                 term_id = term_val.get('@id')
-                keywords[term] = {k: v for k, v in term_val.items() if k.startswith('@') and k != '@id'}
+                keywords[term] = {k: v for k, v in term_val.items() if k.startswith('@') and k not in ('@id', '@context')}
             else:
                 term_id = None
 
