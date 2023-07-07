@@ -189,7 +189,7 @@ def merge_dicts(src: dict, dst: dict) -> dict:
         elif isinstance(dst, dict):
             dst[k] = v
         else:
-            dst = { k: v }
+            dst = {k: v}
     return dst
 
 
@@ -266,3 +266,36 @@ def git_status(repo_path: str | Path = '.'):
         'deleted': deleted,
         'renamed': renamed,
     }
+
+
+def merge_contexts(a: dict, b: dict):
+    if not b:
+        return a
+    if not a:
+        if isinstance(a, dict):
+            a.update(b)
+            return a
+        return b
+    for t, va in a.items():
+        vb = b.get(t)
+        if vb:
+            va_id = va['@id'] if isinstance(va, dict) else va
+            vb_id = vb['@id'] if isinstance(vb, dict) else vb
+            if va_id != vb_id:
+                raise ValueError('Conflicting @id for term ' + t)
+            if '@context' in vb:
+                if '@context' not in va:
+                    va['@context'] = vb['@context']
+                elif isinstance(va['@context'], list):
+                    if isinstance(vb['@context'], list):
+                        va['@context'].extend(vb['@context'])
+                    else:
+                        va['@context'].append(vb['@context'])
+                elif isinstance(vb['@context'], list):
+                    va['@context'] = [va['@context'], *vb['@context']]
+                else:
+                    va['@context'] = merge_contexts(va['@context'], vb['@context'])
+    for t, tb in b.items():
+        if t not in a:
+            a[t] = tb
+    return a

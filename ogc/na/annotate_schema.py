@@ -121,13 +121,14 @@ import logging
 import re
 import sys
 from pathlib import Path
+from re import sub
 from typing import Any, AnyStr, Callable
 from urllib.parse import urlparse, urljoin
 
 import jsonschema
 import requests_cache
 
-from ogc.na.util import is_url, merge_dicts, load_yaml, LRUCache, dump_yaml
+from ogc.na.util import is_url, merge_dicts, load_yaml, LRUCache, dump_yaml, merge_contexts
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +137,6 @@ ANNOTATION_CONTEXT = 'x-jsonld-context'
 ANNOTATION_ID = 'x-jsonld-id'
 ANNOTATION_PREFIXES = 'x-jsonld-prefixes'
 ANNOTATION_EXTRA_TERMS = 'x-jsonld-extra-terms'
-REF_ROOT_MARKER = '$_ROOT_/'
 
 context_term_cache = LRUCache(maxsize=20)
 requests_session = requests_cache.CachedSession('ogc.na.annotate_schema', backend='memory', expire_after=180)
@@ -149,26 +149,127 @@ class AnnotatedSchema:
     schema: dict
 
 
-def read_contents(fn: Path | str | None = None, url: str | None = None) -> tuple[AnyStr | bytes, str]:
+@dataclasses.dataclass
+class ReferencedSchema:
+    location: str | Path
+    fragment: str | None = None
+    subschema: dict | None = None
+    full_contents: dict | None = None
+    chain: list = dataclasses.field(default_factory=list)
+    ref: str | Path = None
+
+
+class SchemaResolver:
+
+    def __init__(self, working_directory=Path()):
+        self.working_directory = working_directory.resolve()
+        self._schema_cache: dict[str | Path, dict] = {}
+
+    @staticmethod
+    def _get_branch(schema: dict, ref: str):
+        path = re.sub(r'^#?/?', '', ref).split('/')
+        pointer = schema
+        for item in path:
+            if path:
+                pointer = pointer[item]
+        return pointer
+
+    def _load_contents(self, s: str | Path) -> dict:
+        contents = self._schema_cache.get(s)
+        if contents is None:
+            contents = load_json_yaml(read_contents(s)[0])[0]
+            self._schema_cache[s] = contents
+        return contents
+
+    def resolve(self, ref: str | Path, from_schema: ReferencedSchema | None = None) -> ReferencedSchema:
+        fragment = None
+        chain = from_schema.chain + [from_schema] if from_schema else []
+        try:
+            if isinstance(ref, Path):
+                if ref.is_absolute():
+                    schema_source = ref
+                elif not from_schema:
+                    schema_source = self.working_directory / ref
+                elif not isinstance(from_schema.location, Path):
+                    schema_source = urljoin(from_schema.location, str(ref))
+                else:
+                    schema_source = from_schema.location.resolve().parent.joinpath(ref).resolve()
+
+            elif isinstance(ref, str):
+                # Resolve local ref or URL
+                if ref.startswith('#'):
+                    # Relative to current schema
+                    if not from_schema:
+                        raise ValueError('Local ref provided without an anchor: ' + ref)
+                    return ReferencedSchema(location=from_schema.location,
+                                            fragment=ref[1:],
+                                            subschema=SchemaResolver._get_branch(from_schema.full_contents, ref),
+                                            full_contents=from_schema.full_contents,
+                                            chain=chain,
+                                            ref=ref)
+                elif is_url(ref):
+                    # Absolute URL, download and parse
+                    s = ref.split('#', 1)
+                    url = s[0]
+                    fragment = s[1] if len(s) > 1 else None
+                    schema_source = url
+
+                else:
+                    # str with a relative or absolute path, and with or without a fragment
+                    s = ref.split('#', 1)
+                    path = Path(s[0])
+                    fragment = s[1] if len(s) > 1 else None
+                    if path.is_absolute():
+                        # Load the schema
+                        schema_source = path.resolve()
+                    elif not from_schema:
+                        schema_source = self.working_directory / path.resolve()
+                    elif isinstance(from_schema.location, Path):
+                        # Resolve relative path
+                        schema_source = from_schema.location.resolve().parent.joinpath(path).resolve()
+                    else:
+                        # Resolve relative URL
+                        schema_source = urljoin(from_schema.location, str(path))
+            else:
+                raise ValueError(f'Unexpected ref type {type(ref).__name__}')
+
+            contents = self._load_contents(schema_source)
+            if fragment:
+                return ReferencedSchema(location=schema_source, fragment=fragment,
+                                        subschema=SchemaResolver._get_branch(contents, fragment),
+                                        full_contents=contents,
+                                        chain=chain,
+                                        ref=ref)
+            else:
+                return ReferencedSchema(location=schema_source,
+                                        subschema=contents,
+                                        full_contents=contents,
+                                        chain=chain,
+                                        ref=ref)
+        except Exception as e:
+            f = f" from {from_schema.location}" if from_schema else ''
+            raise IOError(f"Error resolving reference {ref}{f}") from e
+
+
+def read_contents(location: Path | str | None) -> tuple[AnyStr | bytes, str]:
     """
     Reads contents from a file or URL
 
-    @param fn: filename to load
-    @param url: URL to load
+    @param location: filename or URL to load
     @return: a tuple with the loaded data (str or bytes) and the base URL, if any
     """
-    if not fn and not url:
-        raise ValueError('Either fn or url must be provided')
+    if not location:
+        raise ValueError('A location must be provided')
 
-    if fn:
-        fn = Path(fn)
+    if isinstance(location, Path) or not is_url(location):
+        fn = Path(location)
         base_url = None
         logger.info('Reading file contents from %s', fn)
         with open(fn) as f:
             contents = f.read()
     else:
-        base_url = url
-        r = requests_session.get(url)
+        base_url = location
+        r = requests_session.get(location)
         r.raise_for_status()
         contents = r.content
 
@@ -193,21 +294,16 @@ def load_json_yaml(contents: str | bytes) -> tuple[Any, bool]:
 
 
 def resolve_ref(ref: str, fn_from: str | Path | None = None, url_from: str | None = None,
-                base_url: str | None = None, ref_root: Path | None = None) -> tuple[Path | None, str | None]:
+                base_url: str | None = None) -> tuple[Path | None, str | None]:
     """
     Resolves a `$ref`
     :param ref: the `$ref` to resolve
     :param fn_from: original name of the file containing the `$ref` (when it is a file)
     :param url_from: original URL of the document containing the `$ref` (when it is a URL)
     :param base_url: base URL of the document containing the `$ref` (if any)
-    :param ref_root: base path to resolve $_ROOT_ refs
     :return: a tuple of (Path, str) with only one None entry (the Path if the resolved
     reference is a file, or the str if it is a URL)
     """
-    if ref.startswith(REF_ROOT_MARKER):
-        if not ref_root:
-            ref_root = Path()
-        return ref_root / ref[len(REF_ROOT_MARKER):], None
 
     base_url = base_url or url_from
     if is_url(ref):
@@ -365,7 +461,7 @@ class SchemaAnnotator:
             self._process_schema(url=ref_url, fn=ref_fn)
 
     def _process_schema(self, fn: Path | str | None = None, url: str | None = None):
-        contents, base_url = read_contents(fn, url)
+        contents, base_url = read_contents(fn or url)
         schema, is_json = load_json_yaml(contents)
 
         try:
@@ -490,20 +586,20 @@ class ContextBuilder:
         self._parsed_schemas: dict[str | Path, dict] = {}
         self._ref_mapper = ref_mapper
 
-        context = self._build_context(fn, url, compact)
+        self._resolver = SchemaResolver()
+
+        context = self._build_context(fn or url, compact)
         self.context = {'@context': context}
 
-    def _build_context(self, fn: Path | str | None = None,
-                       url: str | None = None,
+    def _build_context(self, schema_location: str | Path,
                        compact: bool = True) -> dict:
-        parsed = self._parsed_schemas.get(fn, self._parsed_schemas.get(url))
+
+        parsed = self._parsed_schemas.get(schema_location)
         if parsed:
             return parsed
 
-        contents, base_url = read_contents(fn, url)
-        schema = load_json_yaml(contents)[0]
-
-        base_url = schema.get('$id', base_url)
+        root_schema = self._resolver.resolve(schema_location)
+        schema = root_schema.subschema
 
         prefixes = schema.get(ANNOTATION_PREFIXES, {}).items()
         rev_prefixes = {v: k for k, v in prefixes}
@@ -532,60 +628,74 @@ class ContextBuilder:
         if prefixes:
             own_context.update(prefixes)
 
-        def read_properties(where: dict, into_context: dict):
-            if not isinstance(where, dict):
-                return
-            for prop, prop_val in where.get('properties', {}).items():
-                if isinstance(prop_val, dict):
-                    prop_context: dict[str, Any] = {'@context': {}}
-                    if ANNOTATION_ID in prop_val:
-                        prop_context['@id'] = compact_uri(prop_val[ANNOTATION_ID])
-                        for term, term_val in prop_val.items():
-                            if term.startswith(ANNOTATION_PREFIX):
-                                prop_context['@' + term[len(ANNOTATION_PREFIX):]] = term_val
+        def read_properties(subschema: dict, from_schema: ReferencedSchema,
+                            property_chain: list) -> dict | None:
+            if not isinstance(subschema, dict):
+                return None
+            if subschema.get('type', 'object') != 'object':
+                return None
+            subschema_context = {}
+            for prop, prop_val in subschema.get('properties', {}).items():
+                if not isinstance(prop_val, dict):
+                    continue
+                prop_context = {}
+                for term, term_val in prop_val.items():
+                    if term.startswith(ANNOTATION_PREFIX) and term != ANNOTATION_CONTEXT:
+                        prop_context['@' + term[len(ANNOTATION_PREFIX):]] = term_val
+                inner_context = process_subschema(prop_val, from_schema, property_chain + ['properties', prop])
+                if inner_context:
+                    prop_context['@context'] = inner_context
+                if isinstance(prop_context.get('@id'), str):
+                    subschema_context[prop] = prop_context
+                elif inner_context:
+                    subschema_context = merge_contexts(subschema_context, inner_context)
 
-                    process_subschema(prop_val, prop_context['@context'])
+            return subschema_context
 
-                    if not prop_context['@context']:
-                        prop_context.pop('@context', None)
+        def process_subschema(subschema, from_schema, property_chain=None) -> dict | None:
 
-                    if prop_context:
-                        into_context[prop] = prop_context
+            if property_chain is None:
+                property_chain = []
 
-        def process_subschema(ss, into_context: dict):
+            if not isinstance(subschema, dict):
+                return None
 
-            if isinstance(ss, dict):
-                if '$ref' in ss and ss['$ref'][0] != '#':
-                    # we skip local $refs
-                    ref_fn, ref_url = resolve_ref(ss['$ref'], fn, url, base_url)
+            if '$ref' in subschema:
+                referenced_schema = self._resolver.resolve(subschema['$ref'], from_schema)
+                subschema = referenced_schema.subschema
+                from_schema = referenced_schema
 
-                    if ref_fn or re.sub(r'#.*', '', ref_url) != url:
-                        # Only follow ref if it's not to this same document
-                        merge_dicts(self._build_context(ref_fn, ref_url, False), own_context)
+            if not subschema:
+                return None
 
-                read_properties(ss, into_context)
+            sub_context = read_properties(subschema, from_schema, property_chain)
 
-                for i in ('allOf', 'anyOf', 'oneOf'):
-                    l = ss.get(i)
-                    if isinstance(l, list):
-                        for sub_schema in l:
-                            process_subschema(sub_schema, into_context)
+            for i in ('allOf', 'anyOf', 'oneOf'):
+                l = subschema.get(i)
+                if isinstance(l, list):
+                    for idx, sub_subschema in enumerate(l):
+                        sub_context = merge_contexts(sub_context,
+                                                     process_subschema(sub_subschema,
+                                                                       from_schema,
+                                                                       property_chain + [f"{i}[{idx}]"]))
 
-                for i in ('$defs', 'definitions'):
-                    d = ss.get(i)
-                    if isinstance(d, dict):
-                        for sub_schema in d.values():
-                            process_subschema(sub_schema, into_context)
+            for i in ('prefixItems', 'items', 'contains'):
+                l = subschema.get(i)
+                if isinstance(l, dict):
+                    items_ctx = process_subschema(l, from_schema, property_chain + [i])
+                    sub_context = merge_contexts(sub_context, items_ctx)
 
-        process_subschema(schema, own_context)
+            return sub_context
+
+        own_context = merge_contexts(own_context, process_subschema(schema, root_schema))
 
         if ANNOTATION_EXTRA_TERMS in schema:
-            for term, term_context in schema[ANNOTATION_EXTRA_TERMS].items():
-                if term not in own_context:
-                    if isinstance(term_context, str):
-                        own_context[term] = compact_uri(term_context)
+            for extra_term, extra_term_context in schema[ANNOTATION_EXTRA_TERMS].items():
+                if extra_term not in own_context:
+                    if isinstance(extra_term_context, str):
+                        own_context[extra_term] = compact_uri(extra_term_context)
                     else:
-                        own_context[term] = term_context
+                        own_context[extra_term] = extra_term_context
 
         if compact:
 
@@ -609,7 +719,7 @@ class ContextBuilder:
 
             compact_branch(own_context, {})
 
-        self._parsed_schemas[fn or url] = own_context
+        self._parsed_schemas[schema_location] = own_context
         return own_context
 
 

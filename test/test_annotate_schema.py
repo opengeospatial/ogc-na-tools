@@ -54,16 +54,6 @@ class AnnotateSchemaTest(unittest.TestCase):
         self.assertEqual(result[0].resolve(), Path(fn_from).parent.joinpath(ref).resolve(), None)
         self.assertIsNone(result[1])
 
-    def test_resolve_ref_root(self):
-        ref = f'{annotate_schema.REF_ROOT_MARKER}tmp/relative/test'
-        ref_root = Path('/var/lib/root')
-
-        self.assertEqual(annotate_schema.resolve_ref(ref, ref_root=ref_root),
-                         (ref_root / 'tmp/relative/test', None))
-
-        self.assertEqual(annotate_schema.resolve_ref(ref, ref_root=None),
-                         (Path() / 'tmp/relative/test', None))
-
     def test_annotate_follow_refs(self):
         annotator = SchemaAnnotator(fn=DATA_DIR / 'sample-schema.yml', follow_refs=True)
         schemas = annotator.schemas
