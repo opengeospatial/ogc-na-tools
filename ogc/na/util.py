@@ -27,6 +27,10 @@ except ImportError:
     from yaml import Loader as YamlLoader, SafeLoader as SafeYamlLoader, Dumper as YamlDumper
 
 
+class ContextMergeError(Exception):
+    pass
+
+
 def copy_triples(src: Graph, dst: Optional[Graph] = None) -> Graph:
     """
     Copies all triples from one graph onto another (or a new, empty [Graph][rdflib.Graph]
@@ -268,7 +272,7 @@ def git_status(repo_path: str | Path = '.'):
     }
 
 
-def merge_contexts(a: dict, b: dict):
+def merge_contexts(a: dict, b: dict, from_schema=None, property_chain=None) -> dict[str, Any]:
     if not b:
         return a
     if not a:
@@ -282,7 +286,12 @@ def merge_contexts(a: dict, b: dict):
             va_id = va['@id'] if isinstance(va, dict) else va
             vb_id = vb['@id'] if isinstance(vb, dict) else vb
             if va_id != vb_id:
-                raise ValueError('Conflicting @id for term ' + t)
+                e = f"Conflicting @id for term {t}: {va_id} vs {vb_id}"
+                if from_schema:
+                    e = f"{e} in schema {from_schema.ref if hasattr(from_schema, 'ref') else from_schema}"
+                if property_chain:
+                    e = f"{e} for property chain {'.'.join(property_chain)}"
+                raise ContextMergeError(e)
             if '@context' in vb:
                 if '@context' not in va:
                     va['@context'] = vb['@context']
@@ -294,7 +303,7 @@ def merge_contexts(a: dict, b: dict):
                 elif isinstance(vb['@context'], list):
                     va['@context'] = [va['@context'], *vb['@context']]
                 else:
-                    va['@context'] = merge_contexts(va['@context'], vb['@context'])
+                    va['@context'] = merge_contexts(va['@context'], vb['@context'], from_schema, property_chain)
     for t, tb in b.items():
         if t not in a:
             a[t] = tb

@@ -114,6 +114,7 @@ The resulting context will be printed to the standard output.
 """
 
 from __future__ import annotations
+
 import argparse
 import dataclasses
 import json
@@ -121,14 +122,13 @@ import logging
 import re
 import sys
 from pathlib import Path
-from re import sub
 from typing import Any, AnyStr, Callable
 from urllib.parse import urlparse, urljoin
 
 import jsonschema
 import requests_cache
 
-from ogc.na.util import is_url, merge_dicts, load_yaml, LRUCache, dump_yaml, merge_contexts
+from ogc.na.util import is_url, load_yaml, LRUCache, dump_yaml, merge_contexts
 
 logger = logging.getLogger(__name__)
 
@@ -588,7 +588,9 @@ class ContextBuilder:
 
         self._resolver = SchemaResolver()
 
-        context = self._build_context(fn or url, compact)
+        self.location = fn or url
+
+        context = self._build_context(self.location, compact)
         self.context = {'@context': context}
 
     def _build_context(self, schema_location: str | Path,
@@ -599,29 +601,8 @@ class ContextBuilder:
             return parsed
 
         root_schema = self._resolver.resolve(schema_location)
-        schema = root_schema.subschema
 
-        prefixes = schema.get(ANNOTATION_PREFIXES, {}).items()
-        rev_prefixes = {v: k for k, v in prefixes}
-
-        def compact_uri(uri: str) -> str:
-            if uri.startswith('@'):
-                # JSON-LD keyword
-                return uri
-            parts = urlparse(uri)
-            if parts.fragment:
-                pref, suf = uri.rsplit('#', 1)
-                pref += '#'
-            elif len(parts.path) > 1:
-                pref, suf = uri.rsplit('/', 1)
-                pref += '/'
-            else:
-                return uri
-
-            if pref in rev_prefixes:
-                return f"{rev_prefixes[pref]}:{suf}"
-            else:
-                return uri
+        prefixes = {}
 
         own_context = {}
 
@@ -648,7 +629,7 @@ class ContextBuilder:
                 if isinstance(prop_context.get('@id'), str):
                     subschema_context[prop] = prop_context
                 elif inner_context:
-                    subschema_context = merge_contexts(subschema_context, inner_context)
+                    subschema_context = merge_contexts(subschema_context, inner_context, from_schema, property_chain)
 
             return subschema_context
 
@@ -677,27 +658,64 @@ class ContextBuilder:
                         sub_context = merge_contexts(sub_context,
                                                      process_subschema(sub_subschema,
                                                                        from_schema,
-                                                                       property_chain + [f"{i}[{idx}]"]))
+                                                                       property_chain + [f"{i}[{idx}]"]),
+                                                     from_schema, property_chain)
 
             for i in ('prefixItems', 'items', 'contains'):
                 l = subschema.get(i)
                 if isinstance(l, dict):
                     items_ctx = process_subschema(l, from_schema, property_chain + [i])
-                    sub_context = merge_contexts(sub_context, items_ctx)
+                    sub_context = merge_contexts(sub_context, items_ctx, from_schema, property_chain)
+
+            if ANNOTATION_EXTRA_TERMS in subschema:
+                for extra_term, extra_term_context in subschema[ANNOTATION_EXTRA_TERMS].items():
+                    if extra_term not in sub_context:
+                        if isinstance(extra_term_context, str):
+                            extra_term_context = {'@id': extra_term_context}
+                        sub_context[extra_term] = extra_term_context
+
+            if sub_context:
+                fixed_sub_context = {}
+                for prop, prop_ctx in sub_context.items():
+                    if prop.startswith('@'):
+                        continue
+                    if '@id' in prop_ctx:
+                        fixed_sub_context[prop] = prop_ctx
+                    elif prop_ctx.get('@context'):
+                        merge_contexts(fixed_sub_context, prop_ctx['@context'], from_schema, property_chain)
+                sub_context = fixed_sub_context
+
+            sub_prefixes = subschema.get(ANNOTATION_PREFIXES)
+            if isinstance(sub_prefixes, dict):
+                prefixes.update(sub_prefixes)
 
             return sub_context
 
-        own_context = merge_contexts(own_context, process_subschema(schema, root_schema))
-
-        if ANNOTATION_EXTRA_TERMS in schema:
-            for extra_term, extra_term_context in schema[ANNOTATION_EXTRA_TERMS].items():
-                if extra_term not in own_context:
-                    if isinstance(extra_term_context, str):
-                        own_context[extra_term] = compact_uri(extra_term_context)
-                    else:
-                        own_context[extra_term] = extra_term_context
+        own_context = merge_contexts(own_context, process_subschema(root_schema.subschema, root_schema),
+                                     root_schema)
 
         if compact:
+
+            rev_prefixes = {v: k for k, v in prefixes.items()}
+
+            def compact_uri(uri: str) -> str:
+                if uri.startswith('@'):
+                    # JSON-LD keyword
+                    return uri
+                parts = urlparse(uri)
+                if parts.fragment:
+                    pref, suf = uri.rsplit('#', 1)
+                    pref += '#'
+                elif len(parts.path) > 1:
+                    pref, suf = uri.rsplit('/', 1)
+                    pref += '/'
+                else:
+                    return uri
+
+                if pref in rev_prefixes:
+                    return f"{rev_prefixes[pref]}:{suf}"
+                else:
+                    return uri
 
             def compact_branch(branch, existing_terms):
 
@@ -713,7 +731,7 @@ class ContextBuilder:
                     term_value = branch[term]
                     if isinstance(term_value, dict):
                         if len(term_value) == 1 and '@id' in term_value:
-                            branch[term] = term_value['@id']
+                            branch[term] = compact_uri(term_value['@id'])
                         elif '@context' in term_value:
                             compact_branch(term_value['@context'], {**existing_terms, **branch})
 
