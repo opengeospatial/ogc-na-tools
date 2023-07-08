@@ -121,14 +121,15 @@ import json
 import logging
 import re
 import sys
+from operator import itemgetter
 from pathlib import Path
-from typing import Any, AnyStr, Callable
+from typing import Any, AnyStr, Callable, Sequence
 from urllib.parse import urlparse, urljoin
 
 import jsonschema
 import requests_cache
 
-from ogc.na.util import is_url, load_yaml, LRUCache, dump_yaml, merge_contexts
+from ogc.na.util import is_url, load_yaml, LRUCache, dump_yaml, merge_contexts, merge_dicts
 
 logger = logging.getLogger(__name__)
 
@@ -316,98 +317,192 @@ def resolve_ref(ref: str, fn_from: str | Path | None = None, url_from: str | Non
         return ref, None
 
 
-def read_context_terms(ctx: Path | str | dict) -> tuple[dict[str, str], dict[str, str], dict[str, dict[str, Any]]]:
-    """
-    Reads all the terms from a JSON-LD context document.
-
-    :param ctx: file path (Path), URL (str) or dictionary (dict) to load
-    :return: a tuple with 1) a dict with term to URI mappings, 2) a dict with prefix to URI mappings,
-      and 3) a nested dict with property to keyword-value mappings
-    """
-
-    cached = context_term_cache.get(ctx)
-    if cached:
-        return cached
-
-    context: dict[str, Any] | None = None
-
-    if isinstance(ctx, Path):
-        with open(ctx) as f:
-            context = json.load(f).get('@context')
+def resolve_context(ctx: Path | str | dict | list, expand_uris=True) -> dict[str, Any] | None:
+    context = None
+    prefixes = {}
+    if not ctx:
+        return None
+    if isinstance(ctx, Path) or (isinstance(ctx, str) and not is_url(ctx)):
+        context = load_yaml(filename=ctx).get('@context')
     elif isinstance(ctx, str):
         r = requests_session.get(ctx)
         r.raise_for_status()
-        context = r.json().get('@context')
-    elif ctx:
-        context = ctx.get('@context')
+        fetched = r.json().get('@context')
+        if fetched:
+            context, prefixes = itemgetter('context', 'prefixes')(resolve_context(fetched))
+    elif isinstance(ctx, Sequence):
+        context = {}
+        for ctx_entry in ctx:
+            if isinstance(ctx_entry, dict):
+                ctx_entry = ctx_entry.get('@context')
+            resolved_entry = resolve_context(ctx_entry)
+            context = merge_dicts(resolved_entry['context'], context)
+            prefixes.update(resolved_entry['prefixes'])
+    else:
+        context = ctx
 
     if not context:
-        return {}, {}, {}
+        return None
 
-    result: dict[str, str | tuple[str, str]] = {}
-    keywords: dict[str, dict[str, Any]] = {}
+    def expand_uri(curie, ctx_stack):
+        if not expand_uris or not ctx_stack or ':' not in curie:
+            return curie
+        prefix, localpart = curie.split(':', 1)
+        for c in reversed(ctx_stack):
+            if prefix in c:
+                term_val = c[prefix]
+                prefix_uri = term_val if isinstance(term_val, str) else term_val.get('@id')
+                prefixes[prefix] = prefix_uri
+                return f"{prefix_uri}{localpart}"
+        return curie
 
-    vocab = context.get('@vocab')
+    def resolve_inner(inner_ctx, ctx_stack=None):
+        resolved_ctx = {}
 
-    def expand_uri(uri: str) -> str | tuple[str, str] | None:
-        if not uri:
-            return None
+        if not inner_ctx:
+            return resolved_ctx
 
-        if ':' in uri:
-            # either URI or prefix:suffix
-            pref, suf = uri.split(':', 1)
-            if suf.startswith('//') or pref == 'urn':
-                # assume full URI
-                return uri
-            else:
-                # prefix:suffix -> add to pending for expansion
-                return pref, suf
-        elif vocab:
-            # append term_val to vocab to get URI
-            return f"{vocab}{term_id}"
+        if not ctx_stack:
+            ctx_stack = [inner_ctx]
         else:
-            return uri
+            ctx_stack = ctx_stack + [inner_ctx]
 
-    for term, term_val in context.items():
-        if not term.startswith("@"):
-            # assume term
-            if isinstance(term_val, str):
-                term_id = term_val
+        curie_terms = '@id', '@type', '@index'
+        for term, term_val in inner_ctx.items():
+            if term.startswith('@'):
+                if isinstance(term_val, str) and term in curie_terms and ':' in term_val:
+                    term_val = expand_uri(term_val, ctx_stack)
+                resolved_ctx[term] = term_val
+
             elif isinstance(term_val, dict):
-                term_id = term_val.get('@id')
-                keywords[term] = {k: v for k, v in term_val.items() if k.startswith('@') and k not in ('@id', '@context')}
-            else:
-                term_id = None
+                term_context = term_val.get('@context')
+                if term_context:
+                    if isinstance(term_context, dict):
+                        resolved_ctx[term] = resolve_inner(term_context, ctx_stack)
+                    else:
+                        resolved_ctx[term] = term_val
 
-            expanded_id = expand_uri(term_id)
-            if expanded_id:
-                result[term] = expanded_id
+                        term_val['@context'], p = itemgetter('context', 'prefixes')(resolve_context(term_context))
+                        prefixes.update(p)
+            elif isinstance(term_val, str):
+                resolved_ctx[term] = expand_uri(term_val, ctx_stack)
 
-    prefixes = {}
+        return resolved_ctx
 
-    def expand_result(d: dict[str, str | tuple[str, str]]) -> dict[str, str]:
-        r = {}
-        for term, term_val in d.items():
-            if isinstance(term_val, str):
-                r[term] = term_val
-            else:
-                pref, suf = term_val
-                if pref in result:
-                    r[term] = f"{result[pref]}{suf}"
-                    prefixes[pref] = result[pref]
-        return r
+    context = resolve_inner(context)
 
-    for keyword, keyword_val in keywords.items():
-        if keyword_val.get('@type'):
-            if isinstance(keyword_val['@type'], str):
-                keyword_val['@type'] = expand_uri(keyword_val['@type'])
-            elif isinstance(keyword_val['@type'], list):
-                keyword_val['@type'] = [expand_uri(t) for t in keyword_val['@type']]
+    return {'context': context, 'prefixes': prefixes}
 
-    expanded_terms = expand_result(result)
 
-    context_term_cache[ctx] = expanded_terms, prefixes, keywords
-    return expanded_terms, prefixes, keywords
+# def read_context_terms(ctx: Path | str | dict | list) \
+#         -> tuple[dict[str, str], dict[str, str], dict[str, dict[str, Any]]]:
+#     """
+#     Reads all the terms from a JSON-LD context document.
+#
+#     :param ctx: file path (Path), URL (str) or dictionary (dict) to load
+#     :return: a tuple with 1) a dict with term to URI mappings, 2) a dict with prefix to URI mappings,
+#       and 3) a nested dict with property to keyword-value mappings
+#     """
+#
+#     cached = context_term_cache.get(ctx)
+#     if cached:
+#         return cached
+#
+#     def fetch_context(ctx) -> dict[str, Any]:
+#         fetched: dict[str, Any] = {}
+#
+#         if isinstance(ctx, Path):
+#             with open(ctx) as f:
+#                 fetched = json.load(f).get('@context')
+#         elif isinstance(ctx, str):
+#             r = requests_session.get(ctx)
+#             r.raise_for_status()
+#             fetched = r.json().get('@context')
+#         elif isinstance(ctx, list):
+#             for ctx_entry in ctx:
+#                 fetched = merge_dicts(fetched, fetch_context(ctx_entry))
+#         elif ctx:
+#             fetched = ctx.get('@context')
+#
+#         if isinstance(fetched, str):
+#             fetched = fetch_context(fetched)
+#         if not isinstance(fetched, str) and isinstance(fetched, Sequence):
+#             aux = {}
+#             for fetched_entry in fetched:
+#                 aux = merge_dicts(aux, fetch_context(fetched_entry))
+#             fetched = aux
+#
+#         return fetched
+#
+#     context = fetch_context(ctx)
+#
+#     if not context:
+#         return {}, {}, {}
+#
+#     result: dict[str, str | tuple[str, str]] = {}
+#     keywords: dict[str, dict[str, Any]] = {}
+#
+#     vocab = context.get('@vocab')
+#
+#     def expand_uri(uri: str) -> str | tuple[str, str] | None:
+#         if not uri:
+#             return None
+#
+#         if ':' in uri:
+#             # either URI or prefix:suffix
+#             pref, suf = uri.split(':', 1)
+#             if suf.startswith('//') or pref == 'urn':
+#                 # assume full URI
+#                 return uri
+#             else:
+#                 # prefix:suffix -> add to pending for expansion
+#                 return pref, suf
+#         elif vocab:
+#             # append term_val to vocab to get URI
+#             return f"{vocab}{term_id}"
+#         else:
+#             return uri
+#
+#     for term, term_val in context.items():
+#         if not term.startswith("@"):
+#             # assume term
+#             if isinstance(term_val, str):
+#                 term_id = term_val
+#             elif isinstance(term_val, dict):
+#                 term_id = term_val.get('@id')
+#                 keywords[term] = {k: v for k, v in term_val.items() if k.startswith('@') and k not in ('@id', '@context')}
+#             else:
+#                 term_id = None
+#
+#             expanded_id = expand_uri(term_id)
+#             if expanded_id:
+#                 result[term] = expanded_id
+#
+#     prefixes = {}
+#
+#     def expand_result(d: dict[str, str | tuple[str, str]]) -> dict[str, str]:
+#         r = {}
+#         for term, term_val in d.items():
+#             if isinstance(term_val, str):
+#                 r[term] = term_val
+#             else:
+#                 pref, suf = term_val
+#                 if pref in result:
+#                     r[term] = f"{result[pref]}{suf}"
+#                     prefixes[pref] = result[pref]
+#         return r
+#
+#     for keyword, keyword_val in keywords.items():
+#         if keyword_val.get('@type'):
+#             if isinstance(keyword_val['@type'], str):
+#                 keyword_val['@type'] = expand_uri(keyword_val['@type'])
+#             elif isinstance(keyword_val['@type'], list):
+#                 keyword_val['@type'] = [expand_uri(t) for t in keyword_val['@type']]
+#
+#     expanded_terms = expand_result(result)
+#
+#     context_term_cache[ctx] = expanded_terms, prefixes, keywords
+#     return expanded_terms, prefixes, keywords
 
 
 def validate_schema(schema: Any):
