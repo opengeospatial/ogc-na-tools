@@ -406,7 +406,8 @@ def generate_graph(input_data: dict | list,
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug('Uplifted JSON:\n%s', json.dumps(jdoc_ld, indent=2))
 
-    g.parse(data=json.dumps(pyld.jsonld.expand(jdoc_ld)), format='json-ld')
+    expanded = pyld.jsonld.expand(jdoc_ld, options)
+    g.parse(data=json.dumps(expanded), format='json-ld')
 
     return UpliftResult(graph=g, uplifted_json=jdoc_ld)
 
@@ -509,6 +510,9 @@ def process_file(input_fn: str | Path,
     transform_args['filename'] = str(input_fn.resolve())
     transform_args['basename'] = str(input_fn.name)
     transform_args['dirname'] = str(input_fn.resolve().parent)
+
+    if not base:
+        base = str(input_fn)
 
     uplift_result = generate_graph(input_data,
                                    context=contexts,
