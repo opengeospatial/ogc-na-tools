@@ -27,10 +27,11 @@ classifiers = [
 "Repository" = "https://github.com/opengeospatial/ogc-na-tools.git"
 
 [tool.setuptools]
-include-package-data = true
+include-package-data = false
 
 [tool.setuptools.packages.find]
-include = ["ogc"]
+include = ["ogc*"]
+exclude = ["docs", "test"]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
