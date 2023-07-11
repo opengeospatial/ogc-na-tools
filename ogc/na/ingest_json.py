@@ -515,9 +515,10 @@ def process_file(input_fn: str | Path,
 
     if transform_args is None:
         transform_args = {}
-    transform_args['filename'] = str(input_fn.resolve())
-    transform_args['basename'] = str(input_fn.name)
-    transform_args['dirname'] = str(input_fn.resolve().parent)
+    transform_args['_filename'] = str(input_fn.resolve())
+    transform_args['_basename'] = str(input_fn.name)
+    transform_args['_dirname'] = str(input_fn.resolve().parent)
+    transform_args['_relname'] = os.path.relpath(input_fn)
 
     if not base:
         base = str(input_fn)
@@ -733,7 +734,7 @@ def process(input_files: str | Path | Sequence[str | Path],
                     domain_cfg=domain_cfg,
                     transform_args=transform_args,
                 ))
-            except Exception as e:
+            except MissingContextException as e:
                 if skip_on_missing_context:
                     logger.warning("Error processing JSON/JSON-LD file, skipping: %s", getattr(e, 'msg', str(e)))
                 else:
