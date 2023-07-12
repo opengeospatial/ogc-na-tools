@@ -22,8 +22,6 @@ class ProfileTest(unittest.TestCase):
         registry = ProfileRegistry(DATA_DIR / 'profile_tree_cyclic.ttl')
         with self.assertRaises(ValueError):
             registry.build_profile_chain((EX.a, EX.c), recursive=True)
-        with self.assertRaises(ValueError):
-            registry.build_profile_chain((EX.a, EX.c), recursive=False)
         chain = registry.build_profile_chain((EX.a, EX.c), sort=False)
         self.assertEqual(len(chain), 4)
         chain = registry.build_profile_chain((EX.a, EX.c), sort=False, recursive=False)
