@@ -291,6 +291,7 @@ def merge_contexts(a: dict, b: dict, from_schema=None, property_chain=None) -> d
         va = a[term]
         if isinstance(va, str):
             va = {'@id': va}
+            a[term] = va
         vb = b.get(term)
         if isinstance(vb, str):
             vb = {'@id': vb}

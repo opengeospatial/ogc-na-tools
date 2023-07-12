@@ -54,45 +54,24 @@ class AnnotateSchemaTest(unittest.TestCase):
         self.assertEqual(result[0].resolve(), Path(fn_from).parent.joinpath(ref).resolve(), None)
         self.assertIsNone(result[1])
 
-    def test_annotate_follow_refs(self):
-        annotator = SchemaAnnotator(fn=DATA_DIR / 'sample-schema.yml', follow_refs=True)
-        schemas = annotator.schemas
-        self.assertEqual({*schemas.keys()},
-                          {Path(DATA_DIR / 'sample-schema.yml'), Path(DATA_DIR / 'sample-schema-prop-c.yml')})
-        full = schemas[Path(DATA_DIR / 'sample-schema.yml')].schema
-        prop_c = schemas[Path(DATA_DIR / 'sample-schema-prop-c.yml')].schema
-
-        self.assertEqual(deep_get(full, 'properties', 'propA', 'x-jsonld-id'), 'http://example.com/props/a')
-        self.assertEqual(deep_get(full, 'properties', 'propB', 'x-jsonld-id'), 'http://example.com/props/b')
-        self.assertEqual(deep_get(full, 'properties', 'propC', 'x-jsonld-id'), None)
-        self.assertEqual(deep_get(full, 'properties', 'propD', 'x-jsonld-id'), 'http://example.com/props/d')
-
-        self.assertEqual(deep_get(prop_c, 'properties', 'propA', 'x-jsonld-id'), 'http://example.com/props/a')
-
     def test_annotate_no_follow_refs(self):
-        annotator = SchemaAnnotator(fn=DATA_DIR / 'sample-schema.yml', follow_refs=False)
-        schemas = annotator.schemas
-        self.assertEqual({*schemas.keys()}, {Path(DATA_DIR / 'sample-schema.yml')})
-        full = schemas[Path(DATA_DIR / 'sample-schema.yml')].schema
+        annotator = SchemaAnnotator()
+        schema = annotator.process_schema(DATA_DIR / 'sample-schema.yml').schema
 
-        self.assertEqual(deep_get(full, 'properties', 'propA', 'x-jsonld-id'), 'http://example.com/props/a')
-        self.assertEqual(deep_get(full, 'properties', 'propB', 'x-jsonld-id'), 'http://example.com/props/b')
-        self.assertEqual(deep_get(full, 'properties', 'propC', 'x-jsonld-id'), None)
-        self.assertEqual(deep_get(full, 'properties', 'propD', 'x-jsonld-id'), 'http://example.com/props/d')
+        self.assertEqual(deep_get(schema, 'properties', 'propA', 'x-jsonld-id'), 'http://example.com/props/a')
+        self.assertEqual(deep_get(schema, 'properties', 'propB', 'x-jsonld-id'), 'http://example.com/props/b')
+        self.assertEqual(deep_get(schema, 'properties', 'propC', 'x-jsonld-id'), None)
+        self.assertEqual(deep_get(schema, 'properties', 'propD', 'x-jsonld-id'), 'http://example.com/props/d')
 
     def test_annotate_provided_context(self):
-        annotator = SchemaAnnotator(fn=DATA_DIR / 'sample-schema.yml',
-                                    follow_refs=False,
-                                    context={
+        annotator = SchemaAnnotator()
+        schema = annotator.process_schema(DATA_DIR / 'sample-schema.yml', default_context={
                                         '@context': {
                                             'another': 'http://example.net/another/',
                                             'propA': 'another:a',
                                             'propC': 'another:c'
                                         }
-                                    })
-        schemas = annotator.schemas
-        self.assertEqual({*schemas.keys()}, {Path(DATA_DIR / 'sample-schema.yml')})
-        full = schemas[Path(DATA_DIR / 'sample-schema.yml')].schema
+                                    }).schema
 
-        self.assertEqual(deep_get(full, 'properties', 'propA', 'x-jsonld-id'), 'http://example.com/props/a')
-        self.assertEqual(deep_get(full, 'properties', 'propC', 'x-jsonld-id'), 'http://example.net/another/c')
+        self.assertEqual(deep_get(schema, 'properties', 'propA', 'x-jsonld-id'), 'http://example.com/props/a')
+        self.assertEqual(deep_get(schema, 'properties', 'propC', 'x-jsonld-id'), 'http://example.net/another/c')

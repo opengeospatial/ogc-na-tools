@@ -347,7 +347,7 @@ def resolve_context(ctx: Path | str | dict | list, expand_uris=True) -> Resolved
                 term_val[curie_term] = expand_uri(curie_val, ctx_stack)
         term_ctx = term_val.get('@context')
         if term_ctx:
-            term_val['@context'] = resolve_inner(term_ctx, ctx_stack)
+            term_val['@context'] = resolve_inner(term_ctx, ctx_stack).context
         return term_val
 
     def resolve_inner(inner_ctx, ctx_stack=None) -> ResolvedContext | None:
@@ -370,6 +370,8 @@ def resolve_context(ctx: Path | str | dict | list, expand_uris=True) -> Resolved
                 inner_prefixes.update(resolved_entry.prefixes)
                 resolved = ResolvedContext(merge_dicts(resolved_entry.context, resolved_ctx), inner_prefixes)
         else:
+            if '@context' in inner_ctx:
+                inner_ctx = inner_ctx['@context']
             resolved = ResolvedContext(inner_ctx, {})
 
         if not resolved or not resolved.context:
