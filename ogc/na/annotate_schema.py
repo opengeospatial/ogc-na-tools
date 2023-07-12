@@ -121,9 +121,9 @@ import json
 import logging
 import re
 import sys
-from operator import itemgetter
+from operator import attrgetter
 from pathlib import Path
-from typing import Any, AnyStr, Callable, Sequence
+from typing import Any, AnyStr, Callable, Sequence, Iterable
 from urllib.parse import urlparse, urljoin
 
 import jsonschema
@@ -138,6 +138,8 @@ ANNOTATION_CONTEXT = 'x-jsonld-context'
 ANNOTATION_ID = 'x-jsonld-id'
 ANNOTATION_PREFIXES = 'x-jsonld-prefixes'
 ANNOTATION_EXTRA_TERMS = 'x-jsonld-extra-terms'
+
+CURIE_TERMS = '@id', '@type', '@index'
 
 context_term_cache = LRUCache(maxsize=20)
 requests_session = requests_cache.CachedSession('ogc.na.annotate_schema', backend='memory', expire_after=180)
@@ -158,13 +160,20 @@ class ReferencedSchema:
     full_contents: dict | None = None
     chain: list = dataclasses.field(default_factory=list)
     ref: str | Path = None
+    is_json: bool = False
+
+
+@dataclasses.dataclass
+class ResolvedContext:
+    context: dict[str, Any]
+    prefixes: dict[str, str]
 
 
 class SchemaResolver:
 
     def __init__(self, working_directory=Path()):
         self.working_directory = working_directory.resolve()
-        self._schema_cache: dict[str | Path, dict] = {}
+        self._schema_cache: dict[str | Path, tuple[Any, bool]] = {}
 
     @staticmethod
     def _get_branch(schema: dict, ref: str):
@@ -175,78 +184,71 @@ class SchemaResolver:
                 pointer = pointer[item]
         return pointer
 
-    def _load_contents(self, s: str | Path) -> dict:
-        contents = self._schema_cache.get(s)
+    def _load_contents(self, s: str | Path) -> tuple[dict, bool]:
+        contents, is_json = self._schema_cache.get(s, (None, False))
         if contents is None:
-            contents = load_json_yaml(read_contents(s)[0])[0]
-            self._schema_cache[s] = contents
-        return contents
+            contents, is_json = load_json_yaml(read_contents(s)[0])
+            self._schema_cache[s] = contents, is_json
+        return contents, is_json
 
-    def resolve(self, ref: str | Path, from_schema: ReferencedSchema | None = None) -> ReferencedSchema:
+    def resolve_ref(self, ref: str | Path, from_schema: ReferencedSchema | None = None) -> tuple[Path | str, str]:
+        location = ref
         fragment = None
+        if isinstance(location, str):
+            s = location.split('#', 1)
+            fragment = s[1] if len(s) > 1 else None
+            location = s[0]
+            if not location:
+                return location, fragment
+            if not is_url(location):
+                location = Path(location)
+
+        if isinstance(location, Path):
+            if location.is_absolute():
+                location = location.resolve()
+            elif not from_schema:
+                location = self.working_directory.joinpath(location).resolve()
+            elif not isinstance(from_schema.location, Path):
+                location = urljoin(from_schema.location, str(location))
+            else:
+                location = from_schema.location.resolve().parent.joinpath(location).resolve()
+
+        if location is None:
+            raise ValueError(f'Unexpected ref type {type(ref).__name__}')
+
+        return location, fragment
+
+    def resolve_schema(self, ref: str | Path, from_schema: ReferencedSchema | None = None) -> ReferencedSchema:
         chain = from_schema.chain + [from_schema] if from_schema else []
         try:
-            if isinstance(ref, Path):
-                if ref.is_absolute():
-                    schema_source = ref
-                elif not from_schema:
-                    schema_source = self.working_directory / ref
-                elif not isinstance(from_schema.location, Path):
-                    schema_source = urljoin(from_schema.location, str(ref))
-                else:
-                    schema_source = from_schema.location.resolve().parent.joinpath(ref).resolve()
+            schema_source, fragment = self.resolve_ref(ref, from_schema)
 
-            elif isinstance(ref, str):
-                # Resolve local ref or URL
-                if ref.startswith('#'):
-                    # Relative to current schema
-                    if not from_schema:
-                        raise ValueError('Local ref provided without an anchor: ' + ref)
-                    return ReferencedSchema(location=from_schema.location,
-                                            fragment=ref[1:],
-                                            subschema=SchemaResolver._get_branch(from_schema.full_contents, ref),
-                                            full_contents=from_schema.full_contents,
-                                            chain=chain,
-                                            ref=ref)
-                elif is_url(ref):
-                    # Absolute URL, download and parse
-                    s = ref.split('#', 1)
-                    url = s[0]
-                    fragment = s[1] if len(s) > 1 else None
-                    schema_source = url
+            if not schema_source:
+                if not from_schema:
+                    raise ValueError('Local ref provided without an anchor: ' + ref)
+                return ReferencedSchema(location=from_schema.location,
+                                        fragment=ref[1:],
+                                        subschema=SchemaResolver._get_branch(from_schema.full_contents, ref),
+                                        full_contents=from_schema.full_contents,
+                                        chain=chain,
+                                        ref=ref,
+                                        is_json=from_schema.is_json)
 
-                else:
-                    # str with a relative or absolute path, and with or without a fragment
-                    s = ref.split('#', 1)
-                    path = Path(s[0])
-                    fragment = s[1] if len(s) > 1 else None
-                    if path.is_absolute():
-                        # Load the schema
-                        schema_source = path.resolve()
-                    elif not from_schema:
-                        schema_source = self.working_directory / path.resolve()
-                    elif isinstance(from_schema.location, Path):
-                        # Resolve relative path
-                        schema_source = from_schema.location.resolve().parent.joinpath(path).resolve()
-                    else:
-                        # Resolve relative URL
-                        schema_source = urljoin(from_schema.location, str(path))
-            else:
-                raise ValueError(f'Unexpected ref type {type(ref).__name__}')
-
-            contents = self._load_contents(schema_source)
+            contents, is_json = self._load_contents(schema_source)
             if fragment:
                 return ReferencedSchema(location=schema_source, fragment=fragment,
                                         subschema=SchemaResolver._get_branch(contents, fragment),
                                         full_contents=contents,
                                         chain=chain,
-                                        ref=ref)
+                                        ref=ref,
+                                        is_json=is_json)
             else:
                 return ReferencedSchema(location=schema_source,
                                         subschema=contents,
                                         full_contents=contents,
                                         chain=chain,
-                                        ref=ref)
+                                        ref=ref,
+                                        is_json=is_json)
         except Exception as e:
             f = f" from {from_schema.location}" if from_schema else ''
             raise IOError(f"Error resolving reference {ref}{f}") from e
@@ -317,33 +319,11 @@ def resolve_ref(ref: str, fn_from: str | Path | None = None, url_from: str | Non
         return ref, None
 
 
-def resolve_context(ctx: Path | str | dict | list, expand_uris=True) -> dict[str, Any] | None:
-    context = None
-    prefixes = {}
+def resolve_context(ctx: Path | str | dict | list, expand_uris=True) -> ResolvedContext | None:
     if not ctx:
         return None
-    if isinstance(ctx, Path) or (isinstance(ctx, str) and not is_url(ctx)):
-        context = load_yaml(filename=ctx).get('@context')
-    elif isinstance(ctx, str):
-        r = requests_session.get(ctx)
-        r.raise_for_status()
-        fetched = r.json().get('@context')
-        if fetched:
-            context, prefixes = itemgetter('context', 'prefixes')(resolve_context(fetched))
-    elif isinstance(ctx, Sequence):
-        context = {}
-        for ctx_entry in ctx:
-            if isinstance(ctx_entry, dict):
-                ctx_entry = ctx_entry.get('@context')
-            resolved_entry = resolve_context(ctx_entry)
-            context = merge_dicts(resolved_entry['context'], context)
-            prefixes.update(resolved_entry['prefixes'])
-    else:
-        context = ctx
 
-    if not context:
-        return None
-
+    prefixes = {}
     def expand_uri(curie, ctx_stack):
         if not expand_uris or not ctx_stack or ':' not in curie:
             return curie
@@ -356,153 +336,62 @@ def resolve_context(ctx: Path | str | dict | list, expand_uris=True) -> dict[str
                 return f"{prefix_uri}{localpart}"
         return curie
 
-    def resolve_inner(inner_ctx, ctx_stack=None):
-        resolved_ctx = {}
+    def resolve_prop(term_val, ctx_stack):
+        if isinstance(term_val, str):
+            return expand_uri(term_val, ctx_stack)
+        elif not isinstance(term_val, dict):
+            return term_val
+        for curie_term in CURIE_TERMS:
+            curie_val = term_val.get(curie_term)
+            if isinstance(curie_val, str) and ':' in curie_val:
+                term_val[curie_term] = expand_uri(curie_val, ctx_stack)
+        term_ctx = term_val.get('@context')
+        if term_ctx:
+            term_val['@context'] = resolve_inner(term_ctx, ctx_stack)
+        return term_val
 
-        if not inner_ctx:
-            return resolved_ctx
+    def resolve_inner(inner_ctx, ctx_stack=None) -> ResolvedContext | None:
+        resolved = None
+        if isinstance(inner_ctx, Path) or (isinstance(inner_ctx, str) and not is_url(inner_ctx)):
+            resolved = resolve_context(load_yaml(filename=ctx).get('@context'))
+        elif isinstance(inner_ctx, str):
+            r = requests_session.get(ctx)
+            r.raise_for_status()
+            fetched = r.json().get('@context')
+            if fetched:
+                resolved = resolve_context(fetched)
+        elif isinstance(inner_ctx, Sequence):
+            resolved_ctx = {}
+            inner_prefixes = {}
+            for ctx_entry in inner_ctx:
+                if isinstance(ctx_entry, dict):
+                    ctx_entry = ctx_entry.get('@context')
+                resolved_entry = resolve_context(ctx_entry)
+                inner_prefixes.update(resolved_entry.prefixes)
+                resolved = ResolvedContext(merge_dicts(resolved_entry.context, resolved_ctx), inner_prefixes)
+        else:
+            resolved = ResolvedContext(inner_ctx, {})
+
+        if not resolved or not resolved.context:
+            return resolved
 
         if not ctx_stack:
-            ctx_stack = [inner_ctx]
+            ctx_stack = [resolved.context]
         else:
-            ctx_stack = ctx_stack + [inner_ctx]
+            ctx_stack = ctx_stack + [resolved.context]
 
-        curie_terms = '@id', '@type', '@index'
-        for term, term_val in inner_ctx.items():
-            if term.startswith('@'):
-                if isinstance(term_val, str) and term in curie_terms and ':' in term_val:
-                    term_val = expand_uri(term_val, ctx_stack)
-                resolved_ctx[term] = term_val
+        for term in resolved.context.keys():
+            term_val = resolved.context[term]
+            resolved.context[term] = resolve_prop(term_val, ctx_stack)
 
-            elif isinstance(term_val, dict):
-                term_context = term_val.get('@context')
-                if term_context:
-                    if isinstance(term_context, dict):
-                        resolved_ctx[term] = resolve_inner(term_context, ctx_stack)
-                    else:
-                        resolved_ctx[term] = term_val
+        return resolved
 
-                        term_val['@context'], p = itemgetter('context', 'prefixes')(resolve_context(term_context))
-                        prefixes.update(p)
-            elif isinstance(term_val, str):
-                resolved_ctx[term] = expand_uri(term_val, ctx_stack)
+    resolved_inner = resolve_inner(ctx)
+    for p, puri in resolved_inner.prefixes.items():
+        if p not in prefixes:
+            prefixes[p] = puri
 
-        return resolved_ctx
-
-    context = resolve_inner(context)
-
-    return {'context': context, 'prefixes': prefixes}
-
-
-# def read_context_terms(ctx: Path | str | dict | list) \
-#         -> tuple[dict[str, str], dict[str, str], dict[str, dict[str, Any]]]:
-#     """
-#     Reads all the terms from a JSON-LD context document.
-#
-#     :param ctx: file path (Path), URL (str) or dictionary (dict) to load
-#     :return: a tuple with 1) a dict with term to URI mappings, 2) a dict with prefix to URI mappings,
-#       and 3) a nested dict with property to keyword-value mappings
-#     """
-#
-#     cached = context_term_cache.get(ctx)
-#     if cached:
-#         return cached
-#
-#     def fetch_context(ctx) -> dict[str, Any]:
-#         fetched: dict[str, Any] = {}
-#
-#         if isinstance(ctx, Path):
-#             with open(ctx) as f:
-#                 fetched = json.load(f).get('@context')
-#         elif isinstance(ctx, str):
-#             r = requests_session.get(ctx)
-#             r.raise_for_status()
-#             fetched = r.json().get('@context')
-#         elif isinstance(ctx, list):
-#             for ctx_entry in ctx:
-#                 fetched = merge_dicts(fetched, fetch_context(ctx_entry))
-#         elif ctx:
-#             fetched = ctx.get('@context')
-#
-#         if isinstance(fetched, str):
-#             fetched = fetch_context(fetched)
-#         if not isinstance(fetched, str) and isinstance(fetched, Sequence):
-#             aux = {}
-#             for fetched_entry in fetched:
-#                 aux = merge_dicts(aux, fetch_context(fetched_entry))
-#             fetched = aux
-#
-#         return fetched
-#
-#     context = fetch_context(ctx)
-#
-#     if not context:
-#         return {}, {}, {}
-#
-#     result: dict[str, str | tuple[str, str]] = {}
-#     keywords: dict[str, dict[str, Any]] = {}
-#
-#     vocab = context.get('@vocab')
-#
-#     def expand_uri(uri: str) -> str | tuple[str, str] | None:
-#         if not uri:
-#             return None
-#
-#         if ':' in uri:
-#             # either URI or prefix:suffix
-#             pref, suf = uri.split(':', 1)
-#             if suf.startswith('//') or pref == 'urn':
-#                 # assume full URI
-#                 return uri
-#             else:
-#                 # prefix:suffix -> add to pending for expansion
-#                 return pref, suf
-#         elif vocab:
-#             # append term_val to vocab to get URI
-#             return f"{vocab}{term_id}"
-#         else:
-#             return uri
-#
-#     for term, term_val in context.items():
-#         if not term.startswith("@"):
-#             # assume term
-#             if isinstance(term_val, str):
-#                 term_id = term_val
-#             elif isinstance(term_val, dict):
-#                 term_id = term_val.get('@id')
-#                 keywords[term] = {k: v for k, v in term_val.items() if k.startswith('@') and k not in ('@id', '@context')}
-#             else:
-#                 term_id = None
-#
-#             expanded_id = expand_uri(term_id)
-#             if expanded_id:
-#                 result[term] = expanded_id
-#
-#     prefixes = {}
-#
-#     def expand_result(d: dict[str, str | tuple[str, str]]) -> dict[str, str]:
-#         r = {}
-#         for term, term_val in d.items():
-#             if isinstance(term_val, str):
-#                 r[term] = term_val
-#             else:
-#                 pref, suf = term_val
-#                 if pref in result:
-#                     r[term] = f"{result[pref]}{suf}"
-#                     prefixes[pref] = result[pref]
-#         return r
-#
-#     for keyword, keyword_val in keywords.items():
-#         if keyword_val.get('@type'):
-#             if isinstance(keyword_val['@type'], str):
-#                 keyword_val['@type'] = expand_uri(keyword_val['@type'])
-#             elif isinstance(keyword_val['@type'], list):
-#                 keyword_val['@type'] = [expand_uri(t) for t in keyword_val['@type']]
-#
-#     expanded_terms = expand_result(result)
-#
-#     context_term_cache[ctx] = expanded_terms, prefixes, keywords
-#     return expanded_terms, prefixes, keywords
+    return ResolvedContext(context=resolved_inner.context, prefixes=prefixes)
 
 
 def validate_schema(schema: Any):
@@ -518,118 +407,102 @@ class SchemaAnnotator:
     schema-path-or-url -> AnnotatedSchema mappings).
     """
 
-    def __init__(self, fn: Path | str | None = None, url: str | None = None,
-                 follow_refs: bool = True, ref_root: Path | str | None = None,
-                 context: str | Path | dict | None = None,
-                 ref_mapper: Callable[[str, Any], str] | None = None):
+    def __init__(self, ref_mapper: Callable[[str, Any], str] | None = None):
         """
         :param fn: file path to load (root schema)
         :param url: URL to load (root schema)
         :follow_refs: whether to follow `$ref`s (otherwise just annotate the provided root schema)
         """
-        self.schemas: dict[str | Path, AnnotatedSchema] = {}
-        self.bundled_schema = None
-        self.ref_root = Path(ref_root) if ref_root else None
-        self._follow_refs = follow_refs
-        self._provided_context = context
+        self._schema_resolver = SchemaResolver()
         self._ref_mapper = ref_mapper
 
-        self._process_schema(fn, url)
-
-    def _follow_ref(self, subschema, schema_fn: Path, schema_url: str, base_url: str | None):
-        if not isinstance(subschema, dict) or '$ref' not in subschema:
-            return
-
-        if self._ref_mapper:
-            subschema['$ref'] = self._ref_mapper(subschema['$ref'], subschema)
-
-        if not self._follow_refs:
-            return
-
-        ref_fn, ref_url = resolve_ref(subschema['$ref'], schema_fn, schema_url, base_url)
-        ref = ref_fn or ref_url
-
-        if ref in self.schemas:
-            logger.info(' >> Found $ref to already-processed schema: %s', ref)
-        else:
-            logger.info(' >> Found $ref to new schema: %s', ref)
-            self._process_schema(url=ref_url, fn=ref_fn)
-
-    def _process_schema(self, fn: Path | str | None = None, url: str | None = None):
-        contents, base_url = read_contents(fn or url)
-        schema, is_json = load_json_yaml(contents)
+    def process_schema(self, location: Path | str | None,
+                       default_context: str | Path | dict | None = None) -> AnnotatedSchema:
+        resolved_schema = self._schema_resolver.resolve_schema(location)
+        schema = resolved_schema.subschema
 
         try:
             if '$schema' in schema and all(x not in schema for x in ('schema', 'openapi')):
                 validate_schema(schema)
         except jsonschema.exceptions.SchemaError as e:
-            if fn:
-                msg = f"Could not parse schema from file {fn}"
-            else:
-                msg = f"Could not parse schema from URL {url}"
-            raise ValueError(msg) from e
+            raise ValueError(f"Could not parse schema from {location}") from e
 
         context_fn = schema.get(ANNOTATION_CONTEXT)
         schema.pop(ANNOTATION_CONTEXT, None)
 
-        base_url = schema.get('$id', base_url)
-
-        terms = {}
+        context = {}
         prefixes = {}
-        keywords = {}
-        used_terms = set()
 
-        if context_fn != self._provided_context or not (isinstance(context_fn, Path)
-                                                        and isinstance(self._provided_context, Path)
-                                                        and self._provided_context.resolve() == context_fn.resolve()):
+        if default_context and (context_fn != default_context
+                                or not (isinstance(context_fn, Path)
+                                        and isinstance(default_context, Path)
+                                        and default_context.resolve() == context_fn.resolve())):
             # Only load the provided context if it's different from the schema-referenced one
-            terms, prefixes, keywords = read_context_terms(self._provided_context)
+            resolved_default_context = resolve_context(default_context)
+            context, prefixes = attrgetter('context', 'prefixes')(resolved_default_context)
 
         if context_fn:
-            if base_url:
-                context_fn = urljoin(base_url, str(context_fn))
-            else:
-                context_fn = Path(fn).parent / context_fn
+            context_fn, fragment = self._schema_resolver.resolve_ref(context_fn, resolved_schema)
+            schema_context = resolve_context(context_fn)
 
-            for e in zip((terms, prefixes, keywords), read_context_terms(context_fn)):
-                e[0].update(e[1])
+            context = merge_contexts(context, schema_context.context)
+            prefixes = prefixes | schema_context.prefixes
 
-        def process_properties(obj: dict):
+        def find_prop_context(prop, context_stack) -> dict | None:
+            for ctx in reversed(context_stack):
+                if prop in ctx:
+                    prop_ctx = ctx[prop]
+                    if isinstance(prop_ctx, str):
+                        return {'@id': prop_ctx}
+                    elif '@id' not in prop_ctx:
+                        raise ValueError(f'Missing @id for property {prop} in context {json.dumps(ctx, indent=2)}')
+                    else:
+                        return {k: v for k, v in prop_ctx.items() if k.startswith('@')}
+
+        def process_properties(obj: dict, context_stack: list[dict[str, Any]], level) -> Iterable[str]:
             properties: dict[str, dict] = obj.get('properties') if obj else None
             if not properties:
-                return
+                return ()
             if not isinstance(properties, dict):
                 raise ValueError('"properties" must be a dictionary')
 
-            empty_properties = []
-            for prop, prop_value in properties.items():
-                if not prop_value or prop_value is True:
-                    empty_properties.append(prop)
-                    continue
-                if prop in terms:
-                    prop_value[ANNOTATION_ID] = terms[prop]
+            used_terms = set()
+            for prop in list(properties.keys()):
+                prop_value = properties[prop]
+                prop_ctx = find_prop_context(prop, context_stack)
+                if prop_ctx:
                     used_terms.add(prop)
-                    if keywords.get(prop):
-                        for kw, kw_term in keywords[prop].items():
-                            prop_value[ANNOTATION_PREFIX + kw[1:]] = kw_term
+                    prop_schema_ctx = {f"{ANNOTATION_PREFIX}{k[1:]}": v for k, v in prop_ctx.items() if k != '@context'}
 
-                process_subschema(prop_value)
+                    if not prop_value or prop_value is True:
+                        properties[prop] = prop_schema_ctx
+                    else:
+                        for k, v in prop_schema_ctx.items():
+                            prop_value.setdefault(k, v)
 
-            properties.update({p: {ANNOTATION_ID: terms[p]} for p in empty_properties if p in terms})
+                if prop_ctx and '@context' in prop_ctx:
+                    prop_context_stack = context_stack + [prop_ctx['@context']]
+                else:
+                    prop_context_stack = context_stack
+                used_terms.update(process_subschema(prop_value, prop_context_stack, level))
 
-        def process_subschema(subschema):
+            return used_terms
 
-            if not subschema:
-                return
+        def process_subschema(subschema, context_stack, level=1) -> Iterable[str]:
+            if not subschema or not isinstance(subschema, dict):
+                return ()
 
-            self._follow_ref(subschema, fn, url, base_url)
+            if self._ref_mapper and '$ref' in subschema:
+                subschema['$ref'] = self._ref_mapper(subschema['$ref'], subschema)
+
+            used_terms = set()
 
             # Annotate oneOf, allOf, anyOf
             for p in ('oneOf', 'allOf', 'anyOf'):
                 collection = subschema.get(p)
                 if collection and isinstance(collection, list):
                     for entry in collection:
-                        process_subschema(entry)
+                        used_terms.update(process_subschema(entry, context_stack, level + 1))
 
             # Annotate main schema
             schema_type = subschema.get('type')
@@ -637,31 +510,42 @@ class SchemaAnnotator:
                 schema_type = 'object'
 
             if schema_type == 'object':
-                process_properties(subschema)
+                used_terms.update(process_properties(subschema, context_stack, level + 1))
             elif schema_type == 'array':
                 for k in ('prefixItems', 'items', 'contains'):
-                    process_subschema(subschema.get(k))
+                    used_terms.update(process_subschema(subschema.get(k), context_stack, level + 1))
 
             # Annotate $defs
             for defs_prop in ('$defs', 'definitions'):
                 defs_value = subschema.get(defs_prop)
                 if isinstance(defs_value, dict):
                     for defs_entry in defs_value.values():
-                        process_subschema(defs_entry)
+                        used_terms.update(process_subschema(defs_entry, context_stack))
 
-        process_subschema(schema)
+            # Get prefixes
+            for p, bu in subschema.get(ANNOTATION_PREFIXES, {}).items():
+                if p not in prefixes:
+                    prefixes[p] = bu
+
+            if len(context_stack) == level and context_stack[-1]:
+                extra_terms = {k: (v if isinstance(v, str)
+                                   else {f"{ANNOTATION_PREFIX}{vk[1:]}": vv for vk, vv in v.items()})
+                               for k, v in context_stack[-1].items() if k[0] != '@'
+                               and k not in prefixes
+                               and k not in used_terms }
+                if extra_terms:
+                    subschema.setdefault(ANNOTATION_EXTRA_TERMS, {}).update(extra_terms)
+
+            return used_terms
+
+        process_subschema(schema, [context])
 
         if prefixes:
             schema[ANNOTATION_PREFIXES] = prefixes
 
-        unused_terms = set(terms) - set(prefixes) - used_terms
-        extra_terms = {t: terms[t] for t in unused_terms}
-        if extra_terms:
-            schema[ANNOTATION_EXTRA_TERMS] = extra_terms
-
-        self.schemas[fn or url] = AnnotatedSchema(
-            source=fn or url,
-            is_json=is_json,
+        return AnnotatedSchema(
+            source=location,
+            is_json=resolved_schema.is_json,
             schema=schema
         )
 
@@ -671,7 +555,7 @@ class ContextBuilder:
     Builds a JSON-LD context from a set of annotated JSON schemas.
     """
 
-    def __init__(self, fn: Path | str | None = None, url: str | None = None,
+    def __init__(self, location: Path | str = None,
                  compact: bool = True, ref_mapper: Callable[[str], str] | None = None):
         """
         :param fn: file to load the annotated schema from
@@ -683,7 +567,7 @@ class ContextBuilder:
 
         self._resolver = SchemaResolver()
 
-        self.location = fn or url
+        self.location = location
 
         context = self._build_context(self.location, compact)
         self.context = {'@context': context}
@@ -695,7 +579,7 @@ class ContextBuilder:
         if parsed:
             return parsed
 
-        root_schema = self._resolver.resolve(schema_location)
+        root_schema = self._resolver.resolve_schema(schema_location)
 
         prefixes = {}
 
@@ -737,14 +621,17 @@ class ContextBuilder:
                 return None
 
             if '$ref' in subschema:
-                referenced_schema = self._resolver.resolve(subschema['$ref'], from_schema)
+                ref = subschema['$ref']
+                if self._ref_mapper:
+                    ref = self._ref_mapper(ref)
+                referenced_schema = self._resolver.resolve_schema(ref, from_schema)
                 subschema = referenced_schema.subschema
                 from_schema = referenced_schema
 
             if not subschema:
                 return None
 
-            sub_context = read_properties(subschema, from_schema, property_chain)
+            sub_context = read_properties(subschema, from_schema, property_chain) or {}
 
             for i in ('allOf', 'anyOf', 'oneOf'):
                 l = subschema.get(i)
@@ -881,15 +768,14 @@ def _main():
     )
 
     parser.add_argument(
-        '--file',
-        required=False,
-        help='Entrypoint JSON Schema (filename)',
+        'schema',
+        help='Entrypoint JSON Schema (filename or URL)',
     )
 
     parser.add_argument(
-        '--url',
+        '--context',
         required=False,
-        help='Entrypoint JSON Schema (URL)',
+        help='Manually provided JSON-LD context (filename or URL)',
     )
 
     parser.add_argument(
@@ -928,13 +814,13 @@ def _main():
 
     args = parser.parse_args()
 
-    if not args.file and not args.url:
+    if not args.schema:
         print('Error: no file and no URL provided', file=sys.stderr)
         parser.print_usage(file=sys.stderr)
         sys.exit(2)
 
     if args.build_context or args.context_batch:
-        ctx_builder = ContextBuilder(fn=args.file, url=args.url)
+        ctx_builder = ContextBuilder(args.schema)
         if args.context_batch:
             fn = Path(args.file).with_suffix('.jsonld')
             with open(fn, 'w') as f:
@@ -942,14 +828,10 @@ def _main():
         else:
             print(json.dumps(ctx_builder.context, indent=2))
     else:
-        annotator = SchemaAnnotator(fn=args.file, url=args.url, follow_refs=not args.no_follow_refs)
+        annotator = SchemaAnnotator()
+        annotated = annotator.process_schema(args.schema, args.context)
         if args.stdout:
-            write_separator = len(annotator.schemas) > 1
-            for path, schema in annotator.schemas.items():
-                if write_separator:
-                    print('---')
-                print('#', path)
-                print(dump_yaml(schema.schema))
+            print(dump_yaml(annotated.schema))
         else:
             dump_annotated_schemas(annotator, args.output)
 

@@ -5,7 +5,7 @@ General utilities module.
 from __future__ import annotations
 import os.path
 import shlex
-from glob import glob
+from glob import glob, iglob
 from pathlib import Path
 from time import time
 from typing import Optional, Union, Any, Mapping, Hashable
@@ -160,6 +160,7 @@ def load_yaml(filename: str | Path | None = None,
 
 
 def dump_yaml(content: Any, filename: str | Path | None = None,
+              ignore_alises=True,
               **kwargs) -> str | None:
     """
     Generates YAML output.
@@ -169,11 +170,17 @@ def dump_yaml(content: Any, filename: str | Path | None = None,
     :param kwargs: other args to pass to `yaml.dump()`
     """
     kwargs.setdefault('sort_keys', False)
+    if ignore_alises:
+        class Dumper(YamlDumper):
+            def ignore_aliases(self, data) -> bool:
+                return True
+    else:
+        Dumper = YamlDumper
     if filename:
         with open(filename, 'w') as f:
-            return yaml.dump(content, f, Dumper=YamlDumper, **kwargs)
+            return yaml.dump(content, f, Dumper=Dumper, **kwargs)
     else:
-        return yaml.dump(content, Dumper=YamlDumper, **kwargs)
+        return yaml.dump(content, Dumper=Dumper, **kwargs)
 
 
 def is_iri(s: str) -> bool:
@@ -280,18 +287,17 @@ def merge_contexts(a: dict, b: dict, from_schema=None, property_chain=None) -> d
             a.update(b)
             return a
         return b
-    for t, va in a.items():
-        vb = b.get(t)
+    for term in list(a.keys()):
+        va = a[term]
+        if isinstance(va, str):
+            va = {'@id': va}
+        vb = b.get(term)
+        if isinstance(vb, str):
+            vb = {'@id': vb}
         if vb:
-            va_id = va['@id'] if isinstance(va, dict) else va
-            vb_id = vb['@id'] if isinstance(vb, dict) else vb
-            if va_id != vb_id:
-                e = f"Conflicting @id for term {t}: {va_id} vs {vb_id}"
-                if from_schema:
-                    e = f"{e} in schema {from_schema.ref if hasattr(from_schema, 'ref') else from_schema}"
-                if property_chain:
-                    e = f"{e} for property chain {'.'.join(property_chain)}"
-                raise ContextMergeError(e)
+            for vb_term, vb_term_val in vb.items():
+                if vb_term != '@context':
+                    va[vb_term] = vb_term_val
             if '@context' in vb:
                 if '@context' not in va:
                     va['@context'] = vb['@context']
