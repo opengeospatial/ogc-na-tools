@@ -218,7 +218,7 @@ class SchemaResolver:
 
         return location, fragment
 
-    def resolve_schema(self, ref: str | Path, from_schema: ReferencedSchema | None = None) -> ReferencedSchema:
+    def resolve_schema(self, ref: str | Path, from_schema: ReferencedSchema | None = None) -> ReferencedSchema | None:
         chain = from_schema.chain + [from_schema] if from_schema else []
         try:
             schema_source, fragment = self.resolve_ref(ref, from_schema)
@@ -403,7 +403,7 @@ def resolve_context(ctx: Path | str | dict | list, expand_uris=True) -> Resolved
 
     resolved_inner = resolve_inner(ctx)
     if not resolved_inner:
-        return None
+        return ResolvedContext()
     for p, puri in resolved_inner.prefixes.items():
         if p not in prefixes:
             prefixes[p] = puri
@@ -426,9 +426,7 @@ class SchemaAnnotator:
 
     def __init__(self, ref_mapper: Callable[[str, Any], str] | None = None):
         """
-        :param fn: file path to load (root schema)
-        :param url: URL to load (root schema)
-        :follow_refs: whether to follow `$ref`s (otherwise just annotate the provided root schema)
+        :ref_mapper: an optional function to map JSON `$ref`'s before resolving them
         """
         self._schema_resolver = SchemaResolver()
         self._ref_mapper = ref_mapper
@@ -441,7 +439,7 @@ class SchemaAnnotator:
         try:
             if '$schema' in schema and all(x not in schema for x in ('schema', 'openapi')):
                 validate_schema(schema)
-        except jsonschema.exceptions.SchemaError as e:
+        except jsonschema.exceptions.SchemaError:
             return None
 
         context_fn = schema.get(ANNOTATION_CONTEXT)
@@ -477,10 +475,13 @@ class SchemaAnnotator:
                     else:
                         result = {k: v for k, v in prop_ctx.items() if k.startswith('@')}
                         result['@id'] = f"{vocab}{prop}"
+                        return result
                 elif '@vocab' in ctx:
                     return {'@id': f"{ctx['@vocab']}{prop}"}
 
-        def process_properties(obj: dict, context_stack: list[dict[str, Any]], level) -> Iterable[str]:
+        def process_properties(obj: dict, context_stack: list[dict[str, Any]],
+                               from_schema: ReferencedSchema, level) -> Iterable[str]:
+
             properties: dict[str, dict] = obj.get('properties') if obj else None
             if not properties:
                 return ()
@@ -507,25 +508,30 @@ class SchemaAnnotator:
                     prop_context_stack = context_stack + [prop_ctx['@context']]
                 else:
                     prop_context_stack = context_stack
-                used_terms.update(process_subschema(prop_value, prop_context_stack, level))
+                used_terms.update(process_subschema(prop_value, prop_context_stack, from_schema, level))
 
             return used_terms
 
-        def process_subschema(subschema, context_stack, level=1) -> Iterable[str]:
+        def process_subschema(subschema, context_stack, from_schema: ReferencedSchema, level=1) -> Iterable[str]:
             if not subschema or not isinstance(subschema, dict):
                 return ()
 
-            if self._ref_mapper and '$ref' in subschema:
-                subschema['$ref'] = self._ref_mapper(subschema['$ref'], subschema)
-
             used_terms = set()
+
+            if '$ref' in subschema:
+                if self._ref_mapper:
+                    subschema['$ref'] = self._ref_mapper(subschema['$ref'], subschema)
+                if subschema['$ref'].startswith('#/') or subschema['$ref'].startswith(f"{from_schema.location}#/"):
+                    target_schema = self._schema_resolver.resolve_schema(subschema['$ref'], from_schema)
+                    if target_schema:
+                        used_terms.update(process_subschema(target_schema.subschema, context_stack, target_schema, level + 1))
 
             # Annotate oneOf, allOf, anyOf
             for p in ('oneOf', 'allOf', 'anyOf'):
                 collection = subschema.get(p)
                 if collection and isinstance(collection, list):
                     for entry in collection:
-                        used_terms.update(process_subschema(entry, context_stack, level + 1))
+                        used_terms.update(process_subschema(entry, context_stack, from_schema, level + 1))
 
             # Annotate main schema
             schema_type = subschema.get('type')
@@ -533,17 +539,10 @@ class SchemaAnnotator:
                 schema_type = 'object'
 
             if schema_type == 'object':
-                used_terms.update(process_properties(subschema, context_stack, level + 1))
+                used_terms.update(process_properties(subschema, context_stack, from_schema, level + 1))
             elif schema_type == 'array':
                 for k in ('prefixItems', 'items', 'contains'):
-                    used_terms.update(process_subschema(subschema.get(k), context_stack, level + 1))
-
-            # Annotate $defs
-            for defs_prop in ('$defs', 'definitions'):
-                defs_value = subschema.get(defs_prop)
-                if isinstance(defs_value, dict):
-                    for defs_entry in defs_value.values():
-                        used_terms.update(process_subschema(defs_entry, context_stack))
+                    used_terms.update(process_subschema(subschema.get(k), context_stack, from_schema, level + 1))
 
             # Get prefixes
             for p, bu in subschema.get(ANNOTATION_PREFIXES, {}).items():
@@ -551,17 +550,21 @@ class SchemaAnnotator:
                     prefixes[p] = bu
 
             if len(context_stack) == level and context_stack[-1]:
-                extra_terms = {k: (v if isinstance(v, str)
-                                   else {f"{ANNOTATION_PREFIX}{vk[1:]}": vv for vk, vv in v.items() if vk[0] == '@'})
-                               for k, v in context_stack[-1].items() if k[0] != '@'
-                               and k not in prefixes
-                               and k not in used_terms }
+                extra_terms = {}
+                for k, v in context_stack[-1].items():
+                    if k[0] != '@' and k not in prefixes and k not in used_terms:
+                        if isinstance(v, dict):
+                            if len(v) == 1 and '@id' in v:
+                                v = v['@id']
+                            else:
+                                v = {f"{ANNOTATION_PREFIX}{vk[1:]}": vv for vk, vv in v.items() if vk[0] == '@'}
+                        extra_terms[k] = v
                 if extra_terms:
                     subschema.setdefault(ANNOTATION_EXTRA_TERMS, {}).update(extra_terms)
 
             return used_terms
 
-        process_subschema(schema, [context])
+        process_subschema(schema, [context], resolved_schema)
 
         if prefixes:
             schema[ANNOTATION_PREFIXES] = prefixes
@@ -581,8 +584,9 @@ class ContextBuilder:
     def __init__(self, location: Path | str = None,
                  compact: bool = True, ref_mapper: Callable[[str], str] | None = None):
         """
-        :param fn: file to load the annotated schema from
-        :param url: URL to load the annotated schema from
+        :param location: file or URL load the annotated schema from
+        :param compact: whether to compact the resulting context (remove redundancies, compact CURIEs)
+        :ref_mapper: an optional function to map JSON `$ref`'s before resolving them
         """
         self.context = {'@context': {}}
         self._parsed_schemas: dict[str | Path, dict] = {}
@@ -635,7 +639,7 @@ class ContextBuilder:
 
             return subschema_context
 
-        def process_subschema(subschema, from_schema, property_chain=None, ref_chain=None) -> dict | None:
+        def process_subschema(subschema, from_schema, property_chain=None) -> dict | None:
 
             if property_chain is None:
                 property_chain = []
@@ -678,7 +682,7 @@ class ContextBuilder:
                     if extra_term not in sub_context:
                         if isinstance(extra_term_context, str):
                             extra_term_context = {'@id': extra_term_context}
-                        else:
+                        elif isinstance(extra_term_context, dict):
                             extra_term_context = {f"@{k[len(ANNOTATION_PREFIX):]}": v for k, v in extra_term_context.items()}
                         sub_context[extra_term] = extra_term_context
 
@@ -702,33 +706,33 @@ class ContextBuilder:
         own_context = merge_contexts(own_context, process_subschema(root_schema.subschema, root_schema),
                                      root_schema)
 
-        if compact:
+        for prefix in list(prefixes.keys()):
+            if prefix not in own_context:
+                own_context[prefix] = {'@id': prefixes[prefix]}
+            else:
+                del prefixes[prefix]
 
-            rev_prefixes = {v: k for k, v in prefixes.items()}
+        if compact:
 
             def compact_uri(uri: str) -> str:
                 if uri.startswith('@'):
                     # JSON-LD keyword
                     return uri
-                parts = urlparse(uri)
-                if parts.fragment:
-                    pref, suf = uri.rsplit('#', 1)
-                    pref += '#'
-                elif len(parts.path) > 1:
-                    pref, suf = uri.rsplit('/', 1)
-                    pref += '/'
-                else:
-                    return uri
 
-                if pref in rev_prefixes:
-                    return f"{rev_prefixes[pref]}:{suf}"
-                else:
-                    return uri
+                for pref, pref_uri in prefixes.items():
+                    if uri.startswith(pref_uri) and len(pref_uri) < len(uri):
+                        local_part = uri[len(pref_uri):]
+                        if local_part.startswith('//'):
+                            return uri
+                        return f"{pref}:{local_part}"
 
-            def compact_branch(branch, context_stack=None):
+                return uri
+
+            def compact_branch(branch, context_stack=None) -> bool:
                 child_context_stack = context_stack + [branch] if context_stack else [branch]
                 terms = list(k for k in branch.keys() if k[0] != '@')
 
+                changed = False
                 for term in terms:
                     term_value = branch[term]
                     deleted = False
@@ -737,9 +741,14 @@ class ContextBuilder:
                             if term in ctx and ctx[term] == term_value:
                                 del branch[term]
                                 deleted = True
+                                changed = True
                                 break
                     if not deleted and isinstance(term_value, dict) and '@context' in term_value:
-                        compact_branch(term_value['@context'], child_context_stack)
+                        while True:
+                            if not compact_branch(term_value['@context'], child_context_stack):
+                                break
+
+                return changed
 
             def compact_uris(branch, context_stack=None):
                 child_context_stack = context_stack + [branch] if context_stack else [branch]
@@ -749,8 +758,10 @@ class ContextBuilder:
                     if isinstance(term_value, str):
                         branch[term] = compact_uri(term_value)
                     elif isinstance(term_value, dict):
+                        if '@id' in term_value:
+                            term_value['@id'] = compact_uri(term_value['@id'])
                         if len(term_value) == 1 and '@id' in term_value:
-                            branch[term] = compact_uri(term_value['@id'])
+                            branch[term] = term_value['@id']
                         elif '@context' in term_value:
                             compact_uris(term_value['@context'], child_context_stack)
 
@@ -768,7 +779,7 @@ def dump_annotated_schema(schema: AnnotatedSchema, subdir: Path | str = 'annotat
     Creates a "mirror" directory (named `annotated` by default) with the resulting
     schemas annotated by a `SchemaAnnotator`.
 
-    :param annotator: a `SchemaAnnotator` with the annotated schemas to read
+    :param schema: the `AnnotatedSchema` to dump
     :param subdir: a name for the mirror directory
     :param root_dir: root directory for computing relative paths to schemas
     :param output_fn_transform: optional callable to transform the output path
