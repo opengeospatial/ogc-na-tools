@@ -165,8 +165,8 @@ class ReferencedSchema:
 
 @dataclasses.dataclass
 class ResolvedContext:
-    context: dict[str, Any]
-    prefixes: dict[str, str]
+    context: dict[str, Any] = dataclasses.field(default_factory=dict)
+    prefixes: dict[str, str] = dataclasses.field(default_factory=dict)
 
 
 class SchemaResolver:
@@ -222,6 +222,10 @@ class SchemaResolver:
         chain = from_schema.chain + [from_schema] if from_schema else []
         try:
             schema_source, fragment = self.resolve_ref(ref, from_schema)
+            if from_schema:
+                for ancestor in from_schema.chain:
+                    if (not schema_source or ancestor.location == schema_source) and ancestor.fragment == fragment:
+                        return None
 
             if not schema_source:
                 if not from_schema:
@@ -319,21 +323,30 @@ def resolve_ref(ref: str, fn_from: str | Path | None = None, url_from: str | Non
         return ref, None
 
 
-def resolve_context(ctx: Path | str | dict | list, expand_uris=True) -> ResolvedContext | None:
+def resolve_context(ctx: Path | str | dict | list, expand_uris=True) -> ResolvedContext:
     if not ctx:
-        return None
+        return ResolvedContext()
 
     prefixes = {}
     def expand_uri(curie, ctx_stack):
-        if not expand_uris or not ctx_stack or ':' not in curie:
+        if not expand_uris or not ctx_stack or not curie:
             return curie
-        prefix, localpart = curie.split(':', 1)
+        if ':' in curie:
+            prefix, localpart = curie.split(':', 1)
+        else:
+            prefix, localpart = None, None
         for c in reversed(ctx_stack):
-            if prefix in c:
-                term_val = c[prefix]
-                prefix_uri = term_val if isinstance(term_val, str) else term_val.get('@id')
-                prefixes[prefix] = prefix_uri
-                return f"{prefix_uri}{localpart}"
+            if localpart:
+                # prefix:localpart format
+                if prefix in c:
+                    term_val = c[prefix]
+                    prefix_uri = term_val if isinstance(term_val, str) else term_val.get('@id')
+                    prefixes[prefix] = prefix_uri
+                    return f"{prefix_uri}{localpart}"
+            elif '@vocab' in c:
+                # look for @vocab
+                return f"{c['@vocab']}{curie}"
+
         return curie
 
     def resolve_prop(term_val, ctx_stack):
@@ -343,7 +356,7 @@ def resolve_context(ctx: Path | str | dict | list, expand_uris=True) -> Resolved
             return term_val
         for curie_term in CURIE_TERMS:
             curie_val = term_val.get(curie_term)
-            if isinstance(curie_val, str) and ':' in curie_val:
+            if isinstance(curie_val, str):
                 term_val[curie_term] = expand_uri(curie_val, ctx_stack)
         term_ctx = term_val.get('@context')
         if term_ctx:
@@ -389,6 +402,8 @@ def resolve_context(ctx: Path | str | dict | list, expand_uris=True) -> Resolved
         return resolved
 
     resolved_inner = resolve_inner(ctx)
+    if not resolved_inner:
+        return None
     for p, puri in resolved_inner.prefixes.items():
         if p not in prefixes:
             prefixes[p] = puri
@@ -419,7 +434,7 @@ class SchemaAnnotator:
         self._ref_mapper = ref_mapper
 
     def process_schema(self, location: Path | str | None,
-                       default_context: str | Path | dict | None = None) -> AnnotatedSchema:
+                       default_context: str | Path | dict | None = None) -> AnnotatedSchema | None:
         resolved_schema = self._schema_resolver.resolve_schema(location)
         schema = resolved_schema.subschema
 
@@ -427,7 +442,7 @@ class SchemaAnnotator:
             if '$schema' in schema and all(x not in schema for x in ('schema', 'openapi')):
                 validate_schema(schema)
         except jsonschema.exceptions.SchemaError as e:
-            raise ValueError(f"Could not parse schema from {location}") from e
+            return None
 
         context_fn = schema.get(ANNOTATION_CONTEXT)
         schema.pop(ANNOTATION_CONTEXT, None)
@@ -452,14 +467,18 @@ class SchemaAnnotator:
 
         def find_prop_context(prop, context_stack) -> dict | None:
             for ctx in reversed(context_stack):
+                vocab = ctx.get('@vocab')
                 if prop in ctx:
                     prop_ctx = ctx[prop]
                     if isinstance(prop_ctx, str):
                         return {'@id': prop_ctx}
-                    elif '@id' not in prop_ctx:
+                    elif '@id' not in prop_ctx and not vocab:
                         raise ValueError(f'Missing @id for property {prop} in context {json.dumps(ctx, indent=2)}')
                     else:
-                        return {k: v for k, v in prop_ctx.items() if k.startswith('@')}
+                        result = {k: v for k, v in prop_ctx.items() if k.startswith('@')}
+                        result['@id'] = f"{vocab}{prop}"
+                elif '@vocab' in ctx:
+                    return {'@id': f"{ctx['@vocab']}{prop}"}
 
         def process_properties(obj: dict, context_stack: list[dict[str, Any]], level) -> Iterable[str]:
             properties: dict[str, dict] = obj.get('properties') if obj else None
@@ -474,7 +493,9 @@ class SchemaAnnotator:
                 prop_ctx = find_prop_context(prop, context_stack)
                 if prop_ctx:
                     used_terms.add(prop)
-                    prop_schema_ctx = {f"{ANNOTATION_PREFIX}{k[1:]}": v for k, v in prop_ctx.items() if k != '@context'}
+                    prop_schema_ctx = {f"{ANNOTATION_PREFIX}{k[1:]}": v
+                                       for k, v in prop_ctx.items()
+                                       if k[0] == '@' and k != '@context'}
 
                     if not prop_value or prop_value is True:
                         properties[prop] = prop_schema_ctx
@@ -531,7 +552,7 @@ class SchemaAnnotator:
 
             if len(context_stack) == level and context_stack[-1]:
                 extra_terms = {k: (v if isinstance(v, str)
-                                   else {f"{ANNOTATION_PREFIX}{vk[1:]}": vv for vk, vv in v.items()})
+                                   else {f"{ANNOTATION_PREFIX}{vk[1:]}": vv for vk, vv in v.items() if vk[0] == '@'})
                                for k, v in context_stack[-1].items() if k[0] != '@'
                                and k not in prefixes
                                and k not in used_terms }
@@ -614,7 +635,7 @@ class ContextBuilder:
 
             return subschema_context
 
-        def process_subschema(subschema, from_schema, property_chain=None) -> dict | None:
+        def process_subschema(subschema, from_schema, property_chain=None, ref_chain=None) -> dict | None:
 
             if property_chain is None:
                 property_chain = []
@@ -627,8 +648,9 @@ class ContextBuilder:
                 if self._ref_mapper:
                     ref = self._ref_mapper(ref)
                 referenced_schema = self._resolver.resolve_schema(ref, from_schema)
-                subschema = referenced_schema.subschema
-                from_schema = referenced_schema
+                if referenced_schema:
+                    subschema = referenced_schema.subschema
+                    from_schema = referenced_schema
 
             if not subschema:
                 return None
@@ -656,6 +678,8 @@ class ContextBuilder:
                     if extra_term not in sub_context:
                         if isinstance(extra_term_context, str):
                             extra_term_context = {'@id': extra_term_context}
+                        else:
+                            extra_term_context = {f"@{k[len(ANNOTATION_PREFIX):]}": v for k, v in extra_term_context.items()}
                         sub_context[extra_term] = extra_term_context
 
             if sub_context:
@@ -725,7 +749,7 @@ class ContextBuilder:
         return own_context
 
 
-def dump_annotated_schemas(annotator: SchemaAnnotator, subdir: Path | str = 'annotated',
+def dump_annotated_schema(schema: AnnotatedSchema, subdir: Path | str = 'annotated',
                            root_dir: Path | str | None = None,
                            output_fn_transform: Callable[[Path], Path] | None = None) -> list[Path]:
     """
@@ -739,29 +763,24 @@ def dump_annotated_schemas(annotator: SchemaAnnotator, subdir: Path | str = 'ann
     """
     wd = (Path(root_dir) if root_dir else Path()).resolve()
     subdir = subdir if isinstance(subdir, Path) else Path(subdir)
-    result = []
-    for path, schema in annotator.schemas.items():
+    path = schema.source
+    if isinstance(path, Path):
+        output_fn = path.resolve().relative_to(wd)
+    else:
+        parsed = urlparse(str(path))
+        output_fn = parsed.path
 
-        if isinstance(path, Path):
-            output_fn = path.resolve().relative_to(wd)
-        else:
-            parsed = urlparse(str(path))
-            output_fn = parsed.path
+    output_fn = subdir / output_fn
+    if output_fn_transform:
+        output_fn = output_fn_transform(output_fn)
+    output_fn.parent.mkdir(parents=True, exist_ok=True)
 
-        output_fn = subdir / output_fn
-        if output_fn_transform:
-            output_fn = output_fn_transform(output_fn)
-        output_fn.parent.mkdir(parents=True, exist_ok=True)
-
-        if schema.is_json:
-            with open(output_fn, 'w') as f:
-                json.dump(schema.schema, f, indent=2)
-        else:
-            dump_yaml(schema.schema, output_fn)
-
-        result.append(output_fn)
-
-    return result
+    if schema.is_json:
+        logger.info(f'Writing output schema to {output_fn}')
+        with open(output_fn, 'w') as f:
+            json.dump(schema.schema, f, indent=2)
+    else:
+        dump_yaml(schema.schema, output_fn)
 
 
 def _main():
@@ -808,12 +827,6 @@ def _main():
         action='store_true',
     )
 
-    parser.add_argument(
-        '--stdout',
-        action='store_true',
-        help='Dump schemas to stdout'
-    )
-
     args = parser.parse_args()
 
     if not args.schema:
@@ -832,10 +845,7 @@ def _main():
     else:
         annotator = SchemaAnnotator()
         annotated = annotator.process_schema(args.schema, args.context)
-        if args.stdout:
-            print(dump_yaml(annotated.schema))
-        else:
-            dump_annotated_schemas(annotator, args.output)
+        print(dump_yaml(annotated.schema))
 
 
 if __name__ == '__main__':
