@@ -725,25 +725,37 @@ class ContextBuilder:
                 else:
                     return uri
 
-            def compact_branch(branch, existing_terms):
+            def compact_branch(branch, context_stack=None):
+                child_context_stack = context_stack + [branch] if context_stack else [branch]
+                terms = list(k for k in branch.keys() if k[0] != '@')
 
-                for term in list(branch.keys()):
-                    if term[0] == '@':
-                        # skip special terms
-                        continue
-                    if term in existing_terms and existing_terms[term] == branch[term]:
-                        # same term exists in ancestor -> delete
-                        del branch[term]
-
-                for term in list(branch.keys()):
+                for term in terms:
                     term_value = branch[term]
-                    if isinstance(term_value, dict):
+                    deleted = False
+                    if context_stack:
+                        for ctx in context_stack:
+                            if term in ctx and ctx[term] == term_value:
+                                del branch[term]
+                                deleted = True
+                                break
+                    if not deleted and isinstance(term_value, dict) and '@context' in term_value:
+                        compact_branch(term_value['@context'], child_context_stack)
+
+            def compact_uris(branch, context_stack=None):
+                child_context_stack = context_stack + [branch] if context_stack else [branch]
+                terms = list(k for k in branch.keys() if k[0] != '@')
+                for term in terms:
+                    term_value = branch.get(term)
+                    if isinstance(term_value, str):
+                        branch[term] = compact_uri(term_value)
+                    elif isinstance(term_value, dict):
                         if len(term_value) == 1 and '@id' in term_value:
                             branch[term] = compact_uri(term_value['@id'])
                         elif '@context' in term_value:
-                            compact_branch(term_value['@context'], {**existing_terms, **branch})
+                            compact_uris(term_value['@context'], child_context_stack)
 
-            compact_branch(own_context, {})
+            compact_branch(own_context)
+            compact_uris(own_context)
 
         self._parsed_schemas[schema_location] = own_context
         return own_context
@@ -751,7 +763,7 @@ class ContextBuilder:
 
 def dump_annotated_schema(schema: AnnotatedSchema, subdir: Path | str = 'annotated',
                            root_dir: Path | str | None = None,
-                           output_fn_transform: Callable[[Path], Path] | None = None) -> list[Path]:
+                           output_fn_transform: Callable[[Path], Path] | None = None) -> None:
     """
     Creates a "mirror" directory (named `annotated` by default) with the resulting
     schemas annotated by a `SchemaAnnotator`.
