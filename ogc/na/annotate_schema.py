@@ -469,12 +469,19 @@ class SchemaAnnotator:
                 if prop in ctx:
                     prop_ctx = ctx[prop]
                     if isinstance(prop_ctx, str):
+                        if vocab and ':' not in prop_ctx:
+                            prop_ctx = f"{vocab}{prop_ctx}"
                         return {'@id': prop_ctx}
                     elif '@id' not in prop_ctx and not vocab:
                         raise ValueError(f'Missing @id for property {prop} in context {json.dumps(ctx, indent=2)}')
                     else:
                         result = {k: v for k, v in prop_ctx.items() if k.startswith('@')}
-                        result['@id'] = f"{vocab}{prop}"
+                        if vocab:
+                            prop_id = result.get('@id')
+                            if not prop_id:
+                                result['@id'] = f"{vocab}{prop}"
+                            elif ':' not in prop_id:
+                                result['@id'] = f"{vocab}{prop_id}"
                         return result
                 elif '@vocab' in ctx:
                     return {'@id': f"{ctx['@vocab']}{prop}"}
