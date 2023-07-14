@@ -1,0 +1,12 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+description: Sensor, Observation, Sample, and Actuator (SOSA)
+type: object
+properties:
+  propA:
+    type: object
+  propB:
+    type: object
+  propC:
+    type: object
+  propD:
+    type: object

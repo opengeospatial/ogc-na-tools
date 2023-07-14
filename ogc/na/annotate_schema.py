@@ -329,7 +329,7 @@ def resolve_context(ctx: Path | str | dict | list, expand_uris=True) -> Resolved
 
     prefixes = {}
     def expand_uri(curie, ctx_stack):
-        if not expand_uris or not ctx_stack or not curie:
+        if not expand_uris or not ctx_stack or not curie or curie[0] == '@':
             return curie
         if ':' in curie:
             prefix, localpart = curie.split(':', 1)
@@ -469,7 +469,7 @@ class SchemaAnnotator:
                 if prop in ctx:
                     prop_ctx = ctx[prop]
                     if isinstance(prop_ctx, str):
-                        if vocab and ':' not in prop_ctx:
+                        if vocab and ':' not in prop_ctx and prop_ctx[0] != '@':
                             prop_ctx = f"{vocab}{prop_ctx}"
                         return {'@id': prop_ctx}
                     elif '@id' not in prop_ctx and not vocab:
@@ -480,7 +480,7 @@ class SchemaAnnotator:
                             prop_id = result.get('@id')
                             if not prop_id:
                                 result['@id'] = f"{vocab}{prop}"
-                            elif ':' not in prop_id:
+                            elif ':' not in prop_id and prop_id[0] != '@':
                                 result['@id'] = f"{vocab}{prop_id}"
                         return result
                 elif '@vocab' in ctx:
@@ -497,6 +497,9 @@ class SchemaAnnotator:
 
             used_terms = set()
             for prop in list(properties.keys()):
+                if prop[0] == '@':
+                    # skip JSON-LD keywords
+                    continue
                 prop_value = properties[prop]
                 prop_ctx = find_prop_context(prop, context_stack)
                 if prop_ctx:

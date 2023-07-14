@@ -75,3 +75,20 @@ class AnnotateSchemaTest(unittest.TestCase):
 
         self.assertEqual(deep_get(schema, 'properties', 'propA', 'x-jsonld-id'), 'http://example.com/props/a')
         self.assertEqual(deep_get(schema, 'properties', 'propC', 'x-jsonld-id'), 'http://example.net/another/c')
+
+    def test_vocab(self):
+        annotator = SchemaAnnotator()
+        vocab = 'http://example.com/vocab#'
+        schema = annotator.process_schema(DATA_DIR / 'schema-vocab.yml', default_context={
+            '@context': {
+                '@vocab': vocab,
+                'propA': 'test',
+                'propB': '@id',
+                'propC': 'http://www.another.com/',
+            }
+        }).schema
+
+        self.assertEqual(deep_get(schema, 'properties', 'propA', 'x-jsonld-id'), vocab + 'test')
+        self.assertEqual(deep_get(schema, 'properties', 'propB', 'x-jsonld-id'), '@id')
+        self.assertEqual(deep_get(schema, 'properties', 'propC', 'x-jsonld-id'), 'http://www.another.com/')
+        self.assertEqual(deep_get(schema, 'properties', 'propD', 'x-jsonld-id'), vocab + 'propD')
