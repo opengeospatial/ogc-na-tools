@@ -138,6 +138,7 @@ ANNOTATION_CONTEXT = 'x-jsonld-context'
 ANNOTATION_ID = 'x-jsonld-id'
 ANNOTATION_PREFIXES = 'x-jsonld-prefixes'
 ANNOTATION_EXTRA_TERMS = 'x-jsonld-extra-terms'
+ANNOTATION_IGNORE_EXPAND = [ANNOTATION_CONTEXT, ANNOTATION_EXTRA_TERMS, ANNOTATION_PREFIXES]
 
 CURIE_TERMS = '@id', '@type', '@index'
 
@@ -637,7 +638,7 @@ class ContextBuilder:
                     continue
                 prop_context = {}
                 for term, term_val in prop_val.items():
-                    if term.startswith(ANNOTATION_PREFIX) and term != ANNOTATION_CONTEXT:
+                    if term.startswith(ANNOTATION_PREFIX) and term not in ANNOTATION_IGNORE_EXPAND:
                         prop_context['@' + term[len(ANNOTATION_PREFIX):]] = term_val
                 inner_context = process_subschema(prop_val, from_schema, property_chain + ['properties', prop])
                 if inner_context:
