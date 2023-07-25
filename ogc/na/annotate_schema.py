@@ -658,19 +658,16 @@ class ContextBuilder:
             if not isinstance(subschema, dict):
                 return None
 
+            sub_context = read_properties(subschema, from_schema, property_chain) or {}
+
             if '$ref' in subschema:
                 ref = subschema['$ref']
                 if self._ref_mapper:
                     ref = self._ref_mapper(ref)
                 referenced_schema = self._resolver.resolve_schema(ref, from_schema)
                 if referenced_schema:
-                    subschema = referenced_schema.subschema
-                    from_schema = referenced_schema
-
-            if not subschema:
-                return None
-
-            sub_context = read_properties(subschema, from_schema, property_chain) or {}
+                    merge_contexts(sub_context,
+                                   process_subschema(referenced_schema.subschema, referenced_schema))
 
             for i in ('allOf', 'anyOf', 'oneOf'):
                 l = subschema.get(i)
