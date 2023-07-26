@@ -27,6 +27,7 @@ be skipped.
 """
 from __future__ import annotations
 import argparse
+import functools
 import json
 import logging
 import os
@@ -42,10 +43,8 @@ from pathlib import Path
 from typing import Union, Optional, Sequence, cast, Iterable, Any
 
 import jq
-import pyld.jsonld
 from jsonpath_ng.ext import parse as json_path_parse
 from jsonschema import validate as json_validate
-from pyld import jsonld
 from rdflib import Graph, DC, DCTERMS, SKOS, OWL, RDF, RDFS, XSD, DCAT
 from rdflib.namespace import Namespace, DefinedNamespace
 
@@ -144,23 +143,6 @@ class UpliftResult:
     output_files: list[Path] = field(default_factory=list)
 
 
-def _document_loader(secure: bool = False,
-                     url_whitelist: Optional[Union[Sequence, bool]] = None,
-                     **kwargs):
-    if url_whitelist is False:
-        raise ValueError("Remote document fetching is disabled (url_whitelist is False)")
-    if isinstance(url_whitelist, str):
-        url_whitelist = (re.compile(url_whitelist),)
-    wrapped = jsonld.requests_document_loader(secure=secure, **kwargs)
-
-    def loader(url, options=None):
-        if url_whitelist is not None and not any(re.match(r, url) for r in url_whitelist if r):
-            raise ValueError('Remote document fetching not allowed for URL {}'.format(url))
-        return wrapped(url, options=options or {})
-
-    return loader
-
-
 def validate_context(context: Union[dict, str] = None,
                      filename: Union[str, Path] = None,
                      transform_args: dict | None = None) -> dict:
@@ -216,7 +198,6 @@ def add_jsonld_provenance(json_doc: Union[dict, list], metadata: ProvenanceMetad
 
 
 def uplift_json(data: dict | list, context: dict,
-                fetch_timeout: int = 5,
                 fetch_url_whitelist: Optional[Union[Sequence, bool]] = None,
                 transform_args: dict | None = None) -> dict:
     """
@@ -227,7 +208,6 @@ def uplift_json(data: dict | list, context: dict,
 
     :param data: the JSON document in dict format
     :param context: YAML context definition
-    :param fetch_timeout: timeout (in seconds) for fetching referenced JSON-LD context URLs
     :param fetch_url_whitelist: list of regular expressions to filter referenced JSON-LD context URLs before
         retrieving them. If None, it will not be used; if empty sequence or False, remote fetching operations will
         throw an exception.
@@ -236,8 +216,6 @@ def uplift_json(data: dict | list, context: dict,
     """
 
     context_position = context.get('position', 'before')
-
-    jsonld.set_document_loader(_document_loader(timeout=fetch_timeout, url_whitelist=fetch_url_whitelist))
 
     validate_context(context, transform_args=transform_args)
 
@@ -342,7 +320,6 @@ def _get_injected_context(node: dict, ctx: Union[dict, list] = None, position: s
 def generate_graph(input_data: dict | list,
                    context: dict[str, Any] | Sequence[dict] = None,
                    base: str | None = None,
-                   fetch_timeout: int = 5,
                    fetch_url_whitelist: Sequence[str] | bool | None = None,
                    transform_args: dict | None = None) -> UpliftResult:
     """
@@ -351,7 +328,6 @@ def generate_graph(input_data: dict | list,
     :param input_data: input JSON data in dict or list format
     :param context: context definition in dict format, or list thereof
     :param base: base URI for JSON-LD context
-    :param fetch_timeout: timeout (in seconds) for fetching referenced JSON-LD context URLs
     :param fetch_url_whitelist: list of regular expressions to filter referenced JSON-LD context URLs before
         retrieving them. If None, it will not be used; if empty sequence or False, remote fetching operations will
         throw an exception.
@@ -373,8 +349,6 @@ def generate_graph(input_data: dict | list,
         for context_entry in context_list:
             base_uri = context_entry.get('base-uri', base_uri)
             jdoc_ld = uplift_json(input_data, context_entry,
-                                  fetch_timeout=fetch_timeout,
-                                  fetch_url_whitelist=fetch_url_whitelist,
                                   transform_args=transform_args)
             if 'context' in context_entry:
                 if '$' in context_entry['context']:
@@ -384,17 +358,17 @@ def generate_graph(input_data: dict | list,
                 else:
                     continue
 
-                for term, term_val in root_ctx.items():
-                    if not term.startswith('@') \
-                            and isinstance(term_val, str) \
-                            and re.match(r'.+[#/:]$', term_val) \
-                            and is_iri(term_val):
-                        g.bind(term, term_val)
+                if isinstance(root_ctx, dict):
+                    for term, term_val in root_ctx.items():
+                        if not term.startswith('@') \
+                                and isinstance(term_val, str) \
+                                and re.match(r'.+[#/:]$', term_val) \
+                                and is_iri(term_val):
+                            g.bind(term, term_val)
 
-        options = {}
         if not base:
             if base_uri:
-                options['base'] = context['base-uri']
+                base = context['base-uri']
             elif '@context' in jdoc_ld:
                 # Try to extract from @context
                 # If it is a list, iterate until @base is found
@@ -409,13 +383,22 @@ def generate_graph(input_data: dict | list,
                 else:
                     # If not a list, just look @base up
                     base = jdoc_ld['@context'].get('@base')
-        if base:
-            options['base'] = base
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug('Uplifted JSON:\n%s', json.dumps(jdoc_ld, indent=2))
 
-    expanded = pyld.jsonld.expand(jdoc_ld, options)
-    g.parse(data=json.dumps(expanded), format='json-ld')
+    def remote_context_url_filter(url_whitelist: str | list[str], url: str):
+        if url_whitelist is False:
+            return False
+        if url_whitelist is True or url_whitelist is None:
+            return True
+        if isinstance(url_whitelist, str):
+            url_whitelist = re.compile(url_whitelist)
+        else:
+            url_whitelist = [re.compile(x) for x in url_whitelist if x]
+        return any(re.match(r, url) for r in url_whitelist)
+
+    g.parse(data=json.dumps(jdoc_ld), format='json-ld', base=base,
+            remote_context_url_filter=functools.partial(remote_context_url_filter, fetch_url_whitelist))
 
     return UpliftResult(graph=g, uplifted_json=jdoc_ld)
 
@@ -428,7 +411,6 @@ def process_file(input_fn: str | Path,
                  base: str | None = None,
                  provenance_base_uri: str | bool | None = None,
                  provenance_process_id: str | None = None,
-                 fetch_timeout: int = 5,
                  fetch_url_whitelist: bool | Sequence[str] | None = None,
                  transform_args: dict | None = None) -> UpliftResult | None:
     """
@@ -447,7 +429,6 @@ def process_file(input_fn: str | Path,
     :param base: base URI for JSON-LD
     :param provenance_base_uri: base URI for provenance resources
     :param provenance_process_id: process identifier for provenance tracking
-    :param fetch_timeout: timeout (in seconds) for fetching referenced JSON-LD context URLs
     :param fetch_url_whitelist: list of regular expressions to filter referenced JSON-LD context URLs before
         retrieving them. If None, it will not be used; if empty sequence or False, remote fetching operations will
         throw an exception
@@ -526,7 +507,6 @@ def process_file(input_fn: str | Path,
     uplift_result = generate_graph(input_data,
                                    context=contexts,
                                    base=base,
-                                   fetch_timeout=fetch_timeout,
                                    fetch_url_whitelist=fetch_url_whitelist,
                                    transform_args=transform_args)
 
@@ -664,7 +644,6 @@ def process(input_files: str | Path | Sequence[str | Path],
             base: str = None,
             skip_on_missing_context: bool = False,
             provenance_base_uri: Optional[Union[str, bool]] = None,
-            fetch_timeout: int = 5,
             fetch_url_whitelist: Optional[Union[Sequence, bool]] = None,
             transform_args: dict | None = None) -> list[UpliftResult]:
     """
@@ -683,7 +662,6 @@ def process(input_files: str | Path | Sequence[str | Path],
     :param base: base URI to employ
     :param skip_on_missing_context: whether to silently fail if no context file is found
     :param provenance_base_uri: base URI for provenance resources
-    :param fetch_timeout: timeout (in seconds) for fetching referenced JSON-LD context URLs
     :param fetch_url_whitelist: list of regular expressions to filter referenced JSON-LD context URLs before
         retrieving them. If None, it will not be used; if empty sequence or False, remote fetching operations will
         throw an exception
@@ -729,7 +707,6 @@ def process(input_files: str | Path | Sequence[str | Path],
                     base=base,
                     provenance_base_uri=provenance_base_uri,
                     provenance_process_id=process_id,
-                    fetch_timeout=fetch_timeout,
                     fetch_url_whitelist=fetch_url_whitelist,
                     domain_cfg=domain_cfg,
                     transform_args=transform_args,
@@ -750,7 +727,6 @@ def process(input_files: str | Path | Sequence[str | Path],
                     base=base,
                     provenance_base_uri=provenance_base_uri,
                     provenance_process_id=process_id,
-                    fetch_timeout=fetch_timeout,
                     fetch_url_whitelist=fetch_url_whitelist,
                     domain_cfg=domain_cfg,
                     transform_args=transform_args,

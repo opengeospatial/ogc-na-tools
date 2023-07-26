@@ -96,7 +96,8 @@ def entail(g: Graph,
     return g
 
 
-def validate(g: Graph, shacl_graph: Graph, extra: Optional[Graph] = None) -> ValidationReport:
+def validate(g: Graph, shacl_graph: Graph, extra: Optional[Graph] = None,
+             **kwargs) -> ValidationReport:
     """
     Perform SHACL validation on a data [Graph][rdflib.Graph].
 
@@ -109,7 +110,8 @@ def validate(g: Graph, shacl_graph: Graph, extra: Optional[Graph] = None) -> Val
                                            shacl_graph=shacl_graph,
                                            ont_graph=extra,
                                            inference='rdfs',
-                                           advanced=True))
+                                           advanced=True,
+                                           **kwargs))
 
 
 def is_url(url: str, http_only: bool = False) -> bool:
