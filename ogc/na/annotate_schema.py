@@ -433,15 +433,17 @@ class SchemaAnnotator:
         self._ref_mapper = ref_mapper
 
     def process_schema(self, location: Path | str | None,
-                       default_context: str | Path | dict | None = None) -> AnnotatedSchema | None:
+                       default_context: str | Path | dict | None = None,
+                       contents: dict | None = None) -> AnnotatedSchema | None:
         resolved_schema = self._schema_resolver.resolve_schema(location)
-        schema = resolved_schema.subschema
+        if contents:
+            # overriden
+            schema = contents
+        else:
+            schema = resolved_schema.subschema
 
-        try:
-            if '$schema' in schema and all(x not in schema for x in ('schema', 'openapi')):
-                validate_schema(schema)
-        except jsonschema.exceptions.SchemaError:
-            return None
+        if all(x not in schema for x in ('schema', 'openapi')):
+            validate_schema(schema)
 
         context_fn = schema.get(ANNOTATION_CONTEXT)
         schema.pop(ANNOTATION_CONTEXT, None)
