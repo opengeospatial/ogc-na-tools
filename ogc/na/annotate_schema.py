@@ -209,6 +209,8 @@ class SchemaResolver:
                 location = location.resolve()
             elif not from_schema:
                 location = self.working_directory.joinpath(location).resolve()
+            elif from_schema.full_contents.get('$id'):
+                location = urljoin(from_schema.full_contents['$id'], str(location))
             elif not isinstance(from_schema.location, Path):
                 location = urljoin(from_schema.location, str(location))
             else:
