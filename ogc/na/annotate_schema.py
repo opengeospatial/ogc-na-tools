@@ -597,7 +597,8 @@ class ContextBuilder:
     """
 
     def __init__(self, location: Path | str = None,
-                 compact: bool = True, ref_mapper: Callable[[str], str] | None = None):
+                 compact: bool = True, ref_mapper: Callable[[str], str] | None = None,
+                 version = 1.1):
         """
         :param location: file or URL load the annotated schema from
         :param compact: whether to compact the resulting context (remove redundancies, compact CURIEs)
@@ -612,6 +613,7 @@ class ContextBuilder:
         self.location = location
 
         context = self._build_context(self.location, compact)
+        context['@version'] = version
         self.context = {'@context': context}
 
     def _build_context(self, schema_location: str | Path,
