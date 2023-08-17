@@ -264,14 +264,15 @@ def uplift_json(data: dict | list, context: dict,
             for item in items:
                 item.value['@context'] = _get_injected_context(item.value, val, context_position)
 
-    data_context = data_graph.pop('@context', None)
-    if data_context:
-        if not global_context:
-            global_context = data_context
-        elif isinstance(global_context, list):
-            global_context.extend(data_context)
-        else:
-            global_context = [data_context, global_context]
+    if isinstance(data_graph, dict):
+        data_context = data_graph.pop('@context', None)
+        if data_context:
+            if not global_context:
+                global_context = data_context
+            elif isinstance(global_context, list):
+                global_context.extend(data_context)
+            else:
+                global_context = [data_context, global_context]
 
     if (global_context and not isinstance(data_graph, dict)) or scoped_graph:
         return {
