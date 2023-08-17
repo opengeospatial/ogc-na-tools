@@ -646,7 +646,8 @@ def process(input_files: str | Path | Sequence[str | Path],
             skip_on_missing_context: bool = False,
             provenance_base_uri: Optional[Union[str, bool]] = None,
             fetch_url_whitelist: Optional[Union[Sequence, bool]] = None,
-            transform_args: dict | None = None) -> list[UpliftResult]:
+            transform_args: dict | None = None,
+            file_filter: str | re.Pattern = None) -> list[UpliftResult]:
     """
     Performs the JSON-LD uplift process.
 
@@ -667,6 +668,7 @@ def process(input_files: str | Path | Sequence[str | Path],
         retrieving them. If None, it will not be used; if empty sequence or False, remote fetching operations will
         throw an exception
     :param transform_args: Additional arguments to pass as variables to the jq transform
+    :param file_filter: Filename filter for input files
     :return: a list of JSON-LD and/or Turtle output files
     """
     result: list[UpliftResult] = []
@@ -690,6 +692,9 @@ def process(input_files: str | Path | Sequence[str | Path],
             fn = str(remaining_fn.popleft())
 
             if not fn or not os.path.isfile(fn):
+                continue
+
+            if file_filter and not re.search(file_filter, fn):
                 continue
 
             if re.match(r'.*\.ya?ml$', fn):
@@ -846,6 +851,11 @@ def _process_cmdln():
         help='Additional argument to pass to the jq transforms in the form variable=value'
     )
 
+    parser.add_argument(
+        '--file-filter',
+        help='Regular expression to filter input filenames',
+    )
+
     args = parser.parse_args()
 
     if args.domain_config:
@@ -878,6 +888,7 @@ def _process_cmdln():
                      provenance_base_uri=False if args.no_provenance else args.provenance_base_uri,
                      fetch_url_whitelist=args.url_whitelist,
                      transform_args=transform_args,
+                     file_filter=args.file_filter,
              )
 
     if args.fs:
