@@ -613,7 +613,8 @@ class ContextBuilder:
         self.location = location
 
         context = self._build_context(self.location, compact)
-        context['@version'] = version
+        if context:
+            context['@version'] = version
         self.context = {'@context': context}
 
     def _build_context(self, schema_location: str | Path,
