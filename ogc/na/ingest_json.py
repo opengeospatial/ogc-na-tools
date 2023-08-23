@@ -835,6 +835,12 @@ def _process_cmdln():
     )
 
     parser.add_argument(
+        '--all',
+        action='store_true',
+        help='Run uplift for all catalog files in batch mode'
+    )
+
+    parser.add_argument(
         '--debug',
         action='store_true',
         help='Enable debug mode'
@@ -864,9 +870,12 @@ def _process_cmdln():
         domain_cfg = None
 
     input_files = args.input
-    if args.batch and args.use_git_status:
-        git_status = util.git_status()
-        input_files = git_status['added'] + git_status['modified'] + [r[1] for r in git_status['renamed']]
+    if args.batch:
+        if args.use_git_status:
+            git_status = util.git_status()
+            input_files = git_status['added'] + git_status['modified'] + [r[1] for r in git_status['renamed']]
+        elif args.all:
+            input_files = list(set(fn for fn in domain_cfg.uplift_entries.find_all()))
     elif not input_files:
         print("Error: no input files provided")
         sys.exit(1)
