@@ -134,10 +134,12 @@ from ogc.na.util import is_url, load_yaml, LRUCache, dump_yaml, merge_contexts, 
 logger = logging.getLogger(__name__)
 
 ANNOTATION_PREFIX = 'x-jsonld-'
-ANNOTATION_CONTEXT = 'x-jsonld-context'
-ANNOTATION_ID = 'x-jsonld-id'
-ANNOTATION_PREFIXES = 'x-jsonld-prefixes'
-ANNOTATION_EXTRA_TERMS = 'x-jsonld-extra-terms'
+ANNOTATION_CONTEXT = f'{ANNOTATION_PREFIX}context'
+ANNOTATION_ID = f'{ANNOTATION_PREFIX}id'
+ANNOTATION_PREFIXES = f'{ANNOTATION_PREFIX}prefixes'
+ANNOTATION_EXTRA_TERMS = f'{ANNOTATION_PREFIX}extra-terms'
+ANNOTATION_BASE = f'{ANNOTATION_PREFIX}base'
+
 ANNOTATION_IGNORE_EXPAND = [ANNOTATION_CONTEXT, ANNOTATION_EXTRA_TERMS, ANNOTATION_PREFIXES]
 
 CURIE_TERMS = '@id', '@type', '@index'
@@ -512,6 +514,9 @@ class SchemaAnnotator:
                     prop_schema_ctx = {f"{ANNOTATION_PREFIX}{k[1:]}": v
                                        for k, v in prop_ctx.items()
                                        if k[0] == '@' and k != '@context'}
+                    prop_ctx_base = prop_ctx.get('@context', {}).get('@base')
+                    if prop_ctx_base:
+                        prop_schema_ctx[ANNOTATION_BASE] = prop_ctx_base
 
                     if not prop_value or prop_value is True:
                         properties[prop] = prop_schema_ctx
@@ -645,7 +650,9 @@ class ContextBuilder:
                     continue
                 prop_context = {}
                 for term, term_val in prop_val.items():
-                    if term.startswith(ANNOTATION_PREFIX) and term not in ANNOTATION_IGNORE_EXPAND:
+                    if term == ANNOTATION_BASE:
+                        prop_context.setdefault('@context', {})['@base'] = term_val
+                    elif term.startswith(ANNOTATION_PREFIX) and term not in ANNOTATION_IGNORE_EXPAND:
                         prop_context['@' + term[len(ANNOTATION_PREFIX):]] = term_val
                 inner_context = process_subschema(prop_val, from_schema, property_chain + ['properties', prop])
                 if inner_context:
@@ -823,7 +830,6 @@ def dump_annotated_schema(schema: AnnotatedSchema, subdir: Path | str = 'annotat
 
 def _main():
     parser = argparse.ArgumentParser(
-        prog='JSON Schema @id injector'
     )
 
     parser.add_argument(
