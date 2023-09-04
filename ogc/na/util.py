@@ -291,28 +291,31 @@ def merge_contexts(a: dict, b: dict, from_schema=None, property_chain=None) -> d
         return b
     for term in list(a.keys()):
         va = a[term]
-        if isinstance(va, str):
-            va = {'@id': va}
-            a[term] = va
         vb = b.get(term)
-        if isinstance(vb, str):
-            vb = {'@id': vb}
-        if vb:
-            for vb_term, vb_term_val in vb.items():
-                if vb_term != '@context':
-                    va[vb_term] = vb_term_val
-            if '@context' in vb:
-                if '@context' not in va:
-                    va['@context'] = vb['@context']
-                elif isinstance(va['@context'], list):
-                    if isinstance(vb['@context'], list):
-                        va['@context'].extend(vb['@context'])
+        if term[0] != '@':
+            if isinstance(va, str):
+                va = {'@id': va}
+                a[term] = va
+            if isinstance(vb, str):
+                vb = {'@id': vb}
+            if vb:
+                for vb_term, vb_term_val in vb.items():
+                    if vb_term != '@context':
+                        va[vb_term] = vb_term_val
+                if '@context' in vb:
+                    if '@context' not in va:
+                        va['@context'] = vb['@context']
+                    elif isinstance(va['@context'], list):
+                        if isinstance(vb['@context'], list):
+                            va['@context'].extend(vb['@context'])
+                        else:
+                            va['@context'].append(vb['@context'])
+                    elif isinstance(vb['@context'], list):
+                        va['@context'] = [va['@context'], *vb['@context']]
                     else:
-                        va['@context'].append(vb['@context'])
-                elif isinstance(vb['@context'], list):
-                    va['@context'] = [va['@context'], *vb['@context']]
-                else:
-                    va['@context'] = merge_contexts(va['@context'], vb['@context'], from_schema, property_chain)
+                        va['@context'] = merge_contexts(va['@context'], vb['@context'], from_schema, property_chain)
+        elif vb:
+            a[term] = vb
     for t, tb in b.items():
         if t not in a:
             a[t] = tb

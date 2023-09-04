@@ -649,14 +649,17 @@ class ContextBuilder:
                 if not isinstance(prop_val, dict):
                     continue
                 prop_context = {}
+                prop_base = None
                 for term, term_val in prop_val.items():
                     if term == ANNOTATION_BASE:
-                        prop_context.setdefault('@context', {})['@base'] = term_val
+                        prop_base = term_val
                     elif term.startswith(ANNOTATION_PREFIX) and term not in ANNOTATION_IGNORE_EXPAND:
                         prop_context['@' + term[len(ANNOTATION_PREFIX):]] = term_val
                 inner_context = process_subschema(prop_val, from_schema, property_chain + ['properties', prop])
                 if inner_context:
                     prop_context['@context'] = inner_context
+                if prop_base:
+                    prop_context.setdefault('@context', {})['@base'] = prop_base
                 if isinstance(prop_context.get('@id'), str):
                     subschema_context[prop] = prop_context
                 elif inner_context:
@@ -702,9 +705,7 @@ class ContextBuilder:
             if ANNOTATION_EXTRA_TERMS in subschema:
                 for extra_term, extra_term_context in subschema[ANNOTATION_EXTRA_TERMS].items():
                     if extra_term not in sub_context:
-                        if isinstance(extra_term_context, str):
-                            extra_term_context = {'@id': extra_term_context}
-                        elif isinstance(extra_term_context, dict):
+                        if isinstance(extra_term_context, dict):
                             extra_term_context = {f"@{k[len(ANNOTATION_PREFIX):]}": v for k, v in extra_term_context.items()}
                         sub_context[extra_term] = extra_term_context
 
@@ -713,7 +714,7 @@ class ContextBuilder:
                 for prop, prop_ctx in sub_context.items():
                     if prop.startswith('@'):
                         continue
-                    if '@id' in prop_ctx:
+                    if not isinstance(prop_ctx, dict) or '@id' in prop_ctx:
                         fixed_sub_context[prop] = prop_ctx
                     elif prop_ctx.get('@context'):
                         merge_contexts(fixed_sub_context, prop_ctx['@context'], from_schema, property_chain)
