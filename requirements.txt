@@ -1,5 +1,5 @@
 pyshacl>=0.19
-rdflib @ git+https://github.com/avillar/rdflib.git@6.x#egg=rdflib
+rdflib>=7.0
 html5lib
 jq
 jsonpath-ng
