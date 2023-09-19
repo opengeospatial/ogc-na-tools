@@ -1,5 +1,5 @@
 pyshacl>=0.19
-rdflib>=7.0
+rdflib>=6.3.0
 html5lib
 jq
 jsonpath-ng
