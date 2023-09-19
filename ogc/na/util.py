@@ -281,7 +281,7 @@ def git_status(repo_path: str | Path = '.'):
     }
 
 
-def merge_contexts(a: dict, b: dict, from_schema=None, property_chain=None) -> dict[str, Any]:
+def merge_contexts(a: dict, b: dict, from_schema=None, property_chain=None, fix_nest=True) -> dict[str, Any]:
     if not b:
         return a
     if not a:
@@ -319,4 +319,19 @@ def merge_contexts(a: dict, b: dict, from_schema=None, property_chain=None) -> d
     for t, tb in b.items():
         if t not in a:
             a[t] = tb
+
+    if fix_nest:
+        # fix nested @context inside @nest terms
+        # spec is unclear, but our tooling of interest (json-ld playground, rdflib) do not support it
+        # see: https://github.com/json-ld/json-ld.org/issues/737
+        pending_merges = []
+        for term in list(a.keys()):
+            if isinstance(a[term], dict) and a[term].get('@id') == '@nest':
+                nested_ctx = a[term].pop('@context', None)
+                if nested_ctx:
+                    pending_merges.append(nested_ctx)
+                a[term] = '@nest'
+        for pm in pending_merges:
+            a = merge_contexts(a, pm)
+
     return a
