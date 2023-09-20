@@ -578,7 +578,10 @@ class SchemaAnnotator:
                                 v = v['@id']
                             else:
                                 v = {f"{ANNOTATION_PREFIX}{vk[1:]}": vv for vk, vv in v.items() if vk[0] == '@'}
-                        extra_terms[k] = v
+                        if isinstance(v, str) and v[-1] in ('#', '/', ':'):
+                            prefixes[k] = v
+                        else:
+                            extra_terms[k] = v
                 if extra_terms:
                     subschema.setdefault(ANNOTATION_EXTRA_TERMS, {}).update(extra_terms)
 
@@ -667,6 +670,9 @@ class ContextBuilder:
 
             return subschema_context
 
+        imported_prefixes: dict[str | Path, dict[str, str]] = {}
+        imported_extra_terms: dict[str | Path, dict[str, str]] = {}
+
         def process_subschema(subschema, from_schema, property_chain=None) -> dict | None:
 
             if property_chain is None:
@@ -720,14 +726,37 @@ class ContextBuilder:
                         merge_contexts(fixed_sub_context, prop_ctx['@context'], from_schema, property_chain)
                 sub_context = fixed_sub_context
 
-            sub_prefixes = subschema.get(ANNOTATION_PREFIXES)
-            if isinstance(sub_prefixes, dict):
-                prefixes.update(sub_prefixes)
+            if from_schema:
+                current_ref = f"{from_schema.location}{from_schema.ref}"
+                if current_ref not in imported_prefixes:
+                    sub_prefixes = subschema.get(ANNOTATION_PREFIXES, {})
+                    sub_prefixes |= from_schema.full_contents.get(ANNOTATION_PREFIXES, {})
+                    if sub_prefixes:
+                        imported_prefixes[current_ref] = sub_prefixes
+
+                if current_ref not in imported_extra_terms:
+                    sub_extra_terms = from_schema.full_contents.get(ANNOTATION_EXTRA_TERMS)
+                    if sub_extra_terms:
+                        imported_extra_terms[current_ref] = sub_extra_terms
+            else:
+                sub_prefixes = subschema.get(ANNOTATION_PREFIXES)
+                if isinstance(sub_prefixes, dict):
+                    prefixes.update({k: v for k, v in sub_prefixes.items() if k not in prefixes})
 
             return sub_context
 
         own_context = merge_contexts(own_context, process_subschema(root_schema.subschema, root_schema),
                                      root_schema)
+
+        for imported_et in imported_extra_terms.values():
+            for term, v in imported_et.items():
+                if term not in own_context:
+                    own_context[term] = v
+
+        for imported_prefix in imported_prefixes.values():
+            for p, v in imported_prefix.items():
+                if p not in prefixes:
+                    prefixes[p] = v
 
         for prefix in list(prefixes.keys()):
             if prefix not in own_context:
