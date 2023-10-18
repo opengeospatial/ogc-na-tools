@@ -774,7 +774,14 @@ class ContextBuilder:
 
                     if context_stack:
                         for ctx in context_stack:
-                            if term in ctx and dict_contains(ctx[term], term_value):
+                            if term not in ctx:
+                                continue
+                            other = ctx[term]
+                            if isinstance(term_value, str):
+                                term_value = {'@id': term_value}
+                            if isinstance(other, str):
+                                other = {'@id': other}
+                            if dict_contains(other, term_value):
                                 del branch[term]
                                 changed = True
                                 break
