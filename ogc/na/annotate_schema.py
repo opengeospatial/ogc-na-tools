@@ -121,6 +121,7 @@ import json
 import logging
 import re
 import sys
+from collections import deque
 from operator import attrgetter
 from pathlib import Path
 from typing import Any, AnyStr, Callable, Sequence, Iterable
@@ -129,7 +130,7 @@ from urllib.parse import urlparse, urljoin
 import jsonschema
 import requests_cache
 
-from ogc.na.util import is_url, load_yaml, LRUCache, dump_yaml, merge_contexts, merge_dicts
+from ogc.na.util import is_url, load_yaml, LRUCache, dump_yaml, merge_contexts, merge_dicts, dict_contains
 
 logger = logging.getLogger(__name__)
 
@@ -641,8 +642,10 @@ class ContextBuilder:
         if prefixes:
             own_context.update(prefixes)
 
+        pending_subschemas: deque[tuple[dict, ReferencedSchema, dict]] = deque()
+
         def read_properties(subschema: dict, from_schema: ReferencedSchema,
-                            property_chain: list) -> dict | None:
+                            onto_context: dict) -> dict | None:
             if not isinstance(subschema, dict):
                 return None
             if subschema.get('type', 'object') != 'object':
@@ -651,37 +654,28 @@ class ContextBuilder:
             for prop, prop_val in subschema.get('properties', {}).items():
                 if not isinstance(prop_val, dict):
                     continue
-                prop_context = {}
-                prop_base = None
+                prop_context = {'@context': {}}
                 for term, term_val in prop_val.items():
                     if term == ANNOTATION_BASE:
-                        prop_base = term_val
+                        prop_context.setdefault('@context', {})['@base'] = term_val
                     elif term.startswith(ANNOTATION_PREFIX) and term not in ANNOTATION_IGNORE_EXPAND:
                         prop_context['@' + term[len(ANNOTATION_PREFIX):]] = term_val
-                inner_context = process_subschema(prop_val, from_schema, property_chain + ['properties', prop])
-                if inner_context:
-                    prop_context['@context'] = inner_context
-                if prop_base:
-                    prop_context.setdefault('@context', {})['@base'] = prop_base
-                if isinstance(prop_context.get('@id'), str):
-                    subschema_context[prop] = prop_context
-                elif inner_context:
-                    subschema_context = merge_contexts(subschema_context, inner_context, from_schema, property_chain)
 
-            return subschema_context
+                if isinstance(prop_context.get('@id'), str):
+                    pending_subschemas.append((prop_val, from_schema, prop_context['@context']))
+                    onto_context[prop] = prop_context
+                else:
+                    pending_subschemas.append((prop_val, from_schema, onto_context))
 
         imported_prefixes: dict[str | Path, dict[str, str]] = {}
         imported_extra_terms: dict[str | Path, dict[str, str]] = {}
 
-        def process_subschema(subschema, from_schema, property_chain=None) -> dict | None:
-
-            if property_chain is None:
-                property_chain = []
+        def process_subschema(subschema: dict, from_schema: ReferencedSchema, onto_context: dict) -> dict | None:
 
             if not isinstance(subschema, dict):
                 return None
 
-            sub_context = read_properties(subschema, from_schema, property_chain) or {}
+            read_properties(subschema, from_schema, onto_context)
 
             if '$ref' in subschema:
                 ref = subschema['$ref']
@@ -689,42 +683,25 @@ class ContextBuilder:
                     ref = self._ref_mapper(ref)
                 referenced_schema = self._resolver.resolve_schema(ref, from_schema)
                 if referenced_schema:
-                    merge_contexts(sub_context,
-                                   process_subschema(referenced_schema.subschema, referenced_schema))
+                    pending_subschemas.append((referenced_schema.subschema, referenced_schema, onto_context))
 
             for i in ('allOf', 'anyOf', 'oneOf'):
                 l = subschema.get(i)
                 if isinstance(l, list):
                     for idx, sub_subschema in enumerate(l):
-                        sub_context = merge_contexts(sub_context,
-                                                     process_subschema(sub_subschema,
-                                                                       from_schema,
-                                                                       property_chain + [f"{i}[{idx}]"]),
-                                                     from_schema, property_chain)
+                        pending_subschemas.append((sub_subschema, from_schema, onto_context))
 
             for i in ('prefixItems', 'items', 'contains'):
                 l = subschema.get(i)
                 if isinstance(l, dict):
-                    items_ctx = process_subschema(l, from_schema, property_chain + [i])
-                    sub_context = merge_contexts(sub_context, items_ctx, from_schema, property_chain)
+                    pending_subschemas.append((l, from_schema, onto_context))
 
             if ANNOTATION_EXTRA_TERMS in subschema:
                 for extra_term, extra_term_context in subschema[ANNOTATION_EXTRA_TERMS].items():
-                    if extra_term not in sub_context:
+                    if extra_term not in onto_context:
                         if isinstance(extra_term_context, dict):
                             extra_term_context = {f"@{k[len(ANNOTATION_PREFIX):]}": v for k, v in extra_term_context.items()}
-                        sub_context[extra_term] = extra_term_context
-
-            if sub_context:
-                fixed_sub_context = {}
-                for prop, prop_ctx in sub_context.items():
-                    if prop.startswith('@'):
-                        continue
-                    if not isinstance(prop_ctx, dict) or '@id' in prop_ctx:
-                        fixed_sub_context[prop] = prop_ctx
-                    elif prop_ctx.get('@context'):
-                        merge_contexts(fixed_sub_context, prop_ctx['@context'], from_schema, property_chain)
-                sub_context = fixed_sub_context
+                        onto_context[extra_term] = extra_term_context
 
             if from_schema:
                 current_ref = f"{from_schema.location}{from_schema.ref}"
@@ -743,10 +720,9 @@ class ContextBuilder:
                 if isinstance(sub_prefixes, dict):
                     prefixes.update({k: v for k, v in sub_prefixes.items() if k not in prefixes})
 
-            return sub_context
-
-        own_context = merge_contexts(own_context, process_subschema(root_schema.subschema, root_schema),
-                                     root_schema)
+        pending_subschemas.append((root_schema.subschema, root_schema, own_context))
+        while pending_subschemas:
+            process_subschema(*pending_subschemas.popleft())
 
         for imported_et in imported_extra_terms.values():
             for term, v in imported_et.items():
@@ -787,17 +763,20 @@ class ContextBuilder:
                 changed = False
                 for term in terms:
                     term_value = branch[term]
-                    deleted = False
+
+                    if isinstance(term_value, dict) and '@context' in term_value:
+                        if not term_value['@context']:
+                            del term_value['@context']
+                        else:
+                            while True:
+                                if not compact_branch(term_value['@context'], child_context_stack):
+                                    break
+
                     if context_stack:
                         for ctx in context_stack:
-                            if term in ctx and ctx[term] == term_value:
+                            if term in ctx and dict_contains(ctx[term], term_value):
                                 del branch[term]
-                                deleted = True
                                 changed = True
-                                break
-                    if not deleted and isinstance(term_value, dict) and '@context' in term_value:
-                        while True:
-                            if not compact_branch(term_value['@context'], child_context_stack):
                                 break
 
                 return changed

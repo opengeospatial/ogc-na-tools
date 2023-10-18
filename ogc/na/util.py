@@ -335,3 +335,16 @@ def merge_contexts(a: dict, b: dict, from_schema=None, property_chain=None, fix_
             a = merge_contexts(a, pm)
 
     return a
+
+
+def dict_contains(greater: dict, smaller: dict):
+    for k, v in smaller.items():
+        if k not in greater:
+            return False
+        gv = greater[k]
+        if isinstance(v, dict):
+            if not isinstance(gv, dict) or not dict_contains(gv, v):
+                return False
+        elif gv != v:
+            return False
+    return True
