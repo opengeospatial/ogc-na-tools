@@ -281,7 +281,7 @@ def git_status(repo_path: str | Path = '.'):
     }
 
 
-def merge_contexts(a: dict, b: dict, from_schema=None, property_chain=None, fix_nest=True) -> dict[str, Any]:
+def merge_contexts(a: dict, b: dict, fix_nest=True) -> dict[str, Any]:
     if not b:
         return a
     if not a:
@@ -313,7 +313,7 @@ def merge_contexts(a: dict, b: dict, from_schema=None, property_chain=None, fix_
                     elif isinstance(vb['@context'], list):
                         va['@context'] = [va['@context'], *vb['@context']]
                     else:
-                        va['@context'] = merge_contexts(va['@context'], vb['@context'], from_schema, property_chain)
+                        va['@context'] = merge_contexts(va['@context'], vb['@context'])
         elif vb:
             a[term] = vb
     for t, tb in b.items():

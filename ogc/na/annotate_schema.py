@@ -650,7 +650,6 @@ class ContextBuilder:
                 return None
             if subschema.get('type', 'object') != 'object':
                 return None
-            subschema_context = {}
             for prop, prop_val in subschema.get('properties', {}).items():
                 if not isinstance(prop_val, dict):
                     continue
@@ -663,7 +662,10 @@ class ContextBuilder:
 
                 if isinstance(prop_context.get('@id'), str):
                     pending_subschemas.append((prop_val, from_schema, prop_context['@context']))
-                    onto_context[prop] = prop_context
+                    if prop not in onto_context or isinstance(onto_context[prop], str):
+                        onto_context[prop] = prop_context
+                    else:
+                        merge_contexts(onto_context[prop], prop_context)
                 else:
                     pending_subschemas.append((prop_val, from_schema, onto_context))
 
