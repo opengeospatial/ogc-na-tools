@@ -27,7 +27,8 @@ from rdflib import Graph, RDF, PROF, OWL, URIRef, DCTERMS, Namespace, RDFS
 from ogc.na import util
 from pathlib import Path
 
-from ogc.na.validation import ProfileValidationReport, ProfilesValidationReport, ValidationReport
+from ogc.na.validation import ProfileValidationReport, ProfilesValidationReport
+from ogc.na.models import ValidationReport
 
 PROFROLE = Namespace('http://www.w3.org/ns/dx/prof/role/')
 

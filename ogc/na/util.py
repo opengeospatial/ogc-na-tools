@@ -3,6 +3,8 @@
 General utilities module.
 """
 from __future__ import annotations
+
+import argparse
 import os.path
 import shlex
 from glob import glob, iglob
@@ -17,7 +19,7 @@ from rdflib import Graph
 from pyshacl import validate as shacl_validate
 from urllib.parse import urlparse
 
-from ogc.na.validation import ValidationReport
+from ogc.na.models import ValidationReport
 
 import yaml
 
@@ -348,3 +350,33 @@ def dict_contains(greater: dict, smaller: dict):
         elif gv != v:
             return False
     return True
+
+
+def cmd_join(args):
+    g = Graph()
+    for src in args.input:
+        g.parse(src)
+
+    if args.output:
+        g.serialize(args.output, format=args.format or 'ttl')
+    else:
+        print(g.serialize(format=args.format or 'ttl'))
+
+
+def _main():
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    join_parser = subparsers.add_parser('join', help='Join RDF files')
+    join_parser.add_argument('input', nargs='+')
+    join_parser.add_argument('-o', '--output', help='Output file')
+    join_parser.add_argument('-f', '--format', help='Output format')
+
+    args = parser.parse_args()
+
+    if args.command == 'join':
+        cmd_join(args)
+
+
+if __name__ == '__main__':
+    _main()
