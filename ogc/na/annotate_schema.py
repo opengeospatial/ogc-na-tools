@@ -661,7 +661,10 @@ class ContextBuilder:
                         prop_context['@' + term[len(ANNOTATION_PREFIX):]] = term_val
 
                 if isinstance(prop_context.get('@id'), str):
-                    pending_subschemas.append((prop_val, from_schema, prop_context['@context']))
+                    if prop_context['@id'] == '@nest':
+                        pending_subschemas.append((prop_val, from_schema, onto_context))
+                    else:
+                        pending_subschemas.append((prop_val, from_schema, prop_context['@context']))
                     if prop not in onto_context or isinstance(onto_context[prop], str):
                         onto_context[prop] = prop_context
                     else:
