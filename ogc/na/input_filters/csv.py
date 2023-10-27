@@ -16,11 +16,12 @@ Configuration values:
 * `quotechar` (default: `"`): char used to quote (enclose) field values
 * `skip-empty-rows` (default: `True`): whether to omit empty rows (i.e., those with no values) from the result
 * `trim-values` (default: `False`): whether to apply `.strip()` to the resulting values
+* `charset` (default: `utf-8`): specific charset to use when opening the file
 """
 from __future__ import annotations
 
 import csv
-from io import BytesIO, TextIOWrapper, StringIO
+from io import StringIO
 from typing import IO, Any
 
 from ogc.na import util
@@ -33,6 +34,7 @@ DEFAULT_CONF = {
     'quotechar': '"',
     'skip-empty-rows': True,
     'trim-values': False,
+    'charset': 'utf-8',
 }
 
 
@@ -45,7 +47,7 @@ def apply_filter(content: bytes, conf: dict[str, Any] | None) -> tuple[dict[str,
         },
     }
 
-    textio = StringIO(content.decode('utf-8'))
+    textio = StringIO(content.decode(conf['charset']))
     reader = csv.reader(textio, delimiter=conf['delimiter'], quotechar=conf['quotechar'])
 
     headers = None

@@ -77,6 +77,11 @@ VOCAB_DELIMITERS = {"#", "/", ":"}
 UPLIFT_CONTEXT_SCHEMA = {
     "type": "object",
     "properties": {
+        "input-filter": {
+            "type": "object",
+            "maxProperties": 1,
+            "minProperties": 1,
+        },
         "path-scope": {
             "type": "string",
             "enum": ["graph", "document"],

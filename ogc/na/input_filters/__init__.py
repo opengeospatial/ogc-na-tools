@@ -8,7 +8,7 @@ from ogc.na.util import deep_update
 
 
 def apply_input_filter(stream: IO | bytes | str | Path, filters: dict[str, dict]) -> dict[str, Any] | list:
-    filter_name, filter_conf = filters.popitem()
+    filter_name, filter_conf = next(iter(filters.items()))
 
     metadata = {
         'filter': {
