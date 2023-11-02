@@ -471,6 +471,8 @@ class SchemaAnnotator:
             context = merge_contexts(context, schema_context.context)
             prefixes = prefixes | schema_context.prefixes
 
+        updated_refs: set[int] = set()
+
         def find_prop_context(prop, context_stack) -> dict | None:
             for ctx in reversed(context_stack):
                 vocab = ctx.get('@vocab')
@@ -539,13 +541,14 @@ class SchemaAnnotator:
 
             used_terms = set()
 
-            if '$ref' in subschema:
+            if '$ref' in subschema and id(subschema) not in updated_refs:
                 if self._ref_mapper:
                     subschema['$ref'] = self._ref_mapper(subschema['$ref'], subschema)
                 if subschema['$ref'].startswith('#/') or subschema['$ref'].startswith(f"{from_schema.location}#/"):
                     target_schema = self._schema_resolver.resolve_schema(subschema['$ref'], from_schema)
                     if target_schema:
                         used_terms.update(process_subschema(target_schema.subschema, context_stack, target_schema, level + 1))
+                updated_refs.add(id(subschema))
 
             # Annotate oneOf, allOf, anyOf
             for p in ('oneOf', 'allOf', 'anyOf'):
