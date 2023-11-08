@@ -735,7 +735,9 @@ class ContextBuilder:
         for imported_et in imported_extra_terms.values():
             for term, v in imported_et.items():
                 if term not in own_context:
-                    own_context[term] = v
+                    if isinstance(v, dict):
+                        v = {f"@{k[len(ANNOTATION_PREFIX):]}": val for k, val in v.items()}
+                    own_context[term] =  v
 
         for imported_prefix in imported_prefixes.values():
             for p, v in imported_prefix.items():
