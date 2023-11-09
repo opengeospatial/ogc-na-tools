@@ -393,7 +393,7 @@ def _main():
     if args.local_artifact_mappings:
         for mappingstr in args.local_artifact_mappings:
             mapping = mappingstr.split('=', 1)
-            if len(mapping < 2):
+            if len(mapping) < 2:
                 raise Exception(f"Invalid local artifact mapping: {mappingstr}")
             artifact_mappings[mapping[0]] = mapping[1]
 
