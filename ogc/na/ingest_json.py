@@ -589,7 +589,7 @@ def find_contexts(filename: Path | str,
         filename.parent / '_json-context.yml',
         filename.parent / '_json-context.yaml',
     ):
-        if context_path.is_file():
+        if context_path.is_file() and not (filename.suffix == '.jsonld' and filename.with_suffix('.json').is_file()):
             logger.info(f'Autodetected context {context_path} for file {filename}')
             return [context_path]
 
@@ -723,7 +723,7 @@ def process(input_files: str | Path | Sequence[str | Path],
                     transform_args=transform_args,
                 ))
             except MissingContextException as e:
-                if skip_on_missing_context:
+                if skip_on_missing_context or batch:
                     logger.warning("Error processing JSON/JSON-LD file, skipping: %s", getattr(e, 'msg', str(e)))
                 else:
                     raise
