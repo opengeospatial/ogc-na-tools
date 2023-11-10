@@ -461,11 +461,10 @@ def _main():
             os.makedirs(output_doc.parent, exist_ok=True)
             os.makedirs(entailment_dir, exist_ok=True)
 
-            with open(output_doc.with_suffix('.txt'), 'w') as validation_file:
-                validation_file.write(validation_result.text)
-
             loadable_path = make_rdf(doc, newg, cfg.uri_root_filter,
                                      entailment_dir, provenance_metadata)
+            with open(loadable_path.with_suffix('.txt'), 'w') as validation_file:
+                validation_file.write(validation_result.text)
 
             if args.update:
                 loadables = {
