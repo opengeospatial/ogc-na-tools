@@ -377,9 +377,18 @@ def _main():
             dellist = args.removed.split(',')
             logger.info("Removed: %s", dellist)
 
+    local_artifacts_mappings = {}
+    if args.local_artifact_mappings:
+        for mappingstr in args.local_artifact_mappings:
+            mapping = mappingstr.split('=', 1)
+            if len(mapping) < 2:
+                raise Exception(f"Invalid local artifact mapping: {mappingstr}")
+            local_artifacts_mappings[mapping[0]] = mapping[1]
+
     domain_cfg = DomainConfiguration(args.domain_cfg, working_directory=args.working_directory,
                                      profile_sources=args.profile_source,
-                                     ignore_artifact_errors=args.ignore_artifact_errors)
+                                     ignore_artifact_errors=args.ignore_artifact_errors,
+                                     local_artifacts_mappings=local_artifacts_mappings)
     cfg_entries = domain_cfg.entries
     if not len(cfg_entries):
         if args.domain:
@@ -388,14 +397,6 @@ def _main():
         else:
             logger.warning('No configuration found in %s exiting', args.domain_cfg)
         sys.exit(1)
-
-    artifact_mappings = dict(domain_cfg.local_artifacts_mapping)
-    if args.local_artifact_mappings:
-        for mappingstr in args.local_artifact_mappings:
-            mapping = mappingstr.split('=', 1)
-            if len(mapping) < 2:
-                raise Exception(f"Invalid local artifact mapping: {mappingstr}")
-            artifact_mappings[mapping[0]] = mapping[1]
 
     profile_registry = domain_cfg.profile_registry
 

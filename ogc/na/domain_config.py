@@ -108,7 +108,7 @@ class DomainConfiguration:
 
     def __init__(self, source: Union[Graph, str, Path, IO], working_directory: str | Path = None,
                  profile_sources: str | Path | Iterable[str | Path] | None = None,
-                 ignore_artifact_errors=False):
+                 ignore_artifact_errors=False, local_artifacts_mappings: dict | None = None):
         """
         Creates a new DomainConfiguration, optionally specifying the working directory.
 
@@ -124,7 +124,9 @@ class DomainConfiguration:
         logger.info("Working directory: %s", self.working_directory)
         self.entries = ConfigurationEntryList()
         self.uplift_entries = UpliftConfigurationEntryList()
-        self.local_artifacts_mapping = {}
+        self.local_artifacts_mappings = {}
+        if local_artifacts_mappings:
+            self.local_artifacts_mappings.update(local_artifacts_mappings)
         self.profile_registry: ProfileRegistry | None = None
         self._profile_sources = profile_sources
         self._ignore_artifact_errors = ignore_artifact_errors
@@ -161,9 +163,13 @@ class DomainConfiguration:
             # Local artifacts mapping
             for mapping_ref in cfg_graph.objects(catalog_ref, DCFG.localArtifactMapping):
                 base_uri = str(cfg_graph.value(mapping_ref, DCFG.baseURI))
+                if base_uri in self.local_artifacts_mappings:
+                    logger.debug("Local artifact mapping for %s overriden", base_uri)
+                    # Overriden
+                    continue
                 local_path = Path(str(cfg_graph.value(mapping_ref, DCFG.localPath)))
                 logger.debug("Found local artifact mapping: %s -> %s", base_uri, local_path)
-                self.local_artifacts_mapping[base_uri] = local_path
+                self.local_artifacts_mappings[base_uri] = local_path
 
             # Profile sources
             for p in cfg_graph.objects(catalog_ref, DCFG.hasProfileSource):
@@ -178,7 +184,8 @@ class DomainConfiguration:
                 prof_sources.update(self._profile_sources)
 
         self.profile_registry = ProfileRegistry(prof_sources,
-                                                ignore_artifact_errors=ignore_profile_artifact_errors)
+                                                ignore_artifact_errors=ignore_profile_artifact_errors,
+                                                local_artifact_mappings=self.local_artifacts_mappings)
 
         for cfg_ref in cfg_graph.objects(predicate=DCAT.dataset):
 
@@ -193,15 +200,15 @@ class DomainConfiguration:
             max_order = None
             for uplift_def_ref in cfg_graph.objects(cfg_ref, DCFG.hasUpliftDefinition):
                 order = cfg_graph.value(uplift_def_ref, DCFG.order)
-                if order is not None and (max_order is None or order > max_order):
-                    max_order = order
+                if order is not None and (max_order is None or int(order) > max_order):
+                    max_order = int(order)
                 target_prof = cfg_graph.value(uplift_def_ref, DCFG.profile)
                 target_file = cfg_graph.value(uplift_def_ref, DCFG.file)
                 if target_prof:
                     found_uplift_defs.append([order, target_prof])
                 elif target_file:
-                    found_uplift_defs.append([order, self.working_directory.joinpath(target_file).resolve()])
-            uplift_defs = [p[1] for p in
+                    found_uplift_defs.append([order, self.working_directory.joinpath(str(target_file)).resolve()])
+            uplift_defs = [str(p[1]) for p in
                            sorted(found_uplift_defs,
                                   key=lambda u: u[0] if u[0] is not None else max_order + 1)]
 
