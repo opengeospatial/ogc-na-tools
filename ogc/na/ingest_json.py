@@ -828,7 +828,6 @@ def _process_cmdln():
 
     parser.add_argument(
         '--url-whitelist',
-        '-w',
         nargs='*',
         help='Regular expression for URL whitelisting'
     )
@@ -840,6 +839,7 @@ def _process_cmdln():
     )
 
     parser.add_argument(
+        '-a',
         '--all',
         action='store_true',
         help='Run uplift for all catalog files in batch mode'
@@ -852,6 +852,7 @@ def _process_cmdln():
     )
 
     parser.add_argument(
+        '-w',
         '--work-dir',
         help='Set root directory for globs in domain configurations'
     )
