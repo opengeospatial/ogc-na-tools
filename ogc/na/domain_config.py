@@ -208,7 +208,7 @@ class DomainConfiguration:
                     found_uplift_defs.append([order, target_prof])
                 elif target_file:
                     found_uplift_defs.append([order, self.working_directory.joinpath(str(target_file)).resolve()])
-            uplift_defs = [str(p[1]) for p in
+            uplift_defs = [p[1] for p in
                            sorted(found_uplift_defs,
                                   key=lambda u: u[0] if u[0] is not None else max_order + 1)]
 
