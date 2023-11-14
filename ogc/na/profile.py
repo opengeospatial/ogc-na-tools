@@ -247,7 +247,7 @@ class ProfileRegistry:
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Profiles loaded: %s", [str(p) for p in self.profiles])
         else:
-            logger.info(f"Loaded {len(self.profiles)}")
+            logger.info(f"Loaded {len(self.profiles)} profiles")
 
     def _apply_mappings(self, uri: str) -> Path | str:
         """

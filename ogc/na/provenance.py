@@ -13,6 +13,7 @@ try:
 except ImportError:
     git = None
 from rdflib import Graph, URIRef, Literal, DCTERMS, RDF, RDFS, PROV, BNode
+from requests.utils import requote_uri
 
 from ogc.na import __version__, __url__
 
@@ -61,11 +62,12 @@ def add_provenance_entity(g: Graph, metadata: FileProvenanceMetadata = None,
         mime = metadata.mime_type
 
         if metadata.uri:
+            metadata_uri = requote_uri(metadata.uri)
             if metadata.use_bnode:
                 entity = BNode()
-                g.add((entity, RDFS.seeAlso, URIRef(metadata.uri)))
+                g.add((entity, RDFS.seeAlso, URIRef(metadata_uri)))
             else:
-                entity = URIRef(metadata.uri)
+                entity = URIRef(metadata_uri)
         elif metadata.filename:
             filename = Path(metadata.filename).resolve()
             uri = None
@@ -82,7 +84,7 @@ def add_provenance_entity(g: Graph, metadata: FileProvenanceMetadata = None,
                     rel = filename.relative_to(root_directory)
                     uri = f"{base_uri}{'/' if '#' not in base_uri and not base_uri.endswith('/') else ''}{rel}"
 
-            uri = uri if uri else filename.as_uri()
+            uri = requote_uri(uri) if uri else filename.as_uri()
             if metadata.use_bnode:
                 entity = BNode()
                 g.add((entity, RDFS.seeAlso, URIRef(uri)))
