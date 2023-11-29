@@ -691,12 +691,12 @@ class ContextBuilder:
                     ref = self._ref_mapper(ref)
                 referenced_schema = self._resolver.resolve_schema(ref, from_schema)
                 if referenced_schema:
-                    pending_subschemas.append((referenced_schema.subschema, referenced_schema, onto_context))
+                    pending_subschemas.appendleft((referenced_schema.subschema, referenced_schema, onto_context))
 
             for i in ('allOf', 'anyOf', 'oneOf'):
                 l = subschema.get(i)
                 if isinstance(l, list):
-                    for idx, sub_subschema in enumerate(l):
+                    for sub_subschema in l:
                         pending_subschemas.append((sub_subschema, from_schema, onto_context))
 
             for i in ('prefixItems', 'items', 'contains'):
@@ -737,7 +737,7 @@ class ContextBuilder:
                 if term not in own_context:
                     if isinstance(v, dict):
                         v = {f"@{k[len(ANNOTATION_PREFIX):]}": val for k, val in v.items()}
-                    own_context[term] =  v
+                    own_context[term] = v
 
         for imported_prefix in imported_prefixes.values():
             for p, v in imported_prefix.items():
