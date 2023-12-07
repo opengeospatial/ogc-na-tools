@@ -383,8 +383,6 @@ def resolve_context(ctx: Path | str | dict | list, expand_uris=True) -> Resolved
             resolved_ctx = {}
             inner_prefixes = {}
             for ctx_entry in inner_ctx:
-                if isinstance(ctx_entry, dict):
-                    ctx_entry = ctx_entry.get('@context')
                 resolved_entry = resolve_context(ctx_entry)
                 inner_prefixes.update(resolved_entry.prefixes)
                 resolved = ResolvedContext(merge_dicts(resolved_entry.context, resolved_ctx), inner_prefixes)
@@ -547,7 +545,8 @@ class SchemaAnnotator:
                 if subschema['$ref'].startswith('#/') or subschema['$ref'].startswith(f"{from_schema.location}#/"):
                     target_schema = self._schema_resolver.resolve_schema(subschema['$ref'], from_schema)
                     if target_schema:
-                        used_terms.update(process_subschema(target_schema.subschema, context_stack, target_schema, level + 1))
+                        used_terms.update(process_subschema(target_schema.subschema, context_stack,
+                                                            target_schema, level + 1))
                 updated_refs.add(id(subschema))
 
             # Annotate oneOf, allOf, anyOf
@@ -556,6 +555,11 @@ class SchemaAnnotator:
                 if collection and isinstance(collection, list):
                     for entry in collection:
                         used_terms.update(process_subschema(entry, context_stack, from_schema, level + 1))
+
+            for p in ('then', 'else'):
+                branch = subschema.get(p)
+                if branch and isinstance(branch, dict):
+                    used_terms.update(process_subschema(branch, context_stack, from_schema, level))
 
             # Annotate main schema
             schema_type = subschema.get('type')
@@ -699,7 +703,7 @@ class ContextBuilder:
                     for sub_subschema in l:
                         pending_subschemas.append((sub_subschema, from_schema, onto_context))
 
-            for i in ('prefixItems', 'items', 'contains'):
+            for i in ('prefixItems', 'items', 'contains', 'then', 'else'):
                 l = subschema.get(i)
                 if isinstance(l, dict):
                     pending_subschemas.append((l, from_schema, onto_context))
