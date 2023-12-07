@@ -184,7 +184,7 @@ class SchemaResolver:
         path = re.sub(r'^#?/?', '', ref).split('/')
         pointer = schema
         for item in path:
-            if path:
+            if item:
                 pointer = pointer[item]
         return pointer
 
