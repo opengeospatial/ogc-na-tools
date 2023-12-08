@@ -628,6 +628,7 @@ class ContextBuilder:
 
         self.location = location
 
+        self.visited_properties: dict[str, str | None] = {}
         context = self._build_context(self.location, compact)
         if context:
             context['@version'] = version
@@ -649,15 +650,19 @@ class ContextBuilder:
         if prefixes:
             own_context.update(prefixes)
 
-        pending_subschemas: deque[tuple[dict, ReferencedSchema, dict]] = deque()
+        pending_subschemas: deque[tuple[dict, ReferencedSchema, dict, list[str]]] = deque()
 
         def read_properties(subschema: dict, from_schema: ReferencedSchema,
-                            onto_context: dict) -> dict | None:
+                            onto_context: dict, schema_path: list[str]) -> dict | None:
+            schema_path_str = '/'.join(schema_path)
             if not isinstance(subschema, dict):
                 return None
             if subschema.get('type', 'object') != 'object':
                 return None
             for prop, prop_val in subschema.get('properties', {}).items():
+                full_property_path = schema_path + ['properties', prop]
+                full_property_path_str = f"{schema_path_str}/properties/{prop}"
+                self.visited_properties[full_property_path_str] = None
                 if not isinstance(prop_val, dict):
                     continue
                 prop_context = {'@context': {}}
@@ -668,26 +673,28 @@ class ContextBuilder:
                         prop_context['@' + term[len(ANNOTATION_PREFIX):]] = term_val
 
                 if isinstance(prop_context.get('@id'), str):
+                    self.visited_properties[full_property_path_str] = prop_context['@id']
                     if prop_context['@id'] == '@nest':
-                        pending_subschemas.append((prop_val, from_schema, onto_context))
+                        pending_subschemas.append((prop_val, from_schema, onto_context, full_property_path))
                     else:
-                        pending_subschemas.append((prop_val, from_schema, prop_context['@context']))
+                        pending_subschemas.append((prop_val, from_schema, prop_context['@context'], full_property_path))
                     if prop not in onto_context or isinstance(onto_context[prop], str):
                         onto_context[prop] = prop_context
                     else:
                         merge_contexts(onto_context[prop], prop_context)
                 else:
-                    pending_subschemas.append((prop_val, from_schema, onto_context))
+                    pending_subschemas.append((prop_val, from_schema, onto_context, full_property_path))
 
         imported_prefixes: dict[str | Path, dict[str, str]] = {}
         imported_extra_terms: dict[str | Path, dict[str, str]] = {}
 
-        def process_subschema(subschema: dict, from_schema: ReferencedSchema, onto_context: dict) -> dict | None:
+        def process_subschema(subschema: dict, from_schema: ReferencedSchema, onto_context: dict,
+                              schema_path: list[str]) -> dict | None:
 
             if not isinstance(subschema, dict):
                 return None
 
-            read_properties(subschema, from_schema, onto_context)
+            read_properties(subschema, from_schema, onto_context, schema_path)
 
             if '$ref' in subschema:
                 ref = subschema['$ref']
@@ -695,24 +702,27 @@ class ContextBuilder:
                     ref = self._ref_mapper(ref)
                 referenced_schema = self._resolver.resolve_schema(ref, from_schema)
                 if referenced_schema:
-                    pending_subschemas.appendleft((referenced_schema.subschema, referenced_schema, onto_context))
+                    pending_subschemas.appendleft((referenced_schema.subschema, referenced_schema, onto_context,
+                                                   schema_path + [f"$ref[{subschema['$ref']}]"]))
 
             for i in ('allOf', 'anyOf', 'oneOf'):
                 l = subschema.get(i)
                 if isinstance(l, list):
-                    for sub_subschema in l:
-                        pending_subschemas.append((sub_subschema, from_schema, onto_context))
+                    for idx, sub_subschema in enumerate(l):
+                        pending_subschemas.append((sub_subschema, from_schema, onto_context,
+                                                   schema_path + [f"{i}[{idx}]"]))
 
             for i in ('prefixItems', 'items', 'contains', 'then', 'else'):
                 l = subschema.get(i)
                 if isinstance(l, dict):
-                    pending_subschemas.append((l, from_schema, onto_context))
+                    pending_subschemas.append((l, from_schema, onto_context, schema_path + [i]))
 
             if ANNOTATION_EXTRA_TERMS in subschema:
                 for extra_term, extra_term_context in subschema[ANNOTATION_EXTRA_TERMS].items():
                     if extra_term not in onto_context:
                         if isinstance(extra_term_context, dict):
-                            extra_term_context = {f"@{k[len(ANNOTATION_PREFIX):]}": v for k, v in extra_term_context.items()}
+                            extra_term_context = {f"@{k[len(ANNOTATION_PREFIX):]}": v
+                                                  for k, v in extra_term_context.items()}
                         onto_context[extra_term] = extra_term_context
 
             if from_schema:
@@ -732,7 +742,7 @@ class ContextBuilder:
                 if isinstance(sub_prefixes, dict):
                     prefixes.update({k: v for k, v in sub_prefixes.items() if k not in prefixes})
 
-        pending_subschemas.append((root_schema.subschema, root_schema, own_context))
+        pending_subschemas.append((root_schema.subschema, root_schema, own_context, []))
         while pending_subschemas:
             process_subschema(*pending_subschemas.popleft())
 
