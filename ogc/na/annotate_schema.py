@@ -116,6 +116,7 @@ The resulting context will be printed to the standard output.
 from __future__ import annotations
 
 import argparse
+import csv
 import dataclasses
 import json
 import logging
@@ -650,8 +651,6 @@ class ContextBuilder:
         if prefixes:
             own_context.update(prefixes)
 
-        pending_subschemas: deque[tuple[dict, ReferencedSchema, dict, list[str]]] = deque()
-
         def read_properties(subschema: dict, from_schema: ReferencedSchema,
                             onto_context: dict, schema_path: list[str]) -> dict | None:
             schema_path_str = '/'.join(schema_path)
@@ -675,15 +674,15 @@ class ContextBuilder:
                 if isinstance(prop_context.get('@id'), str):
                     self.visited_properties[full_property_path_str] = prop_context['@id']
                     if prop_context['@id'] == '@nest':
-                        pending_subschemas.append((prop_val, from_schema, onto_context, full_property_path))
+                        process_subschema(prop_val, from_schema, onto_context, full_property_path)
                     else:
-                        pending_subschemas.append((prop_val, from_schema, prop_context['@context'], full_property_path))
+                        process_subschema(prop_val, from_schema, prop_context['@context'], full_property_path)
                     if prop not in onto_context or isinstance(onto_context[prop], str):
                         onto_context[prop] = prop_context
                     else:
                         merge_contexts(onto_context[prop], prop_context)
                 else:
-                    pending_subschemas.append((prop_val, from_schema, onto_context, full_property_path))
+                    process_subschema(prop_val, from_schema, onto_context, full_property_path)
 
         imported_prefixes: dict[str | Path, dict[str, str]] = {}
         imported_extra_terms: dict[str | Path, dict[str, str]] = {}
@@ -702,20 +701,20 @@ class ContextBuilder:
                     ref = self._ref_mapper(ref)
                 referenced_schema = self._resolver.resolve_schema(ref, from_schema)
                 if referenced_schema:
-                    pending_subschemas.appendleft((referenced_schema.subschema, referenced_schema, onto_context,
-                                                   schema_path + [f"$ref[{subschema['$ref']}]"]))
+                    process_subschema(referenced_schema.subschema, referenced_schema, onto_context,
+                                                   schema_path + [f"$ref[{subschema['$ref']}]"])
 
             for i in ('allOf', 'anyOf', 'oneOf'):
                 l = subschema.get(i)
                 if isinstance(l, list):
                     for idx, sub_subschema in enumerate(l):
-                        pending_subschemas.append((sub_subschema, from_schema, onto_context,
-                                                   schema_path + [f"{i}[{idx}]"]))
+                        process_subschema(sub_subschema, from_schema, onto_context,
+                                                   schema_path + [f"{i}[{idx}]"])
 
             for i in ('prefixItems', 'items', 'contains', 'then', 'else'):
                 l = subschema.get(i)
                 if isinstance(l, dict):
-                    pending_subschemas.append((l, from_schema, onto_context, schema_path + [i]))
+                    process_subschema(l, from_schema, onto_context, schema_path + [i])
 
             if ANNOTATION_EXTRA_TERMS in subschema:
                 for extra_term, extra_term_context in subschema[ANNOTATION_EXTRA_TERMS].items():
@@ -742,9 +741,7 @@ class ContextBuilder:
                 if isinstance(sub_prefixes, dict):
                     prefixes.update({k: v for k, v in sub_prefixes.items() if k not in prefixes})
 
-        pending_subschemas.append((root_schema.subschema, root_schema, own_context, []))
-        while pending_subschemas:
-            process_subschema(*pending_subschemas.popleft())
+        process_subschema(root_schema.subschema, root_schema, own_context, [])
 
         for imported_et in imported_extra_terms.values():
             for term, v in imported_et.items():
@@ -911,6 +908,11 @@ def _main():
         action='store_true',
     )
 
+    parser.add_argument(
+        '--dump-visited',
+        help='Dump visited properties and their ids to a file',
+    )
+
     args = parser.parse_args()
 
     if not args.schema:
@@ -926,6 +928,16 @@ def _main():
                 json.dump(ctx_builder.context, f, indent=2)
         else:
             print(json.dumps(ctx_builder.context, indent=2))
+        if args.dump_visited:
+            def write_visited(stream):
+                writer = csv.writer(stream, delimiter='\t')
+                writer.writerow(['path', '@id'])
+                writer.writerows(ctx_builder.visited_properties.items())
+            if args.dump_visited == '-':
+                write_visited(sys.stdout)
+            else:
+                with open(args.dump_visited, 'w', newline='') as f:
+                    write_visited(f)
     else:
         annotator = SchemaAnnotator()
         annotated = annotator.process_schema(args.schema, args.context)
