@@ -557,10 +557,14 @@ class SchemaAnnotator:
                     for entry in collection:
                         used_terms.update(process_subschema(entry, context_stack, from_schema, level + 1))
 
-            for p in ('then', 'else'):
+            for p in ('then', 'else', 'additionalProperties'):
                 branch = subschema.get(p)
                 if branch and isinstance(branch, dict):
                     used_terms.update(process_subschema(branch, context_stack, from_schema, level))
+
+            for pp in subschema.get('patternProperties', {}).values():
+                if pp and isinstance(pp, dict):
+                    used_terms.update(process_subschema(pp, context_stack, from_schema, level + 1))
 
             # Annotate main schema
             schema_type = subschema.get('type')
@@ -711,10 +715,14 @@ class ContextBuilder:
                         process_subschema(sub_subschema, from_schema, onto_context,
                                                    schema_path + [f"{i}[{idx}]"])
 
-            for i in ('prefixItems', 'items', 'contains', 'then', 'else'):
+            for i in ('prefixItems', 'items', 'contains', 'then', 'else', 'additionalProperties'):
                 l = subschema.get(i)
                 if isinstance(l, dict):
                     process_subschema(l, from_schema, onto_context, schema_path + [i])
+
+            for pp_k, pp in subschema.get('patternProperties', {}).items():
+                if isinstance(pp, dict):
+                    process_subschema(pp, from_schema, onto_context, schema_path + ['patternProperties', pp_k])
 
             if ANNOTATION_EXTRA_TERMS in subschema:
                 for extra_term, extra_term_context in subschema[ANNOTATION_EXTRA_TERMS].items():
