@@ -664,7 +664,7 @@ class ContextBuilder:
             if subschema.get('type', 'object') != 'object':
                 return None
             for prop, prop_val in subschema.get('properties', {}).items():
-                full_property_path = schema_path + ['properties', prop]
+                full_property_path = schema_path + [prop]
                 full_property_path_str = f"{schema_path_str}/{prop}"
                 self.visited_properties[full_property_path_str] = None
                 if not isinstance(prop_val, dict):
