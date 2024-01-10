@@ -335,6 +335,7 @@ def resolve_context(ctx: Path | str | dict | list, expand_uris=True) -> Resolved
         return ResolvedContext()
 
     prefixes = {}
+
     def expand_uri(curie, ctx_stack):
         if not expand_uris or not ctx_stack or not curie or curie[0] == '@':
             return curie
@@ -619,7 +620,7 @@ class ContextBuilder:
 
     def __init__(self, location: Path | str = None,
                  compact: bool = True, ref_mapper: Callable[[str], str] | None = None,
-                 version = 1.1):
+                 version=1.1):
         """
         :param location: file or URL load the annotated schema from
         :param compact: whether to compact the resulting context (remove redundancies, compact CURIEs)
@@ -664,7 +665,7 @@ class ContextBuilder:
                 return None
             for prop, prop_val in subschema.get('properties', {}).items():
                 full_property_path = schema_path + ['properties', prop]
-                full_property_path_str = f"{schema_path_str}/properties/{prop}"
+                full_property_path_str = f"{schema_path_str}/{prop}"
                 self.visited_properties[full_property_path_str] = None
                 if not isinstance(prop_val, dict):
                     continue
@@ -706,23 +707,23 @@ class ContextBuilder:
                 referenced_schema = self._resolver.resolve_schema(ref, from_schema)
                 if referenced_schema:
                     process_subschema(referenced_schema.subschema, referenced_schema, onto_context,
-                                                   schema_path + [f"$ref[{subschema['$ref']}]"])
+                                      schema_path)
 
             for i in ('allOf', 'anyOf', 'oneOf'):
                 l = subschema.get(i)
                 if isinstance(l, list):
                     for idx, sub_subschema in enumerate(l):
                         process_subschema(sub_subschema, from_schema, onto_context,
-                                                   schema_path + [f"{i}[{idx}]"])
+                                          schema_path)
 
             for i in ('prefixItems', 'items', 'contains', 'then', 'else', 'additionalProperties'):
                 l = subschema.get(i)
                 if isinstance(l, dict):
-                    process_subschema(l, from_schema, onto_context, schema_path + [i])
+                    process_subschema(l, from_schema, onto_context, schema_path)
 
             for pp_k, pp in subschema.get('patternProperties', {}).items():
                 if isinstance(pp, dict):
-                    process_subschema(pp, from_schema, onto_context, schema_path + ['patternProperties', pp_k])
+                    process_subschema(pp, from_schema, onto_context, schema_path + [pp_k])
 
             if ANNOTATION_EXTRA_TERMS in subschema:
                 for extra_term, extra_term_context in subschema[ANNOTATION_EXTRA_TERMS].items():
@@ -840,8 +841,8 @@ class ContextBuilder:
 
 
 def dump_annotated_schema(schema: AnnotatedSchema, subdir: Path | str = 'annotated',
-                           root_dir: Path | str | None = None,
-                           output_fn_transform: Callable[[Path], Path] | None = None) -> None:
+                          root_dir: Path | str | None = None,
+                          output_fn_transform: Callable[[Path], Path] | None = None) -> None:
     """
     Creates a "mirror" directory (named `annotated` by default) with the resulting
     schemas annotated by a `SchemaAnnotator`.
@@ -941,6 +942,7 @@ def _main():
                 writer = csv.writer(stream, delimiter='\t')
                 writer.writerow(['path', '@id'])
                 writer.writerows(ctx_builder.visited_properties.items())
+
             if args.dump_visited == '-':
                 write_visited(sys.stdout)
             else:
