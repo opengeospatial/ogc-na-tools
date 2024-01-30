@@ -6,7 +6,12 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -27,5 +32,12 @@ jobs:
           path: .cache
           restore-keys: |
             mkdocs-material-
-      - run: pip install .[dev]
-      - run: mkdocs gh-deploy --force
+      - run: pip install .[dev] && mkdocs build
+      - name: Setup GH Pages
+        uses: actions/configure-pages@v3
+      - name: Upload GH Pages
+        uses: actions/upload-pages-artifact@v1
+        with:
+          path: './site'
+      - name: Deploy GH Pages
+        uses: actions/deploy-pages@v1
