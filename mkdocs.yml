@@ -19,6 +19,11 @@ plugins:
           options:
             docstring_style: sphinx
 
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+
 watch:
   - ogc
 

@@ -25,5 +25,10 @@ tab-separated file:
 ```yaml
 input-filter:
   csv:
-    delimiter: '\t'
+    delimiter: "\t"
 ```
+
+!!! note
+
+    For the tab character to be parsed as such (instead of the literal string `\t`), double quotes need to be
+    used in YAML.
