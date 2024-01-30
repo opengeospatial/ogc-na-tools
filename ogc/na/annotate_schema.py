@@ -658,7 +658,10 @@ class ContextBuilder:
 
         def read_properties(subschema: dict, from_schema: ReferencedSchema,
                             onto_context: dict, schema_path: list[str]) -> dict | None:
-            schema_path_str = '/'.join(schema_path)
+            if schema_path:
+                schema_path_str = '/' + '/'.join(schema_path)
+            else:
+                schema_path_str = ''
             if not isinstance(subschema, dict):
                 return None
             if subschema.get('type', 'object') != 'object':
@@ -666,7 +669,7 @@ class ContextBuilder:
             for prop, prop_val in subschema.get('properties', {}).items():
                 full_property_path = schema_path + [prop]
                 full_property_path_str = f"{schema_path_str}/{prop}"
-                self.visited_properties[full_property_path_str] = None
+                self.visited_properties.setdefault(full_property_path_str, None)
                 if not isinstance(prop_val, dict):
                     continue
                 prop_context = {'@context': {}}
@@ -674,6 +677,8 @@ class ContextBuilder:
                     if term == ANNOTATION_BASE:
                         prop_context.setdefault('@context', {})['@base'] = term_val
                     elif term.startswith(ANNOTATION_PREFIX) and term not in ANNOTATION_IGNORE_EXPAND:
+                        if term == ANNOTATION_ID:
+                            self.visited_properties[full_property_path_str] = term_val
                         prop_context['@' + term[len(ANNOTATION_PREFIX):]] = term_val
 
                 if isinstance(prop_context.get('@id'), str):
