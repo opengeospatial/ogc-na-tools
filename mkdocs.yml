@@ -26,4 +26,5 @@ nav:
   - Overview: index.md
   - Tutorials: tutorials.md
   - Examples: examples.md
+  - JSON-LD Uplift: jsonld-uplift.md
   - Reference: reference/
