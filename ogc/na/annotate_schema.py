@@ -558,6 +558,13 @@ class SchemaAnnotator:
                     for entry in collection:
                         used_terms.update(process_subschema(entry, context_stack, from_schema, level + 1))
 
+            # Annotate definitions and $defs
+            for p in ('definitions', '$defs'):
+                defs = subschema.get(p)
+                if defs and isinstance(defs, dict):
+                    for entry in defs.values():
+                        used_terms.update(process_subschema(entry, context_stack, from_schema, level + 1))
+
             for p in ('then', 'else', 'additionalProperties'):
                 branch = subschema.get(p)
                 if branch and isinstance(branch, dict):
