@@ -189,7 +189,10 @@ class SchemaResolver:
                 pointer = pointer[item]
         return pointer
 
-    def _load_contents(self, s: str | Path) -> tuple[dict, bool]:
+    def load_contents(self, s: str | Path) -> tuple[dict, bool]:
+        """
+        Load the contents of a schema. Can be overriden by subclasses to alter the loading process.
+        """
         contents, is_json = self._schema_cache.get(s, (None, False))
         if contents is None:
             contents, is_json = load_json_yaml(read_contents(s)[0])
@@ -245,7 +248,7 @@ class SchemaResolver:
                                         ref=ref,
                                         is_json=from_schema.is_json)
 
-            contents, is_json = self._load_contents(schema_source)
+            contents, is_json = self.load_contents(schema_source)
             if fragment:
                 return ReferencedSchema(location=schema_source, fragment=fragment,
                                         subschema=SchemaResolver._get_branch(contents, fragment),
@@ -430,17 +433,19 @@ class SchemaAnnotator:
     schema-path-or-url -> AnnotatedSchema mappings).
     """
 
-    def __init__(self, ref_mapper: Callable[[str, Any], str] | None = None):
+    def __init__(self, schema_resolver: SchemaResolver | None = None,
+                 ref_mapper: Callable[[str, Any], str] | None = None):
         """
+        :schema_resolver: an optional SchemaResolver to resolve references
         :ref_mapper: an optional function to map JSON `$ref`'s before resolving them
         """
-        self._schema_resolver = SchemaResolver()
+        self.schema_resolver = schema_resolver or SchemaResolver()
         self._ref_mapper = ref_mapper
 
     def process_schema(self, location: Path | str | None,
                        default_context: str | Path | dict | None = None,
                        contents: dict | None = None) -> AnnotatedSchema | None:
-        resolved_schema = self._schema_resolver.resolve_schema(location)
+        resolved_schema = self.schema_resolver.resolve_schema(location)
         if contents:
             # overriden
             schema = contents
@@ -465,7 +470,7 @@ class SchemaAnnotator:
             context, prefixes = attrgetter('context', 'prefixes')(resolved_default_context)
 
         if context_fn:
-            context_fn, fragment = self._schema_resolver.resolve_ref(context_fn, resolved_schema)
+            context_fn, fragment = self.schema_resolver.resolve_ref(context_fn, resolved_schema)
             schema_context = resolve_context(context_fn)
 
             context = merge_contexts(context, schema_context.context)
@@ -545,7 +550,7 @@ class SchemaAnnotator:
                 if self._ref_mapper:
                     subschema['$ref'] = self._ref_mapper(subschema['$ref'], subschema)
                 if subschema['$ref'].startswith('#/') or subschema['$ref'].startswith(f"{from_schema.location}#/"):
-                    target_schema = self._schema_resolver.resolve_schema(subschema['$ref'], from_schema)
+                    target_schema = self.schema_resolver.resolve_schema(subschema['$ref'], from_schema)
                     if target_schema:
                         used_terms.update(process_subschema(target_schema.subschema, context_stack,
                                                             target_schema, level + 1))
@@ -626,7 +631,8 @@ class ContextBuilder:
     """
 
     def __init__(self, location: Path | str = None,
-                 compact: bool = True, ref_mapper: Callable[[str], str] | None = None,
+                 compact: bool = True,
+                 schema_resolver: SchemaResolver = None,
                  version=1.1):
         """
         :param location: file or URL load the annotated schema from
@@ -635,9 +641,8 @@ class ContextBuilder:
         """
         self.context = {'@context': {}}
         self._parsed_schemas: dict[str | Path, dict] = {}
-        self._ref_mapper = ref_mapper
 
-        self._resolver = SchemaResolver()
+        self.schema_resolver = schema_resolver or SchemaResolver()
 
         self.location = location
 
@@ -654,7 +659,7 @@ class ContextBuilder:
         if parsed:
             return parsed
 
-        root_schema = self._resolver.resolve_schema(schema_location)
+        root_schema = self.schema_resolver.resolve_schema(schema_location)
 
         prefixes = {}
 
@@ -714,9 +719,7 @@ class ContextBuilder:
 
             if '$ref' in subschema:
                 ref = subschema['$ref']
-                if self._ref_mapper:
-                    ref = self._ref_mapper(ref)
-                referenced_schema = self._resolver.resolve_schema(ref, from_schema)
+                referenced_schema = self.schema_resolver.resolve_schema(ref, from_schema)
                 if referenced_schema:
                     process_subschema(referenced_schema.subschema, referenced_schema, onto_context,
                                       schema_path)
