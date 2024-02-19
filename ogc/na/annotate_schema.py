@@ -647,6 +647,7 @@ class ContextBuilder:
         self.location = location
 
         self.visited_properties: dict[str, str | None] = {}
+        self._missed_properties: dict[str, Any] = {}  # Dict instead of set to keep order of insertion
         context = self._build_context(self.location, compact)
         if context:
             context['@version'] = version
@@ -682,6 +683,8 @@ class ContextBuilder:
                 full_property_path = schema_path + [prop]
                 full_property_path_str = f"{schema_path_str}/{prop}"
                 self.visited_properties.setdefault(full_property_path_str, None)
+                if from_schema == root_schema:
+                    self._missed_properties.setdefault(full_property_path_str, True)
                 if not isinstance(prop_val, dict):
                     continue
                 prop_context = {'@context': {}}
@@ -691,10 +694,12 @@ class ContextBuilder:
                     elif term.startswith(ANNOTATION_PREFIX) and term not in ANNOTATION_IGNORE_EXPAND:
                         if term == ANNOTATION_ID:
                             self.visited_properties[full_property_path_str] = term_val
+                            self._missed_properties[full_property_path_str] = False
                         prop_context['@' + term[len(ANNOTATION_PREFIX):]] = term_val
 
                 if isinstance(prop_context.get('@id'), str):
                     self.visited_properties[full_property_path_str] = prop_context['@id']
+                    self._missed_properties[full_property_path_str] = False
                     if prop_context['@id'] == '@nest':
                         process_subschema(prop_val, from_schema, onto_context, full_property_path)
                     else:
@@ -853,6 +858,10 @@ class ContextBuilder:
 
         self._parsed_schemas[schema_location] = own_context
         return own_context
+
+    @property
+    def missed_properties(self):
+        return [k for (k, v) in self._missed_properties.items() if v]
 
 
 def dump_annotated_schema(schema: AnnotatedSchema, subdir: Path | str = 'annotated',
