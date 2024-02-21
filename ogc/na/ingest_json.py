@@ -481,8 +481,8 @@ def process_file(input_fn: str | Path,
             raise ValueError('input-filter must be an object')
         input_data = apply_input_filter(input_fn, input_filters)
     else:
-        with open(input_fn, 'r') as j:
-            input_data = json.load(j)
+        # Accept both JSON and YAML
+        input_data = util.load_yaml(input_fn)
 
     if logger.isEnabledFor(logging.DEBUG):
         logger.debug('Input data:\n%s', json.dumps(input_data, indent=2))
