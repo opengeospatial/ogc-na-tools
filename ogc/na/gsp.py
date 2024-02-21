@@ -4,6 +4,7 @@ SPARQL Graph Store Protocol operations
 from __future__ import annotations
 
 import argparse
+import getpass
 import sys
 from io import IOBase
 from pathlib import Path
@@ -156,12 +157,32 @@ def _main():
     )
 
     parser.add_argument(
-        '--auth',
-        help='HTTP Authentication in the form username:password',
+        '-u',
+        '--username',
+        help='Username for HTTP authentication',
+    )
+
+    parser.add_argument(
+        '-p',
+        '--password',
+        help='Password for HTTP authentication',
+    )
+
+    parser.add_argument(
+        '-P',
+        '--request-password',
+        action='store_true',
+        help='Request password from the user interactively',
     )
 
     args = parser.parse_args()
-    auth = tuple(args.auth.split(':', 1)) if args.auth else None
+
+    if args.request_password:
+        password = getpass.getpass("Password: ")
+    else:
+        password = args.password
+
+    auth = (args.username, password) if args.username else None
     gs = GraphStore(args.graph_store, auth_details=auth)
     if args.operation in ('add', 'replace', 'post', 'put'):
         if not (args.data or args.data_file):
