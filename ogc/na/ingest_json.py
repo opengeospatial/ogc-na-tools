@@ -591,6 +591,8 @@ def find_contexts(filename: Path | str,
         filename.parent / '_json-context.yml',
         filename.parent / '_json-context.yaml',
     ):
+        if filename == context_path:
+            continue
         if context_path.is_file() and not (filename.suffix == '.jsonld' and filename.with_suffix('.json').is_file()):
             logger.info(f'Autodetected context {context_path} for file {filename}')
             return [context_path]
@@ -705,10 +707,14 @@ def process(input_files: str | Path | Sequence[str | Path],
                 continue
 
             if re.match(r'.*\.ya?ml$', fn):
-                # Context file found, try to find corresponding JSON/JSON-LD file(s)
-                logger.info('Potential YAML context file found: %s', fn)
-                remaining_fn.extend(filenames_from_context(fn, domain_config=domain_cfg) or [])
-                continue
+                # Check whether this is a context definition or a doc to uplift
+                has_context = bool(find_contexts(fn, domain_cfg))
+
+                if not has_context:
+                    # Potential context file found, try to find corresponding JSON/JSON-LD file(s)
+                    logger.info('Potential YAML context file found: %s', fn)
+                    remaining_fn.extend(filenames_from_context(fn, domain_config=domain_cfg) or [])
+                    continue
 
             logger.info('File %s matches, processing', fn)
             try:
