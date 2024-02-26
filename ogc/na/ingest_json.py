@@ -564,7 +564,7 @@ def find_contexts(filename: Path | str,
     """
     Find the YAML context file for a given filename, with the following precedence:
         1. Search in registry (if provided)
-        2. Search file with same base name but with yaml/yml extension.
+        2. Search file with same base name but with yaml/yml or "-uplift.yml" extension.
         3. Find _json-context.yml/yaml file in same directory
     :param filename: the filename for which to find the context
     :param domain_config: an optional filename:yamlContextFile mapping
@@ -582,6 +582,8 @@ def find_contexts(filename: Path | str,
 
     # 2. Same filename with yml/yaml extension or autodetect in dir
     for context_path in (
+        filename.with_name(filename.stem + '-uplift.yml'),
+        filename.with_name(filename.stem + '-uplift.yaml'),
         filename.with_suffix('.yml'),
         filename.with_suffix('.yaml'),
         filename.with_suffix('').with_suffix('.yml'),
