@@ -1,0 +1,17 @@
+{
+  "string": "this is a string",
+  "number": 12345,
+  "list": [
+    "a", 1, { "sample": "object" }
+  ],
+  "obj": {
+    "another": "object"
+  },
+  "path1": {
+    "path2": {
+      "path3": {
+        "contents": "ofObject"
+      }
+    }
+  }
+}

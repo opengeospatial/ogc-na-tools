@@ -1,0 +1,24 @@
+{
+  "data": [
+    {
+      "$ref": "resolve_refs_referenced_data.json"
+    },
+    {
+      "$ref": "resolve_refs_referenced_data.json#/string"
+    },
+    {
+      "$ref": "resolve_refs_referenced_data.json#/obj"
+    },
+    {
+      "$ref": "resolve_refs_referenced_data.json#/list"
+    },
+    {
+      "toNumber": {
+        "$ref": "resolve_refs_referenced_data.json#/number"
+      },
+      "deep": {
+        "$ref": "resolve_refs_referenced_data.json#/path1/path2/path3"
+      }
+    }
+  ]
+}

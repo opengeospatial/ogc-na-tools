@@ -418,7 +418,8 @@ def process_file(input_fn: str | Path,
                  provenance_base_uri: str | bool | None = None,
                  provenance_process_id: str | None = None,
                  fetch_url_whitelist: bool | Sequence[str] | None = None,
-                 transform_args: dict | None = None) -> UpliftResult | None:
+                 transform_args: dict | None = None,
+                 resolve_refs: bool = False) -> UpliftResult | None:
     """
     Process input file and generate output RDF files.
 
@@ -439,6 +440,7 @@ def process_file(input_fn: str | Path,
         retrieving them. If None, it will not be used; if empty sequence or False, remote fetching operations will
         throw an exception
     :param transform_args: Additional arguments to pass as variables to the jq transform
+    :param resolve_refs: Whether to resolve $ref references to other files in the root document
     :return: List of output files created
     """
 
@@ -483,6 +485,9 @@ def process_file(input_fn: str | Path,
     else:
         # Accept both JSON and YAML
         input_data = util.load_yaml(input_fn)
+
+        if resolve_refs:
+            input_data = util.resolve_refs(input_fn, input_data)
 
     if logger.isEnabledFor(logging.DEBUG):
         logger.debug('Input data:\n%s', json.dumps(input_data, indent=2))
@@ -656,7 +661,8 @@ def process(input_files: str | Path | Sequence[str | Path],
             provenance_base_uri: Optional[Union[str, bool]] = None,
             fetch_url_whitelist: Optional[Union[Sequence, bool]] = None,
             transform_args: dict | None = None,
-            file_filter: str | re.Pattern = None) -> list[UpliftResult]:
+            file_filter: str | re.Pattern = None,
+            resolve_refs: bool = False) -> list[UpliftResult]:
     """
     Performs the JSON-LD uplift process.
 
@@ -678,6 +684,7 @@ def process(input_files: str | Path | Sequence[str | Path],
         throw an exception
     :param transform_args: Additional arguments to pass as variables to the jq transform
     :param file_filter: Filename filter for input files
+    :param resolve_refs: Resolve $ref references in root document(s) (only JSON and YAML)
     :return: a list of JSON-LD and/or Turtle output files
     """
     result: list[UpliftResult] = []
@@ -729,6 +736,7 @@ def process(input_files: str | Path | Sequence[str | Path],
                     fetch_url_whitelist=fetch_url_whitelist,
                     domain_cfg=domain_cfg,
                     transform_args=transform_args,
+                    resolve_refs=resolve_refs
                 ))
             except MissingContextException as e:
                 if skip_on_missing_context or batch:
@@ -749,6 +757,7 @@ def process(input_files: str | Path | Sequence[str | Path],
                     fetch_url_whitelist=fetch_url_whitelist,
                     domain_cfg=domain_cfg,
                     transform_args=transform_args,
+                    resolve_refs=resolve_refs,
                 ))
             except Exception as e:
                 if skip_on_missing_context:
@@ -876,6 +885,12 @@ def _process_cmdln():
         help='Regular expression to filter input filenames',
     )
 
+    parser.add_argument(
+        '--resolve-refs',
+        action='store_true',
+        help="Resolve $ref references to other files in input document(s) (only for JSON and YAML files)",
+    )
+
     args = parser.parse_args()
 
     if args.domain_config:
@@ -912,7 +927,8 @@ def _process_cmdln():
                      fetch_url_whitelist=args.url_whitelist,
                      transform_args=transform_args,
                      file_filter=args.file_filter,
-             )
+                     resolve_refs=args.resolve_refs,
+                     )
 
     if args.fs:
         print(args.fs.join(str(output_file) for r in result for output_file in r.output_files))

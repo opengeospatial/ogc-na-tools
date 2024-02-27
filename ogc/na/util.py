@@ -14,6 +14,7 @@ from typing import Optional, Union, Any, Mapping, Hashable
 
 import requests
 import rfc3987
+from jsonpointer import resolve_pointer
 
 from rdflib import Graph
 from pyshacl import validate as shacl_validate
@@ -350,6 +351,48 @@ def dict_contains(greater: dict, smaller: dict):
         elif gv != v:
             return False
     return True
+
+
+def resolve_refs(fn: str | Path, data: list | dict):
+
+    fn = Path(fn).resolve()
+
+    def walk(parent: dict | list | None, parent_index: str | int):
+        d = parent[parent_index] if parent else data
+        if isinstance(d, list):
+            return [walk(d, i) for i in range(len(d))]
+        elif isinstance(d, dict):
+            if '$ref' in d:
+                full_ref = d['$ref']
+                if not isinstance(full_ref, str):
+                    raise ValueError(f"Invalid $ref '{full_ref}' of type {type(ref).__name__} found in {fn}")
+                if not full_ref or full_ref[0] == '#':
+                    raise ValueError(f"Self reference $ref '{full_ref}' found in {fn}")
+                if '#' in full_ref:
+                    ref, fragment = full_ref.split('#', 1)
+                else:
+                    ref, fragment = full_ref, ''
+
+                if is_url(ref):
+                    # URL -> fetch contents
+                    fetched = load_yaml(url=ref)
+                else:
+                    target_fn = fn.parent.joinpath(ref).resolve()
+                    if target_fn == fn:
+                        raise ValueError(f"Self reference $ref '{full_ref}' found in {fn}")
+                    fetched = load_yaml(filename=target_fn)
+
+                if fragment:
+                    fetched = resolve_pointer(fetched, fragment)
+
+                return fetched
+
+            else:
+                return {k: walk(d, k) for k in d}
+
+        return d
+
+    return walk(None, 0)
 
 
 def cmd_join(args):
