@@ -1,8 +1,6 @@
 import unittest
 from pathlib import Path
 
-from rich import json
-
 from ogc.na import annotate_schema
 from ogc.na.annotate_schema import SchemaAnnotator
 

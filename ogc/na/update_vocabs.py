@@ -118,7 +118,7 @@ def get_graph_uri_for_vocab(g: Graph = None) -> Generator[str, None, None]:
         yield str(s)
 
 
-def get_entailed_base_path(f: Path, g: Graph, rootpattern: str = '/def/',
+def get_entailed_base_path(f: Path, g: Graph, rootpattern: Union[str, None] = None,
                            entailed_dir: str = DEFAULT_ENTAILED_DIR) -> tuple:
     """
     Tries to find the base output file path for an entailed version of a source Graph.
@@ -164,7 +164,7 @@ def get_entailed_base_path(f: Path, g: Graph, rootpattern: str = '/def/',
             canonical_filename, conceptscheme)
 
 
-def make_rdf(filename: Union[str, Path], g: Graph, rootpath='/def/',
+def make_rdf(filename: Union[str, Path], g: Graph, rootpath: Union[str, None] = None,
              entailment_directory: Union[str, Path] = DEFAULT_ENTAILED_DIR,
              provenance_metadata: ProvenanceMetadata = None,) -> Path:
     """
