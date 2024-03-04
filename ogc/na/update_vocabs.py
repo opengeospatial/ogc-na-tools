@@ -182,6 +182,9 @@ def make_rdf(filename: Union[str, Path], g: Graph, rootpath: Union[str, None] = 
         filename = Path(filename)
     filename = filename.resolve()
 
+    if isinstance(entailment_directory, Path):
+        entailment_directory = entailment_directory.resolve()
+
     loadable_ttl = None
     newbasepath, canonical_filename, conceptschemeuri = \
         get_entailed_base_path(filename, g, rootpath, entailment_directory)
@@ -453,13 +456,8 @@ def _main():
             if output_path:
                 output_doc = output_path.resolve() / docrelpath
                 entailment_dir = output_doc.parent / args.entailment_directory
-                output_doc = entailment_dir / output_doc.name
             else:
-                entailment_dir = Path(args.entailment_directory).resolve()
-                output_doc = entailment_dir / doc.name
-
-            os.makedirs(output_doc.parent, exist_ok=True)
-            os.makedirs(entailment_dir, exist_ok=True)
+                entailment_dir = DEFAULT_ENTAILED_DIR
 
             loadable_path = make_rdf(doc, newg, cfg.uri_root_filter,
                                      entailment_dir, provenance_metadata)
