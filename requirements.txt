@@ -9,7 +9,7 @@ requests>=2.30
 jsonschema
 GitPython>=3.1.32
 rfc3987
-requests_cache
+requests-cache
 xmltodict
 
 # to be removed once https://github.com/RDFLib/pySHACL/issues/212 is fixed

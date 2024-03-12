@@ -720,6 +720,9 @@ class ContextBuilder:
             if not isinstance(subschema, dict):
                 return None
 
+            if subschema.get(ANNOTATION_BASE):
+                onto_context['@base'] = subschema[ANNOTATION_BASE]
+
             read_properties(subschema, from_schema, onto_context, schema_path)
 
             if '$ref' in subschema:
