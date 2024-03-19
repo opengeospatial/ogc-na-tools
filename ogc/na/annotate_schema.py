@@ -434,13 +434,15 @@ class SchemaAnnotator:
     """
 
     def __init__(self, schema_resolver: SchemaResolver | None = None,
-                 ref_mapper: Callable[[str, Any], str] | None = None):
+                 ref_mapper: Callable[[str, Any], str] | None = None,
+                 ignore_existing: bool = False):
         """
         :schema_resolver: an optional SchemaResolver to resolve references
         :ref_mapper: an optional function to map JSON `$ref`'s before resolving them
         """
         self.schema_resolver = schema_resolver or SchemaResolver()
         self._ref_mapper = ref_mapper
+        self.ignore_existing = ignore_existing
 
     def process_schema(self, location: Path | str | None,
                        default_context: str | Path | dict | None = None,
@@ -516,6 +518,11 @@ class SchemaAnnotator:
                     # skip JSON-LD keywords
                     continue
                 prop_value = properties[prop]
+
+                for key in list(prop_value.keys()):
+                    if self.ignore_existing and key.startswith(ANNOTATION_PREFIX):
+                        prop_value.pop(key, None)
+
                 prop_ctx = find_prop_context(prop, context_stack)
                 if prop_ctx:
                     used_terms.add(prop)
@@ -949,6 +956,12 @@ def _main():
         help='Dump visited properties and their ids to a file',
     )
 
+    parser.add_argument(
+        '--ignore-existing',
+        help="Ignore existing x-jsonld- properties when annotating",
+        action='store_true',
+    )
+
     args = parser.parse_args()
 
     if not args.schema:
@@ -976,7 +989,7 @@ def _main():
                 with open(args.dump_visited, 'w', newline='') as f:
                     write_visited(f)
     else:
-        annotator = SchemaAnnotator()
+        annotator = SchemaAnnotator(ignore_existing=args.ignore_existing)
         annotated = annotator.process_schema(args.schema, args.context)
         print(dump_yaml(annotated.schema))
 
