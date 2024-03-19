@@ -1,5 +1,13 @@
 # ogc-na-tools
 
+## TL;DR
+
+You can install the tools with `pip`:
+
+```shell
+pip install ogc-na
+```
+
 ## Purpose
 This repository contains tools used to maintain controlled vocabularies and knowledge assets managed by the OGC Naming Authority. Such tools may have wider general applicability and be refactored into tool specific repositories.
 
@@ -24,6 +32,9 @@ The following tools are currently available:
 * `annotate_schema`: Annotates JSON schemas by leveraging `@modelReference` links to JSON-LD contexts [(read more)](https://opengeospatial.github.io/ogc-na-tools/reference/ogc/na/annotate_schema/)
 
 ## Development
+
+Note: This is only necessary if you are going to work *on* the tools themselves, not *with* them (see [TL;DR](#tldr)
+above). 
 
 To install runtime and development dependencies, run:
 
