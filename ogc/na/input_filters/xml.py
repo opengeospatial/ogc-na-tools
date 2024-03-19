@@ -13,6 +13,8 @@ Configuration values:
 * `namespace-separator` (default `:`): String that will be used to separate the namespace prefix and the local name
   when processing namespaces.
 * `text-property` (default: `_`): property name that will be used to put the element's text content into
+* `disable-entities` (default: `True`): disable processing of XML entities (to avoid XXE injections when parsing
+  untrusted data)
 """
 from __future__ import annotations
 
@@ -28,6 +30,7 @@ DEFAULT_CONF = {
     'attr-prefix': '_',
     'namespace-separator': ':',
     'text-property': '_',
+    'disable-entities': True,
 }
 
 
@@ -47,6 +50,7 @@ def apply_filter(content: bytes, conf: dict[str, Any] | None) -> tuple[dict[str,
                              attr_prefix=conf['attr-prefix'],
                              namespace_separator=conf['namespace-separator'],
                              cdata_key=conf['text-property'],
+                             disable_entities=conf['disable-entities'],
                              )
 
     return result, metadata
