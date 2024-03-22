@@ -519,6 +519,9 @@ class SchemaAnnotator:
                     continue
                 prop_value = properties[prop]
 
+                if not isinstance(prop_value, dict):
+                    continue
+
                 for key in list(prop_value.keys()):
                     if self.ignore_existing and key.startswith(ANNOTATION_PREFIX):
                         prop_value.pop(key, None)
