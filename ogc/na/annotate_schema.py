@@ -131,7 +131,8 @@ from urllib.parse import urlparse, urljoin
 import jsonschema
 import requests_cache
 
-from ogc.na.util import is_url, load_yaml, LRUCache, dump_yaml, merge_contexts, merge_dicts, dict_contains
+from ogc.na.util import is_url, load_yaml, LRUCache, dump_yaml, \
+    merge_contexts, merge_dicts, dict_contains, JSON_LD_KEYWORDS
 
 logger = logging.getLogger(__name__)
 
@@ -340,7 +341,7 @@ def resolve_context(ctx: Path | str | dict | list, expand_uris=True) -> Resolved
     prefixes = {}
 
     def expand_uri(curie, ctx_stack):
-        if not expand_uris or not ctx_stack or not curie or curie[0] == '@':
+        if not expand_uris or not ctx_stack or not curie or curie in JSON_LD_KEYWORDS:
             return curie
         if ':' in curie:
             prefix, localpart = curie.split(':', 1)
@@ -486,18 +487,18 @@ class SchemaAnnotator:
                 if prop in ctx:
                     prop_ctx = ctx[prop]
                     if isinstance(prop_ctx, str):
-                        if vocab and ':' not in prop_ctx and prop_ctx[0] != '@':
+                        if vocab and ':' not in prop_ctx and prop_ctx not in JSON_LD_KEYWORDS:
                             prop_ctx = f"{vocab}{prop_ctx}"
                         return {'@id': prop_ctx}
                     elif '@id' not in prop_ctx and not vocab:
                         raise ValueError(f'Missing @id for property {prop} in context {json.dumps(ctx, indent=2)}')
                     else:
-                        result = {k: v for k, v in prop_ctx.items() if k.startswith('@')}
+                        result = {k: v for k, v in prop_ctx.items() if k in JSON_LD_KEYWORDS}
                         if vocab:
                             prop_id = result.get('@id')
                             if not prop_id:
                                 result['@id'] = f"{vocab}{prop}"
-                            elif ':' not in prop_id and prop_id[0] != '@':
+                            elif ':' not in prop_id and prop_id not in JSON_LD_KEYWORDS:
                                 result['@id'] = f"{vocab}{prop_id}"
                         return result
                 elif '@vocab' in ctx:
@@ -514,7 +515,7 @@ class SchemaAnnotator:
 
             used_terms = set()
             for prop in list(properties.keys()):
-                if prop[0] == '@':
+                if prop in JSON_LD_KEYWORDS:
                     # skip JSON-LD keywords
                     continue
                 prop_value = properties[prop]
@@ -531,7 +532,7 @@ class SchemaAnnotator:
                     used_terms.add(prop)
                     prop_schema_ctx = {f"{ANNOTATION_PREFIX}{k[1:]}": v
                                        for k, v in prop_ctx.items()
-                                       if k[0] == '@' and k != '@context'}
+                                       if k in JSON_LD_KEYWORDS and k != '@context'}
                     prop_ctx_base = prop_ctx.get('@context', {}).get('@base')
                     if prop_ctx_base:
                         prop_schema_ctx[ANNOTATION_BASE] = prop_ctx_base
@@ -608,12 +609,14 @@ class SchemaAnnotator:
             if len(context_stack) == level and context_stack[-1]:
                 extra_terms = {}
                 for k, v in context_stack[-1].items():
-                    if k[0] != '@' and k not in prefixes and k not in used_terms:
+                    if k not in JSON_LD_KEYWORDS and k not in prefixes and k not in used_terms:
                         if isinstance(v, dict):
                             if len(v) == 1 and '@id' in v:
                                 v = v['@id']
                             else:
-                                v = {f"{ANNOTATION_PREFIX}{vk[1:]}": vv for vk, vv in v.items() if vk[0] == '@'}
+                                v = {f"{ANNOTATION_PREFIX}{vk[1:]}": vv
+                                     for vk, vv in v.items()
+                                     if vk in JSON_LD_KEYWORDS}
                         if isinstance(v, str) and v[-1] in ('#', '/', ':'):
                             prefixes[k] = v
                         else:
@@ -806,7 +809,7 @@ class ContextBuilder:
         if compact:
 
             def compact_uri(uri: str) -> str:
-                if uri.startswith('@'):
+                if uri in JSON_LD_KEYWORDS:
                     # JSON-LD keyword
                     return uri
 
@@ -821,7 +824,7 @@ class ContextBuilder:
 
             def compact_branch(branch, context_stack=None) -> bool:
                 child_context_stack = context_stack + [branch] if context_stack else [branch]
-                terms = list(k for k in branch.keys() if k[0] != '@')
+                terms = list(k for k in branch.keys() if k not in JSON_LD_KEYWORDS)
 
                 changed = False
                 for term in terms:
@@ -853,7 +856,7 @@ class ContextBuilder:
 
             def compact_uris(branch, context_stack=None):
                 child_context_stack = context_stack + [branch] if context_stack else [branch]
-                terms = list(k for k in branch.keys() if k[0] != '@')
+                terms = list(k for k in branch.keys() if k not in JSON_LD_KEYWORDS)
                 for term in terms:
                     term_value = branch.get(term)
                     if isinstance(term_value, str):

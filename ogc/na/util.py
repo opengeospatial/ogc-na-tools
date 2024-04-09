@@ -28,6 +28,32 @@ try:
 except ImportError:
     from yaml import Loader as YamlLoader, SafeLoader as SafeYamlLoader, Dumper as YamlDumper
 
+JSON_LD_KEYWORDS = {
+    '@base',
+    '@container',
+    '@context',
+    '@direction',
+    '@graph',
+    '@id',
+    '@import',
+    '@included',
+    '@index',
+    '@json',
+    '@language',
+    '@list',
+    '@nest',
+    '@none',
+    '@prefix',
+    '@propagate',
+    '@protected',
+    '@reverse',
+    '@set',
+    '@type',
+    '@value',
+    '@version',
+    '@vocab'
+}
+
 
 class ContextMergeError(Exception):
     pass
@@ -294,7 +320,7 @@ def merge_contexts(a: dict, b: dict, fix_nest=True) -> dict[str, Any]:
     for term in list(a.keys()):
         va = a[term]
         vb = b.get(term)
-        if term[0] != '@':
+        if term not in JSON_LD_KEYWORDS:
             if isinstance(va, str):
                 va = {'@id': va}
                 a[term] = va
