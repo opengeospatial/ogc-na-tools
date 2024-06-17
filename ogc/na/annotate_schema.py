@@ -122,7 +122,6 @@ import json
 import logging
 import re
 import sys
-from collections import deque
 from operator import attrgetter
 from pathlib import Path
 from typing import Any, AnyStr, Callable, Sequence, Iterable
@@ -146,6 +145,8 @@ ANNOTATION_BASE = f'{ANNOTATION_PREFIX}base'
 ANNOTATION_IGNORE_EXPAND = [ANNOTATION_CONTEXT, ANNOTATION_EXTRA_TERMS, ANNOTATION_PREFIXES]
 
 CURIE_TERMS = '@id', '@type', '@index'
+
+UNDEFINED = object()
 
 context_term_cache = LRUCache(maxsize=20)
 requests_session = requests_cache.CachedSession('ogc.na.annotate_schema', backend='memory', expire_after=180)
@@ -347,6 +348,8 @@ def resolve_context(ctx: Path | str | dict | list, expand_uris=True) -> Resolved
             prefix, localpart = curie.split(':', 1)
         else:
             prefix, localpart = None, None
+
+        vocab = UNDEFINED
         for c in reversed(ctx_stack):
             if localpart:
                 # prefix:localpart format
@@ -355,9 +358,11 @@ def resolve_context(ctx: Path | str | dict | list, expand_uris=True) -> Resolved
                     prefix_uri = term_val if isinstance(term_val, str) else term_val.get('@id')
                     prefixes[prefix] = prefix_uri
                     return f"{prefix_uri}{localpart}"
-            elif '@vocab' in c:
-                # look for @vocab
-                return f"{c['@vocab']}{curie}"
+            elif '@vocab' in c and vocab is UNDEFINED:
+                # look for @vocab unless it has been overridden (e.g. set to null) somewhere down the chain
+                vocab = c['@vocab']
+                if isinstance(vocab, str):
+                    return f"{c['@vocab']}{curie}"
 
         return curie
 
@@ -389,7 +394,11 @@ def resolve_context(ctx: Path | str | dict | list, expand_uris=True) -> Resolved
             resolved_ctx = {}
             inner_prefixes = {}
             for ctx_entry in inner_ctx:
-                resolved_entry = resolve_context(ctx_entry)
+                if isinstance(ctx_entry, dict):
+                    # Array entries must be wrapped with @context
+                    resolved_entry = resolve_context({'@context': ctx_entry})
+                else:
+                    resolved_entry = resolve_context(ctx_entry)
                 inner_prefixes.update(resolved_entry.prefixes)
                 resolved = ResolvedContext(merge_dicts(resolved_entry.context, resolved_ctx), inner_prefixes)
         else:
@@ -482,8 +491,10 @@ class SchemaAnnotator:
         updated_refs: set[int] = set()
 
         def find_prop_context(prop, context_stack) -> dict | None:
+            vocab = UNDEFINED
             for ctx in reversed(context_stack):
-                vocab = ctx.get('@vocab')
+                if vocab is UNDEFINED and '@vocab' in ctx:
+                    vocab = ctx.get('@vocab')
                 if prop in ctx:
                     prop_ctx = ctx[prop]
                     if isinstance(prop_ctx, str):
@@ -501,7 +512,7 @@ class SchemaAnnotator:
                             elif ':' not in prop_id and prop_id not in JSON_LD_KEYWORDS:
                                 result['@id'] = f"{vocab}{prop_id}"
                         return result
-                elif '@vocab' in ctx:
+                elif isinstance(vocab, str):
                     return {'@id': f"{ctx['@vocab']}{prop}"}
 
         def process_properties(obj: dict, context_stack: list[dict[str, Any]],
