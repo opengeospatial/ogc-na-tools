@@ -873,8 +873,9 @@ class ContextBuilder:
                     if isinstance(term_value, str):
                         branch[term] = compact_uri(term_value)
                     elif isinstance(term_value, dict):
-                        if '@id' in term_value:
-                            term_value['@id'] = compact_uri(term_value['@id'])
+                        for k in CURIE_TERMS:
+                            if k in term_value:
+                                term_value[k] = compact_uri(term_value[k])
                         if len(term_value) == 1 and '@id' in term_value:
                             branch[term] = term_value['@id']
                         elif '@context' in term_value:
