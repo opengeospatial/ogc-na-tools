@@ -688,6 +688,9 @@ class ContextBuilder:
         if prefixes:
             own_context.update(prefixes)
 
+        # store processed $defs and definitions to avoid parsing them twice
+        processed_refs = set()
+
         def read_properties(subschema: dict, from_schema: ReferencedSchema,
                             onto_context: dict, schema_path: list[str]) -> dict | None:
             if schema_path:
@@ -746,6 +749,8 @@ class ContextBuilder:
 
             if '$ref' in subschema:
                 ref = subschema['$ref']
+                ref_path_str = f"{from_schema.location}{ref}"
+                processed_refs.add(ref_path_str)
                 referenced_schema = self.schema_resolver.resolve_schema(ref, from_schema)
                 if referenced_schema:
                     process_subschema(referenced_schema.subschema, referenced_schema, onto_context,
@@ -766,6 +771,15 @@ class ContextBuilder:
             for pp_k, pp in subschema.get('patternProperties', {}).items():
                 if isinstance(pp, dict):
                     process_subschema(pp, from_schema, onto_context, schema_path + [pp_k])
+
+            for p in ('definitions', '$defs'):
+                defs = subschema.get(p)
+                if defs and isinstance(defs, dict):
+                    for entry_key, entry in defs.items():
+                        def_path = schema_path + [entry_key]
+                        def_path_str = f"{from_schema.location}#{'/'.join(def_path)}"
+                        if def_path_str not in processed_refs:
+                            process_subschema(entry, from_schema, onto_context, def_path)
 
             if ANNOTATION_EXTRA_TERMS in subschema:
                 for extra_term, extra_term_context in subschema[ANNOTATION_EXTRA_TERMS].items():
