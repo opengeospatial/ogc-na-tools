@@ -11,6 +11,7 @@ GitPython>=3.1.32
 rfc3987
 requests-cache
 xmltodict
+jsonpointer~=2.4
 
 # to be removed once https://github.com/RDFLib/pySHACL/issues/212 is fixed
 setuptools
