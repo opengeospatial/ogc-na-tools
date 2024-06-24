@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Union, Optional, Sequence, cast, IO, TypeVar, Iterable
 
 import wcmatch.glob
-from rdflib import Graph, Namespace, URIRef, DCTERMS, DCAT, Literal
+from rdflib import Graph, Namespace, URIRef, DCTERMS, DCAT, Literal, RDF
 from wcmatch.glob import globmatch
 
 from ogc.na.profile import ProfileRegistry
@@ -214,7 +214,7 @@ class DomainConfiguration:
 
             identifier = cfg_graph.value(cfg_ref, DCTERMS.identifier) or str(cfg_ref)
 
-            if profile_refs:
+            if (cfg_ref, RDF.type, DCFG.DomainConfiguration) in cfg_graph:
                 self.entries.append(DomainConfigurationEntry(
                     working_directory=self.working_directory,
                     glob=globs,
