@@ -772,15 +772,6 @@ class ContextBuilder:
                 if isinstance(pp, dict):
                     process_subschema(pp, from_schema, onto_context, schema_path + [pp_k])
 
-            for p in ('definitions', '$defs'):
-                defs = subschema.get(p)
-                if defs and isinstance(defs, dict):
-                    for entry_key, entry in defs.items():
-                        def_path = schema_path + [entry_key]
-                        def_path_str = f"{from_schema.location}#{'/'.join(def_path)}"
-                        if def_path_str not in processed_refs:
-                            process_subschema(entry, from_schema, onto_context, def_path)
-
             if ANNOTATION_EXTRA_TERMS in subschema:
                 for extra_term, extra_term_context in subschema[ANNOTATION_EXTRA_TERMS].items():
                     if extra_term not in onto_context:
