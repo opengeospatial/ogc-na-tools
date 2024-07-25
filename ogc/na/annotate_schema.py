@@ -117,6 +117,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import copy
 import dataclasses
 import json
 import logging
@@ -723,24 +724,29 @@ class ContextBuilder:
                     self.visited_properties[full_property_path_str] = prop_context['@id']
                     self._missed_properties[full_property_path_str] = False
                     if prop_context['@id'] == '@nest':
-                        process_subschema(prop_val, from_schema, onto_context, full_property_path)
+                        merge_contexts(onto_context, process_subschema(prop_val, from_schema, full_property_path))
                     else:
-                        process_subschema(prop_val, from_schema, prop_context['@context'], full_property_path)
+                        merge_contexts(prop_context['@context'],
+                                       process_subschema(prop_val, from_schema, full_property_path))
                     if prop not in onto_context or isinstance(onto_context[prop], str):
                         onto_context[prop] = prop_context
                     else:
                         merge_contexts(onto_context[prop], prop_context)
                 else:
-                    process_subschema(prop_val, from_schema, onto_context, full_property_path)
+                    merge_contexts(onto_context, process_subschema(prop_val, from_schema, full_property_path))
 
         imported_prefixes: dict[str | Path, dict[str, str]] = {}
         imported_extra_terms: dict[str | Path, dict[str, str]] = {}
 
-        def process_subschema(subschema: dict, from_schema: ReferencedSchema, onto_context: dict,
-                              schema_path: list[str]) -> dict | None:
+        cached_schema_contexts = {}
+
+        def process_subschema(subschema: dict, from_schema: ReferencedSchema,
+                              schema_path: list[str]) -> dict:
+
+            onto_context = {}
 
             if not isinstance(subschema, dict):
-                return None
+                return {}
 
             if subschema.get(ANNOTATION_BASE):
                 onto_context['@base'] = subschema[ANNOTATION_BASE]
@@ -753,24 +759,25 @@ class ContextBuilder:
                 processed_refs.add(ref_path_str)
                 referenced_schema = self.schema_resolver.resolve_schema(ref, from_schema)
                 if referenced_schema:
-                    process_subschema(referenced_schema.subschema, referenced_schema, onto_context,
-                                      schema_path)
+                    ref_ctx = copy.deepcopy(cached_schema_contexts.get(ref_path_str))
+                    if ref_ctx is None:
+                        ref_ctx = process_subschema(referenced_schema.subschema, referenced_schema, schema_path)
+                    merge_contexts(onto_context, ref_ctx)
 
             for i in ('allOf', 'anyOf', 'oneOf'):
                 l = subschema.get(i)
                 if isinstance(l, list):
                     for idx, sub_subschema in enumerate(l):
-                        process_subschema(sub_subschema, from_schema, onto_context,
-                                          schema_path)
+                        merge_contexts(onto_context, process_subschema(sub_subschema, from_schema, schema_path))
 
             for i in ('prefixItems', 'items', 'contains', 'then', 'else', 'additionalProperties'):
                 l = subschema.get(i)
                 if isinstance(l, dict):
-                    process_subschema(l, from_schema, onto_context, schema_path)
+                    merge_contexts(onto_context, process_subschema(l, from_schema, schema_path))
 
             for pp_k, pp in subschema.get('patternProperties', {}).items():
                 if isinstance(pp, dict):
-                    process_subschema(pp, from_schema, onto_context, schema_path + [pp_k])
+                    merge_contexts(onto_context, process_subschema(pp, from_schema, schema_path + [pp_k]))
 
             if ANNOTATION_EXTRA_TERMS in subschema:
                 for extra_term, extra_term_context in subschema[ANNOTATION_EXTRA_TERMS].items():
@@ -797,7 +804,10 @@ class ContextBuilder:
                 if isinstance(sub_prefixes, dict):
                     prefixes.update({k: v for k, v in sub_prefixes.items() if k not in prefixes})
 
-        process_subschema(root_schema.subschema, root_schema, own_context, [])
+            cached_schema_contexts[f"{from_schema.location}#{from_schema.fragment}"] = onto_context
+            return onto_context
+
+        merge_contexts(own_context, process_subschema(root_schema.subschema, root_schema, []))
 
         for imported_et in imported_extra_terms.values():
             for term, v in imported_et.items():
