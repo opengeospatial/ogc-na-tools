@@ -310,6 +310,9 @@ def git_status(repo_path: str | Path = '.'):
 
 
 def merge_contexts(a: dict, b: dict, fix_nest=True) -> dict[str, Any]:
+    '''
+    Merges two JSON-lD contexts, updating the first one passed to this function (and returning it).
+    '''
     if not b:
         return a
     if not a:

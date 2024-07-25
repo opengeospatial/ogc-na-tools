@@ -844,10 +844,13 @@ class ContextBuilder:
                     if isinstance(term_value, dict) and '@context' in term_value:
                         if not term_value['@context']:
                             del term_value['@context']
+                            changed = True
                         else:
                             while True:
                                 if not compact_branch(term_value['@context'], child_context_stack):
                                     break
+                                else:
+                                    changed = True
 
                     if context_stack:
                         for ctx in context_stack:
@@ -881,7 +884,9 @@ class ContextBuilder:
                         elif '@context' in term_value:
                             compact_uris(term_value['@context'], child_context_stack)
 
-            compact_branch(own_context)
+            while True:
+                if not compact_branch(own_context):
+                    break
             compact_uris(own_context)
 
         self._parsed_schemas[schema_location] = own_context
