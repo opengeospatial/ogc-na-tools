@@ -686,7 +686,7 @@ def process(input_files: str | Path | Sequence[str | Path],
     if isinstance(input_files, str) or not isinstance(input_files, Sequence):
         input_files = (input_files,)
     if batch:
-        logger.info("Input files: %s", input_files)
+        logger.info("Input files: %s", [str(x) for x in input_files])
         remaining_fn: deque = deque()
         for input_file in input_files:
             if isinstance(input_file, str):
@@ -735,6 +735,8 @@ def process(input_files: str | Path | Sequence[str | Path],
                     logger.warning("Error processing JSON/JSON-LD file, skipping: %s", getattr(e, 'msg', str(e)))
                 else:
                     raise
+            except Exception as e:
+                raise IOError(f'Error processing input file {fn}') from e
     else:
         for input_file in input_files:
             try:
