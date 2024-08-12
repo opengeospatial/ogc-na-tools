@@ -148,7 +148,12 @@ ANNOTATION_IGNORE_EXPAND = [ANNOTATION_CONTEXT, ANNOTATION_EXTRA_TERMS, ANNOTATI
 
 CURIE_TERMS = '@id', '@type', '@index'
 
-UNDEFINED = object()
+class Undefined:
+
+    def __bool__(self):
+        return False
+
+UNDEFINED = Undefined()
 
 context_term_cache = LRUCache(maxsize=20)
 requests_session = requests_cache.CachedSession('ogc.na.annotate_schema', backend='memory', expire_after=180)
