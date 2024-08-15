@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 
 from ogc.na import annotate_schema
-from ogc.na.annotate_schema import SchemaAnnotator
+from ogc.na.annotate_schema import SchemaAnnotator, ContextBuilder
 
 THIS_DIR = Path(__file__).parent
 DATA_DIR = THIS_DIR / 'data'
@@ -90,3 +90,22 @@ class AnnotateSchemaTest(unittest.TestCase):
         self.assertEqual(deep_get(schema, 'properties', 'propB', 'x-jsonld-id'), '@id')
         self.assertEqual(deep_get(schema, 'properties', 'propC', 'x-jsonld-id'), 'http://www.another.com/')
         self.assertEqual(deep_get(schema, 'properties', 'propD', 'x-jsonld-id'), vocab + 'propD')
+
+    def test_top_level_keywords(self):
+        annotator = SchemaAnnotator()
+        vocab = 'http://example.com/vocab#'
+        base = 'http://example.net/'
+        schema = annotator.process_schema(DATA_DIR / 'sample-schema-prop-c.yml', default_context={
+            '@context': {
+                '@base': base,
+                '@vocab': vocab,
+            }
+        }).schema
+
+        self.assertEqual(schema.get('x-jsonld-vocab'), vocab)
+        self.assertEqual(schema.get('x-jsonld-base'), base)
+
+        builder = ContextBuilder('http://example.com/schema.yaml', contents=schema)
+
+        self.assertEqual(deep_get(builder.context, '@context', '@vocab'), vocab)
+        self.assertEqual(deep_get(builder.context, '@context', '@base'), base)

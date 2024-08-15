@@ -143,6 +143,7 @@ ANNOTATION_ID = f'{ANNOTATION_PREFIX}id'
 ANNOTATION_PREFIXES = f'{ANNOTATION_PREFIX}prefixes'
 ANNOTATION_EXTRA_TERMS = f'{ANNOTATION_PREFIX}extra-terms'
 ANNOTATION_BASE = f'{ANNOTATION_PREFIX}base'
+ANNOTATION_VOCAB = f'{ANNOTATION_PREFIX}vocab'
 
 ANNOTATION_IGNORE_EXPAND = [ANNOTATION_CONTEXT, ANNOTATION_EXTRA_TERMS, ANNOTATION_PREFIXES]
 
@@ -233,7 +234,7 @@ class SchemaResolver:
         return location, fragment
 
     def resolve_schema(self, ref: str | Path, from_schema: ReferencedSchema | None = None,
-                       force_contents: dict | None = None) -> ReferencedSchema | None:
+                       force_contents: dict | str | None = None) -> ReferencedSchema | None:
         chain = from_schema.chain + [from_schema] if from_schema else []
         try:
             schema_source, fragment = self.resolve_ref(ref, from_schema)
@@ -253,9 +254,14 @@ class SchemaResolver:
                                         ref=ref,
                                         is_json=from_schema.is_json)
 
-            contents, is_json = self.load_contents(schema_source)
             if force_contents:
-                contents = force_contents
+                is_json = False
+                if isinstance(force_contents, str):
+                    contents = load_yaml(content=force_contents)
+                else:
+                    contents = force_contents
+            else:
+                contents, is_json = self.load_contents(schema_source)
             if fragment:
                 return ReferencedSchema(location=schema_source, fragment=fragment,
                                         subschema=SchemaResolver._get_branch(contents, fragment),
@@ -640,6 +646,10 @@ class SchemaAnnotator:
 
         process_subschema(schema, [context], resolved_schema)
 
+        for key in ('@base', '@vocab'):
+            if context.get(key):
+                schema[f"{ANNOTATION_PREFIX}{key[1:]}"] = context[key]
+
         if prefixes:
             schema[ANNOTATION_PREFIXES] = prefixes
 
@@ -655,9 +665,10 @@ class ContextBuilder:
     Builds a JSON-LD context from a set of annotated JSON schemas.
     """
 
-    def __init__(self, location: Path | str = None,
+    def __init__(self, location: Path | str,
                  compact: bool = True,
                  schema_resolver: SchemaResolver = None,
+                 contents: dict | str | None = None,
                  version=1.1):
         """
         :param location: file or URL load the annotated schema from
@@ -673,19 +684,20 @@ class ContextBuilder:
 
         self.visited_properties: dict[str, str | None] = {}
         self._missed_properties: dict[str, Any] = {}  # Dict instead of set to keep order of insertion
-        context = self._build_context(self.location, compact)
+        context = self._build_context(self.location, compact, contents=contents)
         if context:
             context['@version'] = version
         self.context = {'@context': context}
 
     def _build_context(self, schema_location: str | Path,
-                       compact: bool = True) -> dict:
+                       compact: bool = True,
+                       contents: dict | str | None = None) -> dict:
 
         parsed = self._parsed_schemas.get(schema_location)
         if parsed:
             return parsed
 
-        root_schema = self.schema_resolver.resolve_schema(schema_location)
+        root_schema = self.schema_resolver.resolve_schema(schema_location, force_contents=contents)
 
         prefixes = {}
 
@@ -753,8 +765,10 @@ class ContextBuilder:
             if not isinstance(subschema, dict):
                 return {}
 
-            if subschema.get(ANNOTATION_BASE):
-                onto_context['@base'] = subschema[ANNOTATION_BASE]
+            for key in (ANNOTATION_BASE, ANNOTATION_VOCAB):
+                top_level_value = subschema.get(key)
+                if top_level_value:
+                    onto_context[f"@{key[len(ANNOTATION_PREFIX):]}"] = top_level_value
 
             read_properties(subschema, from_schema, onto_context, schema_path)
 
