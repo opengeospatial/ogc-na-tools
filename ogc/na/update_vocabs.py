@@ -13,6 +13,16 @@ This script can be used as a library, or run directly from the cli;
 please refer to the
 [OGC NamingAuthority repository](https://github.com/opengeospatial/NamingAuthority)
 for usage details on the latter.
+
+## Defining the SPARQL graph URI
+
+The graph URI that will be used for an RDF document when pushing the data to a SPARQL endpoint can
+be defined by adding a `http://www.opengis.net/ogc-na#targetGraph` predicate anywhere
+inside it, for example:
+
+```
+[] <http://www.opengis.net/ogc-na#targetGraph> <https://example.com/target-graph> .
+```
 """
 
 from __future__ import annotations
@@ -26,7 +36,7 @@ from pathlib import Path
 from typing import Union, Generator
 
 import requests
-from rdflib import Graph, RDF, SKOS
+from rdflib import Graph, RDF, SKOS, URIRef
 
 from ogc.na import util
 from ogc.na.domain_config import DomainConfiguration, DomainConfigurationEntry
@@ -108,12 +118,21 @@ def get_graph_uri_for_vocab(g: Graph = None) -> Generator[str, None, None]:
     """
     Find a target graph URI in a vocabulary [Graph][rdflib.Graph].
 
-    In effect, this function merely looks for
+    This function looks for any object of the http://www.opengis.net/ogc-na#targetGraph
+    predicate, and in its absence for a
     [SKOS ConceptScheme's](https://www.w3.org/TR/2008/WD-skos-reference-20080829/skos.html#ConceptScheme).
+
+    The following can be included in a Turtle document to specify its graph:
+
+    ```
+    [] <http://www.opengis.net/ogc-na#targetGraph> <https://example.com/target/graph> .
+    ```
 
     :param g: the [Graph][rdflib.Graph] for which to find the target URI
     :return: a [Node][rdflib.term.Node] generator
     """
+    for o in g.objects(predicate=URIRef('http://www.opengis.net/ogc-na#targetGraph')):
+        yield str(o)
     for s in g.subjects(predicate=RDF.type, object=SKOS.ConceptScheme):
         yield str(s)
 

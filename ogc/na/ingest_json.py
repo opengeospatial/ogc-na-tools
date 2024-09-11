@@ -869,8 +869,9 @@ def _process_cmdln():
 
     parser.add_argument(
         '--transform-arg',
+        metavar='ARG=VALUE',
         nargs='*',
-        help='Additional argument to pass to the jq transforms in the form variable=value'
+        help='Additional argument to pass to the jq transforms in the form argument=value'
     )
 
     parser.add_argument(
