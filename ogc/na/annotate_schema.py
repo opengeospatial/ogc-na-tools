@@ -132,6 +132,7 @@ import jsonpointer
 import jsonschema
 import requests_cache
 
+from ogc.na.exceptions import ContextLoadError, SchemaLoadError
 from ogc.na.util import is_url, load_yaml, LRUCache, dump_yaml, \
     merge_contexts, merge_dicts, dict_contains, JSON_LD_KEYWORDS
 
@@ -200,8 +201,11 @@ class SchemaResolver:
         """
         contents = self._schema_cache.get(s)
         if contents is None:
-            contents = read_contents(s)[0]
-            self._schema_cache[s] = contents
+            try:
+                contents = read_contents(s)[0]
+                self._schema_cache[s] = contents
+            except Exception as e:
+                raise SchemaLoadError(f'Error loading schema from schema source "{s}"') from e
         return load_json_yaml(contents)
 
     def resolve_ref(self, ref: str | Path, from_schema: ReferencedSchema | None = None) -> tuple[Path | str, str]:
@@ -257,7 +261,10 @@ class SchemaResolver:
             if force_contents:
                 is_json = False
                 if isinstance(force_contents, str):
-                    contents = load_yaml(content=force_contents)
+                    try:
+                        contents = load_yaml(content=force_contents)
+                    except Exception as e:
+                        raise SchemaLoadError('Error loading schema from string contents') from e
                 else:
                     contents = force_contents
             else:
@@ -394,13 +401,20 @@ def resolve_context(ctx: Path | str | dict | list, expand_uris=True) -> Resolved
     def resolve_inner(inner_ctx, ctx_stack=None) -> ResolvedContext | None:
         resolved = None
         if isinstance(inner_ctx, Path) or (isinstance(inner_ctx, str) and not is_url(inner_ctx)):
-            resolved = resolve_context(load_yaml(filename=ctx).get('@context'))
+            try:
+                resolved = resolve_context(load_yaml(filename=ctx).get('@context'))
+            except Exception as e:
+                raise ContextLoadError(f'Error resolving context document in file "{ctx}"') from e
         elif isinstance(inner_ctx, str):
-            r = requests_session.get(ctx)
-            r.raise_for_status()
-            fetched = r.json().get('@context')
-            if fetched:
-                resolved = resolve_context(fetched)
+            try:
+                r = requests_session.get(ctx)
+                r.raise_for_status()
+                fetched = r.json().get('@context')
+                if fetched:
+                    resolved = resolve_context(fetched)
+            except Exception as e:
+                raise ContextLoadError(f'Error resolving context document at URL "{ctx}"') from e
+
         elif isinstance(inner_ctx, Sequence):
             resolved_ctx = {}
             inner_prefixes = {}
