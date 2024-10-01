@@ -754,7 +754,7 @@ class ContextBuilder:
                 if isinstance(prop_context.get('@id'), str):
                     self.visited_properties[full_property_path_str] = prop_context['@id']
                     self._missed_properties[full_property_path_str] = False
-                    if prop_context['@id'] == '@nest':
+                    if prop_context['@id'] in ('@nest', '@graph'):
                         merge_contexts(onto_context, process_subschema(prop_val, from_schema, full_property_path))
                     else:
                         merge_contexts(prop_context['@context'],
