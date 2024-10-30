@@ -79,7 +79,8 @@ def setup_logging(debug: bool = False):
 
 
 def load_vocab(vocab: Union[Graph, str, Path], graph_uri: str,
-               graph_store: str, auth_details: tuple[str] = None) -> None:
+               graph_store: str, auth_details: tuple[str] = None,
+               append = False) -> None:
     """
     Loads a vocabulary onto a triplestore using the [SPARQL Graph Store
     protocol](https://www.w3.org/TR/sparql11-http-rdf-update/).
@@ -88,6 +89,7 @@ def load_vocab(vocab: Union[Graph, str, Path], graph_uri: str,
     :param graph_uri: a target graph URI
     :param graph_store: the target SPARQL Graph Store protocol URL
     :param auth_details: a `(username, password)` tuple for authentication
+    :param append: whether to append the data to the graph (otherwise the graph data will be replaced)
     :return:
     """
     # PUT is equivalent to DROP GRAPH + INSERT DATA
@@ -99,8 +101,9 @@ def load_vocab(vocab: Union[Graph, str, Path], graph_uri: str,
         with open(vocab, 'rb') as f:
             content = f.read()
 
-    r = requests.put(
-        graph_store,
+    r = requests.request(
+        method='POST' if append else 'PUT',
+        url=graph_store,
         params={
             'graph': graph_uri,
         },
@@ -436,6 +439,7 @@ def _main():
     report = {}
     activity_id = str(uuid.uuid4())
     cmdline = 'python ogc.na.update_vocabs ' + " ".join(sys.argv[1:])
+    uploaded_graphs = set()
     for collection in (modified, added):
         report_cat = 'modified' if collection == modified else 'added'
         for doc, cfg in collection.items():
@@ -498,15 +502,21 @@ def _main():
                     # path components relative to the working directory
                     urnpart = ':'.join(p for p in docrelpath.parts if p and p != '..')
                     graphname = "x-urn:{}".format(urnpart)
+                append_data = graphname in uploaded_graphs
                 logger.info("Using graph name %s for %s", graphname, str(doc))
 
                 versioned_gname = graphname
                 for n, (path, loadable) in enumerate(loadables.items()):
                     try:
                         load_vocab(loadable, versioned_gname,
-                                   args.graph_store, authdetails)
-                        logging.info("Uploaded %s for %s to SPARQL graph store",
-                                     str(path), str(doc))
+                                   args.graph_store, authdetails, append=append_data)
+                        if append_data:
+                            logging.info("Uploaded %s for %s to SPARQL graph store (with append)",
+                                         str(path), str(doc))
+                        else:
+                            logging.info("Uploaded %s for %s to SPARQL graph store (with replace)",
+                                         str(path), str(doc))
+                        uploaded_graphs.add(versioned_gname)
                     except Exception as e:
                         logging.error("Failed to upload %s for %s: %s",
                                       str(path), str(doc), str(e))
