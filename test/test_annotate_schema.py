@@ -1,8 +1,9 @@
+import json
 import unittest
 from pathlib import Path
 
 from ogc.na import annotate_schema
-from ogc.na.annotate_schema import SchemaAnnotator, ContextBuilder
+from ogc.na.annotate_schema import SchemaAnnotator, ContextBuilder, ReferencedSchema, SchemaResolver
 
 THIS_DIR = Path(__file__).parent
 DATA_DIR = THIS_DIR / 'data'
@@ -109,3 +110,14 @@ class AnnotateSchemaTest(unittest.TestCase):
 
         self.assertEqual(deep_get(builder.context, '@context', '@vocab'), vocab)
         self.assertEqual(deep_get(builder.context, '@context', '@base'), base)
+
+    def test_schema_anchors(self):
+        with open(DATA_DIR / 'schema-anchors.json') as f:
+            schema = json.load(f)
+        anchors = SchemaResolver._find_anchors(schema)
+        self.assertSetEqual({'name', 'age', 'innerProp'}, set(anchors.keys()))
+
+        self.assertEqual(SchemaResolver._get_branch(schema, '#/$defs/name'), anchors.get('name'))
+        self.assertEqual(SchemaResolver._get_branch(schema, '#/$defs/age'), anchors.get('age'))
+        self.assertEqual(SchemaResolver._get_branch(schema, '#/$defs/deep/properties/inner'),
+                         anchors.get('innerProp'))

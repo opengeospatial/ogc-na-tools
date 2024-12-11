@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "name": { "$ref": "https://example.com/person/name#name" },
+    "age": { "$ref": "https://example.com/person/age#age" }
+  },
+  "required": [ "name", "age" ],
+  "$defs": {
+    "name": {
+      "$id": "https://example.com/person/name",
+      "$anchor": "name",
+      "type": "string"
+    },
+    "age": {
+      "$id": "https://example.com/person/age",
+      "$anchor": "age",
+      "type": "integer"
+    },
+    "deep": {
+      "type": "object",
+      "properties": {
+        "inner": {
+          "$anchor": "innerProp",
+          "type": "string"
+        }
+      }
+    }
+  }
+}

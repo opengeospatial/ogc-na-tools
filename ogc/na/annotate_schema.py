@@ -123,6 +123,7 @@ import json
 import logging
 import re
 import sys
+from collections import deque
 from operator import attrgetter
 from pathlib import Path
 from typing import Any, AnyStr, Callable, Sequence, Iterable
@@ -177,6 +178,7 @@ class ReferencedSchema:
     chain: list = dataclasses.field(default_factory=list)
     ref: str | Path = None
     is_json: bool = False
+    anchors: dict[str, Any] = dataclasses.field(default_factory=dict)
 
 
 @dataclasses.dataclass
@@ -192,8 +194,27 @@ class SchemaResolver:
         self._schema_cache: dict[str | Path, Any] = {}
 
     @staticmethod
-    def _get_branch(schema: dict, ref: str):
-        return jsonpointer.resolve_pointer(schema, re.sub('^#', '', ref))
+    def _get_branch(schema: dict, ref: str, anchors: dict[str, Any] = None):
+        ref = re.sub('^#', '', ref)
+        if anchors and ref in anchors:
+            return anchors[ref]
+        return jsonpointer.resolve_pointer(schema, ref)
+
+    @staticmethod
+    def _find_anchors(schema: dict) -> dict[str, Any]:
+        anchors = {}
+
+        pending = deque((schema,))
+        while pending:
+            current = pending.popleft()
+            if isinstance(current, dict):
+                if '$anchor' in current:
+                    anchors[current['$anchor']] = current
+                pending.extend(current.values())
+            elif isinstance(current, list):
+                pending.extend(current)
+
+        return anchors
 
     def load_contents(self, s: str | Path) -> tuple[dict, bool]:
         """
@@ -252,11 +273,13 @@ class SchemaResolver:
                     raise ValueError('Local ref provided without an anchor: ' + ref)
                 return ReferencedSchema(location=from_schema.location,
                                         fragment=ref[1:],
-                                        subschema=SchemaResolver._get_branch(from_schema.full_contents, ref),
+                                        subschema=SchemaResolver._get_branch(from_schema.full_contents, ref,
+                                                                             from_schema.anchors),
                                         full_contents=from_schema.full_contents,
                                         chain=chain,
                                         ref=ref,
-                                        is_json=from_schema.is_json)
+                                        is_json=from_schema.is_json,
+                                        anchors=from_schema.anchors)
 
             if force_contents:
                 is_json = False
@@ -269,20 +292,23 @@ class SchemaResolver:
                     contents = force_contents
             else:
                 contents, is_json = self.load_contents(schema_source)
+            anchors = SchemaResolver._find_anchors(contents)
             if fragment:
                 return ReferencedSchema(location=schema_source, fragment=fragment,
-                                        subschema=SchemaResolver._get_branch(contents, fragment),
+                                        subschema=SchemaResolver._get_branch(contents, fragment, anchors),
                                         full_contents=contents,
                                         chain=chain,
                                         ref=ref,
-                                        is_json=is_json)
+                                        is_json=is_json,
+                                        anchors=anchors)
             else:
                 return ReferencedSchema(location=schema_source,
                                         subschema=contents,
                                         full_contents=contents,
                                         chain=chain,
                                         ref=ref,
-                                        is_json=is_json)
+                                        is_json=is_json,
+                                        anchors=anchors)
         except Exception as e:
             f = f" from {from_schema.location}" if from_schema else ''
             raise IOError(f"Error resolving reference {ref}{f}") from e
