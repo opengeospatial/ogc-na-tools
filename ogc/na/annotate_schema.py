@@ -548,7 +548,7 @@ class SchemaAnnotator:
                         if vocab and ':' not in prop_ctx and prop_ctx not in JSON_LD_KEYWORDS:
                             prop_ctx = f"{vocab}{prop_ctx}"
                         return {'@id': prop_ctx}
-                    elif '@id' not in prop_ctx and not vocab:
+                    elif '@id' not in prop_ctx and '@reverse' not in prop_ctx and not vocab:
                         raise ValueError(f'Missing @id for property {prop} in context {json.dumps(ctx, indent=2)}')
                     else:
                         result = {k: v for k, v in prop_ctx.items() if k in JSON_LD_KEYWORDS}
@@ -777,10 +777,11 @@ class ContextBuilder:
                             self._missed_properties[full_property_path_str] = False
                         prop_context['@' + term[len(ANNOTATION_PREFIX):]] = term_val
 
-                if isinstance(prop_context.get('@id'), str):
-                    self.visited_properties[full_property_path_str] = prop_context['@id']
+                if isinstance(prop_context.get('@id'), str) or isinstance(prop_context.get('@reverse'), str):
+                    prop_id_value = prop_context.get('@id', prop_context.get('@reverse'))
+                    self.visited_properties[full_property_path_str] = prop_id_value
                     self._missed_properties[full_property_path_str] = False
-                    if prop_context['@id'] in ('@nest', '@graph'):
+                    if prop_id_value in ('@nest', '@graph'):
                         merge_contexts(onto_context, process_subschema(prop_val, from_schema, full_property_path))
                     else:
                         merge_contexts(prop_context['@context'],
