@@ -40,6 +40,7 @@ from rdflib import Graph, RDF, SKOS, URIRef
 
 from ogc.na import util
 from ogc.na.domain_config import DomainConfiguration, DomainConfigurationEntry
+from ogc.na.profile import ProfileRegistry
 from ogc.na.provenance import generate_provenance, ProvenanceMetadata, FileProvenanceMetadata
 
 logger = logging.getLogger('ogc.na.update_vocabs')
@@ -245,6 +246,7 @@ def _main():
 
     parser.add_argument(
         "domain_cfg",
+        nargs="?",
         metavar="domain-cfg",
         help=("Domain configuration (can be a local or remote RDF file, "
               "or a SPARQL endpoint in the form 'sparql:http://example.org/sparql')"),
@@ -362,6 +364,17 @@ def _main():
         help='Ignore errors when retrieving profile artifacts'
     )
 
+    parser.add_argument(
+        '--graph-uri',
+        help='Override graph URI that will be used for all resources',
+    )
+
+    parser.add_argument(
+        '--profile-uris',
+        nargs='*',
+        help='Override profile URIs that will be used for all resources',
+    )
+
     args = parser.parse_args()
 
     setup_logging(args.debug)
@@ -410,29 +423,52 @@ def _main():
                 raise Exception(f"Invalid local artifact mapping: {mappingstr}")
             local_artifacts_mappings[mapping[0]] = mapping[1]
 
-    domain_cfg = DomainConfiguration(args.domain_cfg, working_directory=args.working_directory,
-                                     profile_sources=args.profile_source,
-                                     ignore_artifact_errors=args.ignore_artifact_errors,
-                                     local_artifacts_mappings=local_artifacts_mappings)
-    cfg_entries = domain_cfg.entries
-    if not len(cfg_entries):
-        if args.domain:
-            logger.warning('No configuration found in %s for domain %s, exiting',
-                           args.domain_cfg, args.domain)
+    if not args.domain_cfg and not (args.profile_source and args.profile_uris):
+        logger.error('Either a domain configuration or a profile source and a set of '
+                     'profile URIs need to be provided')
+        sys.exit(2)
+
+    modified: dict[Path, DomainConfigurationEntry | None]
+    added: dict[Path, DomainConfigurationEntry | None]
+
+    if args.domain_cfg:
+        domain_cfg = DomainConfiguration(args.domain_cfg, working_directory=args.working_directory,
+                                         profile_sources=args.profile_source,
+                                         ignore_artifact_errors=args.ignore_artifact_errors,
+                                         local_artifacts_mappings=local_artifacts_mappings)
+        cfg_entries = domain_cfg.entries
+        if not len(cfg_entries):
+            if args.domain:
+                logger.warning('No configuration found in %s for domain %s, exiting',
+                               args.domain_cfg, args.domain)
+            else:
+                logger.warning('No configuration found in %s exiting', args.domain_cfg)
+            sys.exit(1)
+
+        profile_registry = domain_cfg.profile_registry
+
+        if args.batch:
+            modified = cfg_entries.find_all()
+            added = {}
         else:
-            logger.warning('No configuration found in %s exiting', args.domain_cfg)
-        sys.exit(1)
+            modified = cfg_entries.find_entries_for_files(mod_list)
+            added = cfg_entries.find_entries_for_files(add_list)
 
-    profile_registry = domain_cfg.profile_registry
+        root_directory = domain_cfg.working_directory
 
-    modified: dict[Path, DomainConfigurationEntry]
-    added: dict[Path, DomainConfigurationEntry]
-    if args.batch:
-        modified = cfg_entries.find_all()
-        added = {}
+    elif args.batch:
+        logger.error('--batch requires a domain configuration')
+        sys.exit(3)
     else:
-        modified = cfg_entries.find_entries_for_files(mod_list)
-        added = cfg_entries.find_entries_for_files(add_list)
+        logger.info('Loading profile sources and URIs from script parameters')
+        profile_registry = ProfileRegistry(args.profile_source,
+                                           ignore_artifact_errors=args.ignore_artifact_errors,
+                                           local_artifact_mappings=args.local_artifact_mappings)
+
+        modified = {Path(x): None for x in mod_list}
+        added = {Path(x): None for x in add_list}
+
+        root_directory = Path(args.working_directory or os.getcwd())
 
     output_path = Path(args.output_directory) if args.output_directory else None
 
@@ -448,21 +484,28 @@ def _main():
             if args.no_provenance:
                 provenance_metadata = None
             else:
+                used = [FileProvenanceMetadata(filename=doc)]
+                if args.domain_cfg:
+                    used.append(FileProvenanceMetadata(filename=args.domain_cfg))
                 provenance_metadata = ProvenanceMetadata(
-                    used=[FileProvenanceMetadata(filename=doc),
-                          FileProvenanceMetadata(filename=args.domain_cfg)],
+                    used=used,
                     start=datetime.now(),
                     end_auto=True,
-                    root_directory=domain_cfg.working_directory,
+                    root_directory=root_directory,
                     batch_activity_id=activity_id,
                     activity_label='Entailment and validation',
                     comment=cmdline,
                     base_uri=args.base_uri,
                 )
 
+            if cfg:
+                conforms_to = cfg.conforms_to
+            else:
+                conforms_to = args.profile_uris
+
             origg = Graph().parse(doc)
-            newg, entail_artifacts = profile_registry.entail(origg, cfg.conforms_to)
-            validation_result = profile_registry.validate(newg, cfg.conforms_to, log_artifact_errors=True)
+            newg, entail_artifacts = profile_registry.entail(origg, conforms_to)
+            validation_result = profile_registry.validate(newg, conforms_to, log_artifact_errors=True)
 
             if provenance_metadata:
                 def add_artifact(a: Union[str, Path]):
@@ -482,7 +525,7 @@ def _main():
             else:
                 entailment_dir = DEFAULT_ENTAILED_DIR
 
-            loadable_path = make_rdf(doc, newg, cfg.uri_root_filter,
+            loadable_path = make_rdf(doc, newg, cfg.uri_root_filter if cfg else None,
                                      entailment_dir, provenance_metadata)
             with open(loadable_path.with_suffix('.txt'), 'w') as validation_file:
                 validation_file.write(validation_result.text)
@@ -495,13 +538,20 @@ def _main():
                     if p != loadable_path:
                         loadables[p] = g
 
-                graphname = next(get_graph_uri_for_vocab(newg), None)
+                if args.graph_uri:
+                    graphname = args.graph_uri
+                else:
+                    graphname = next(get_graph_uri_for_vocab(newg), None)
+
                 if not graphname:
                     logger.warning("No graph name could be deduced from the vocabulary")
                     # Create graph name from a colon-separated list of
                     # path components relative to the working directory
-                    urnpart = ':'.join(p for p in docrelpath.parts if p and p != '..')
-                    graphname = "x-urn:{}".format(urnpart)
+                    urnparts = ['x-urn', 'ogc', 'na']
+                    if cfg and cfg.identifier:
+                        urnparts.append(str(cfg.identifier))
+                    urnparts.extend(p for p in docrelpath.parts if p and p != '..')
+                    graphname = ':'.join(urnparts)
                 append_data = graphname in uploaded_graphs
                 logger.info("Using graph name %s for %s", graphname, str(doc))
 
@@ -523,7 +573,7 @@ def _main():
                         raise e
                     versioned_gname = f'{graphname}{n + 1}'
 
-            report.setdefault(cfg.identifier, {}) \
+            report.setdefault(cfg.identifier if cfg else args.graph_uri, {}) \
                 .setdefault(report_cat, []).append(os.path.relpath(doc))
 
     for scope, scopereport in report.items():
