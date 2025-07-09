@@ -10,6 +10,8 @@ authors = [
     { name="Alejandro Villar", email="avillar@ogc.org" },
 ]
 description = "OGC Naming Authority tools"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 readme = "README.md"
 requires-python = ">=3.7"
 dynamic = ["dependencies", "version"]
