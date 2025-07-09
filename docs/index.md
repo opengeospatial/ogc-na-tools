@@ -20,3 +20,7 @@ The following tools are currently available:
 * `ingest_json`: Performs JSON-to-JSON-LD semantic uplifts [(read more)](https://opengeospatial.github.io/ogc-na-tools/reference/ogc/na/ingest_json/) 
 * `update_vocabs`: Allows defining RDF entailment + validation + upload pipelines [(read more)](https://opengeospatial.github.io/ogc-na-tools/reference/ogc/na/update_vocabs/)
 * `annotate_schema`: Annotates JSON schemas by leveraging `@modelReference` links to JSON-LD contexts [(read more)](https://opengeospatial.github.io/ogc-na-tools/reference/ogc/na/annotate_schema/)
+
+## License
+
+This module is provided under the [Apache-2.0 license](https://www.apache.org/licenses/LICENSE-2.0).
