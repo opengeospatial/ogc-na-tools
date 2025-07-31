@@ -45,7 +45,7 @@ from typing import Union, Optional, Sequence, cast, Iterable, Any
 import jq
 from jsonpath_ng.ext import parse as json_path_parse
 from jsonschema import validate as json_validate
-from rdflib import Graph, DC, DCTERMS, SKOS, OWL, RDF, RDFS, XSD, DCAT
+from rdflib import Graph, DC, DCTERMS, SKOS, OWL, RDF, RDFS, XSD, DCAT, URIRef
 from rdflib.namespace import Namespace, DefinedNamespace
 
 from ogc.na import util, profile
@@ -418,7 +418,8 @@ def process_file(input_fn: str | Path,
                  provenance_base_uri: str | bool | None = None,
                  provenance_process_id: str | None = None,
                  fetch_url_whitelist: bool | Sequence[str] | None = None,
-                 transform_args: dict | None = None) -> UpliftResult | None:
+                 transform_args: dict | None = None,
+                 generated_provenance_classes: bool | list[str | URIRef] = False) -> UpliftResult | None:
     """
     Process input file and generate output RDF files.
 
@@ -439,6 +440,8 @@ def process_file(input_fn: str | Path,
         retrieving them. If None, it will not be used; if empty sequence or False, remote fetching operations will
         throw an exception
     :param transform_args: Additional arguments to pass as variables to the jq transform
+    :param generated_provenance_classes: List of classes whose instances will be included in the "generated"
+        provenance metadata. If `True`, all subjects in the output graph will be added.
     :return: List of output files created
     """
 
@@ -489,16 +492,16 @@ def process_file(input_fn: str | Path,
 
     provenance_metadata: ProvenanceMetadata | None = None
     if provenance_base_uri is not False:
-        used = [FileProvenanceMetadata(filename=input_fn, mime_type='application/json')]
-        used.extend(FileProvenanceMetadata(filename=c, mime_type='application/yaml') for c in provenance_contexts)
         provenance_metadata = ProvenanceMetadata(
-            used=used,
             batch_activity_id=provenance_process_id,
             base_uri=provenance_base_uri,
             root_directory=os.getcwd(),
             start=start_time,
             end_auto=True,
         )
+        provenance_metadata.add_used(FileProvenanceMetadata(filename=input_fn, mime_type='application/json'))
+        provenance_metadata.add_used(FileProvenanceMetadata(filename=c, mime_type='application/yaml')
+                                     for c in provenance_contexts)
 
     if transform_args is None:
         transform_args = {}
@@ -518,13 +521,29 @@ def process_file(input_fn: str | Path,
 
     uplift_result.input_file = input_fn
 
+    if provenance_metadata and generated_provenance_classes:
+        if generated_provenance_classes is True:
+            # add all subjects to "generated"
+            provenance_metadata.add_generated(
+                FileProvenanceMetadata(uri=str(s), use_bnode=False)
+                for s in uplift_result.graph.subjects()
+                if isinstance(s, URIRef)
+            )
+        elif generated_provenance_classes:
+            provenance_metadata.add_generated(
+                FileProvenanceMetadata(uri=str(s), use_bnode=False)
+                for cls in generated_provenance_classes
+                for s in uplift_result.graph.subjects(predicate=RDF.type, object=URIRef(cls))
+                if isinstance(s, URIRef)
+            )
+
     # False = do not generate
     # None = auto filename
     # - = stdout
     if ttl_fn is not False:
         if ttl_fn == '-':
             if provenance_metadata:
-                provenance_metadata.output = FileProvenanceMetadata(mime_type='text/turtle', use_bnode=False)
+                provenance_metadata.add_generated(FileProvenanceMetadata(mime_type='text/turtle', use_bnode=False))
                 generate_provenance(uplift_result.graph, provenance_metadata)
             print(uplift_result.graph.serialize(format='ttl'))
         else:
@@ -533,9 +552,9 @@ def process_file(input_fn: str | Path,
                     if input_fn.suffix != '.ttl' \
                     else input_fn.with_suffix(input_fn.suffix + '.ttl')
             if provenance_metadata:
-                provenance_metadata.output = FileProvenanceMetadata(filename=ttl_fn,
+                provenance_metadata.add_generated(FileProvenanceMetadata(filename=ttl_fn,
                                                                     mime_type='text/turtle',
-                                                                    use_bnode=False)
+                                                                    use_bnode=False))
                 generate_provenance(uplift_result.graph, provenance_metadata)
             uplift_result.graph.serialize(destination=ttl_fn, format='ttl')
             uplift_result.output_files.append(ttl_fn)
@@ -656,7 +675,8 @@ def process(input_files: str | Path | Sequence[str | Path],
             provenance_base_uri: Optional[Union[str, bool]] = None,
             fetch_url_whitelist: Optional[Union[Sequence, bool]] = None,
             transform_args: dict | None = None,
-            file_filter: str | re.Pattern = None) -> list[UpliftResult]:
+            file_filter: str | re.Pattern = None,
+            generated_provenance_classes: bool | list[str | URIRef] = False) -> list[UpliftResult]:
     """
     Performs the JSON-LD uplift process.
 
@@ -678,6 +698,8 @@ def process(input_files: str | Path | Sequence[str | Path],
         throw an exception
     :param transform_args: Additional arguments to pass as variables to the jq transform
     :param file_filter: Filename filter for input files
+    :param generated_provenance_classes: List of classes whose instances will be included in the "generated"
+        provenance metadata. If `True`, all subjects in the output graph will be added.
     :return: a list of JSON-LD and/or Turtle output files
     """
     result: list[UpliftResult] = []
@@ -729,6 +751,7 @@ def process(input_files: str | Path | Sequence[str | Path],
                     fetch_url_whitelist=fetch_url_whitelist,
                     domain_cfg=domain_cfg,
                     transform_args=transform_args,
+                    generated_provenance_classes=generated_provenance_classes,
                 ))
             except MissingContextException as e:
                 if skip_on_missing_context or batch:
@@ -751,6 +774,7 @@ def process(input_files: str | Path | Sequence[str | Path],
                     fetch_url_whitelist=fetch_url_whitelist,
                     domain_cfg=domain_cfg,
                     transform_args=transform_args,
+                    generated_provenance_classes=generated_provenance_classes,
                 ))
             except Exception as e:
                 if skip_on_missing_context:
@@ -879,6 +903,18 @@ def _process_cmdln():
         help='Regular expression to filter input filenames',
     )
 
+    parser.add_argument(
+        '--generated-provenance-classes',
+        nargs='*',
+        help='Classes whose subjects will be included in the "generated" provenance metadata',
+    )
+
+    parser.add_argument(
+        '--all-subjects-provenance',
+        action='store_true',
+        help='Add all subjects in the resulting graph to the "generated" provenance metadata',
+    )
+
     args = parser.parse_args()
 
     if args.domain_config:
@@ -904,6 +940,12 @@ def _process_cmdln():
     if args.transform_arg:
         transform_args = dict((e.split('=', 1) for e in args.transform_arg))
 
+    generated_provenance_classes = False
+    if args.all_subjects_provenance:
+        generated_provenance_classes = True
+    elif args.generated_provenance_classes:
+        generated_provenance_classes = args.generated_provenance_classes
+
     result = process(input_files,
                      context_fn=args.context,
                      domain_cfg=domain_cfg,
@@ -915,6 +957,7 @@ def _process_cmdln():
                      fetch_url_whitelist=args.url_whitelist,
                      transform_args=transform_args,
                      file_filter=args.file_filter,
+                     generated_provenance_classes=generated_provenance_classes,
              )
 
     if args.fs:
