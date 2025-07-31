@@ -133,7 +133,7 @@ def generate_provenance(g: Graph = None,
             g.add((activity, PROV.used, used))
 
     if metadata.generated:
-        for generated in metadata.used if isinstance(metadata.generated, Sequence) else (metadata.generated,):
+        for generated in metadata.generated if isinstance(metadata.generated, Sequence) else (metadata.generated,):
             generated = add_provenance_entity(g, metadata=generated,
                                               root_directory=metadata.root_directory,
                                               base_uri=metadata.base_uri)
