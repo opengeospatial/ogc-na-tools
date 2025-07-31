@@ -4,7 +4,7 @@ import mimetypes
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Union, Optional, Sequence
+from typing import Union, Optional, Sequence, Iterable
 
 from rdflib.term import Node
 
@@ -39,6 +39,22 @@ class ProvenanceMetadata:
     batch_activity_id: str = None
     activity_label: str = None
     comment: str = None
+
+    def _add_list(self, attr: str, item: FileProvenanceMetadata | Iterable[FileProvenanceMetadata]):
+        items = [item] if isinstance(item, FileProvenanceMetadata) else [*item]
+        cur: FileProvenanceMetadata | list[FileProvenanceMetadata] | None = getattr(self, attr, None)
+        if not cur:
+            setattr(self, attr, items)
+        elif isinstance(cur, FileProvenanceMetadata):
+            setattr(self, attr, [self.used, *items])
+        else:
+            setattr(self, attr, cur + items)
+
+    def add_used(self, used: FileProvenanceMetadata | Iterable[FileProvenanceMetadata]) -> None:
+        self._add_list('used', used)
+
+    def add_generated(self, generated: FileProvenanceMetadata | Iterable[FileProvenanceMetadata]) -> None:
+        self._add_list('generated', generated)
 
 
 def add_provenance_agent(g: Graph, module_name: str = None) -> Node:
