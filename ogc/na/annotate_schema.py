@@ -237,7 +237,7 @@ class SchemaResolver:
             fragment = s[1] if len(s) > 1 else None
             location = s[0]
             if not location:
-                return location, fragment
+                return from_schema.location if from_schema else location, fragment
             if not is_url(location):
                 location = Path(location)
 
