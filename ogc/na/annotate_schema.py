@@ -609,7 +609,8 @@ class SchemaAnnotator:
 
             return used_terms
 
-        def process_subschema(subschema, context_stack, from_schema: ReferencedSchema, level=1) -> Iterable[str]:
+        def process_subschema(subschema, context_stack, from_schema: ReferencedSchema, level=1,
+                              in_defs=False) -> Iterable[str]:
             if not subschema or not isinstance(subschema, dict):
                 return ()
 
@@ -620,7 +621,8 @@ class SchemaAnnotator:
                 defs = subschema.get(p)
                 if defs and isinstance(defs, dict):
                     for entry in defs.values():
-                        used_terms.update(process_subschema(entry, context_stack, from_schema, level + 1))
+                        # Do not add to used_terms if only used in $defs
+                        process_subschema(entry, context_stack, from_schema, level + 1, in_defs=True)
 
             if '$ref' in subschema and id(subschema) not in updated_refs:
                 if self._ref_mapper:
@@ -628,8 +630,10 @@ class SchemaAnnotator:
                 if subschema['$ref'].startswith('#/') or subschema['$ref'].startswith(f"{from_schema.location}#/"):
                     target_schema = self.schema_resolver.resolve_schema(subschema['$ref'], from_schema)
                     if target_schema:
-                        used_terms.update(process_subschema(target_schema.subschema, context_stack,
-                                                            target_schema, level + 1))
+                        new_terms = process_subschema(target_schema.subschema, context_stack,
+                                                            target_schema, level + 1, in_defs=in_defs)
+                        if not in_defs:
+                            used_terms.update(new_terms)
                 updated_refs.add(id(subschema))
 
             # Annotate oneOf, allOf, anyOf
@@ -637,16 +641,22 @@ class SchemaAnnotator:
                 collection = subschema.get(p)
                 if collection and isinstance(collection, list):
                     for entry in collection:
-                        used_terms.update(process_subschema(entry, context_stack, from_schema, level + 1))
+                        new_terms = process_subschema(entry, context_stack, from_schema, level + 1, in_defs=in_defs)
+                        if not in_defs:
+                            used_terms.update(new_terms)
 
             for p in ('then', 'else', 'additionalProperties'):
                 branch = subschema.get(p)
                 if branch and isinstance(branch, dict):
-                    used_terms.update(process_subschema(branch, context_stack, from_schema, level))
+                    new_terms = process_subschema(branch, context_stack, from_schema, level, in_defs=in_defs)
+                    if not in_defs:
+                        used_terms.update(new_terms)
 
             for pp in subschema.get('patternProperties', {}).values():
                 if pp and isinstance(pp, dict):
-                    used_terms.update(process_subschema(pp, context_stack, from_schema, level + 1))
+                    new_terms = process_subschema(pp, context_stack, from_schema, level + 1, in_defs=in_defs)
+                    if not in_defs:
+                        used_terms.update(new_terms)
 
             # Annotate main schema
             schema_type = subschema.get('type')
@@ -657,7 +667,10 @@ class SchemaAnnotator:
                 used_terms.update(process_properties(subschema, context_stack, from_schema, level + 1))
             elif schema_type == 'array':
                 for k in ('prefixItems', 'items', 'contains'):
-                    used_terms.update(process_subschema(subschema.get(k), context_stack, from_schema, level + 1))
+                    new_terms = process_subschema(subschema.get(k), context_stack, from_schema, level + 1,
+                                                  in_defs=in_defs)
+                    if not in_defs:
+                        used_terms.update(new_terms)
 
             # Get prefixes
             for p, bu in subschema.get(ANNOTATION_PREFIXES, {}).items():

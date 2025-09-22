@@ -4,6 +4,7 @@ from pathlib import Path
 
 from ogc.na import annotate_schema
 from ogc.na.annotate_schema import SchemaAnnotator, ContextBuilder, ReferencedSchema, SchemaResolver
+from ogc.na.util import load_yaml
 
 THIS_DIR = Path(__file__).parent
 DATA_DIR = THIS_DIR / 'data'
@@ -65,12 +66,12 @@ class AnnotateSchemaTest(unittest.TestCase):
     def test_annotate_provided_context(self):
         annotator = SchemaAnnotator()
         schema = annotator.process_schema(DATA_DIR / 'sample-schema.yml', default_context={
-                                        '@context': {
-                                            'another': 'http://example.net/another/',
-                                            'propA': 'another:a',
-                                            'propC': 'another:c'
-                                        }
-                                    }).schema
+            '@context': {
+                'another': 'http://example.net/another/',
+                'propA': 'another:a',
+                'propC': 'another:c'
+            }
+        }).schema
 
         self.assertEqual(deep_get(schema, 'properties', 'propA', 'x-jsonld-id'), 'http://example.com/props/a')
         self.assertEqual(deep_get(schema, 'properties', 'propC', 'x-jsonld-id'), 'http://example.net/another/c')
@@ -121,3 +122,21 @@ class AnnotateSchemaTest(unittest.TestCase):
         self.assertEqual(SchemaResolver._get_branch(schema, '#/$defs/age'), anchors.get('age'))
         self.assertEqual(SchemaResolver._get_branch(schema, '#/$defs/deep/properties/inner'),
                          anchors.get('innerProp'))
+
+    def test_defs_annotation(self):
+        annotator = SchemaAnnotator()
+        orig_schema = load_yaml(DATA_DIR / 'annotate-defs-schema.yml')
+        schema = annotator.process_schema(DATA_DIR / 'annotate-defs-schema.yml', contents=orig_schema).schema
+        vocab = 'http://example.com/props/'
+        self.assertEqual(deep_get(schema, '$defs', 'objectA', 'properties', 'propA', 'x-jsonld-id'),
+                         vocab + 'a')
+        self.assertEqual(deep_get(schema, '$defs', 'objectB', 'properties', 'propB', 'x-jsonld-id'),
+                         vocab + 'b')
+
+        orig_schema = load_yaml(DATA_DIR / 'annotate-defs-schema.yml')
+        only_defs_schema = {k: v for k, v in orig_schema.items() if k in ('$schema', '$defs', 'x-jsonld-context')}
+        schema = annotator.process_schema(DATA_DIR / 'annotate-defs-schema.yml', contents=only_defs_schema).schema
+        self.assertEqual(deep_get(schema, '$defs', 'objectA', 'properties', 'propA', 'x-jsonld-id'),
+                         vocab + 'a')
+        self.assertEqual(deep_get(schema, '$defs', 'objectB', 'properties', 'propB', 'x-jsonld-id'),
+                         vocab + 'b')
