@@ -824,8 +824,6 @@ class ContextBuilder:
                 if top_level_value:
                     onto_context[f"@{key[len(ANNOTATION_PREFIX):]}"] = top_level_value
 
-            read_properties(subschema, from_schema, onto_context, schema_path)
-
             if '$ref' in subschema:
                 ref = subschema['$ref']
                 ref_path_str = f"{from_schema.location}{ref}"
@@ -859,6 +857,8 @@ class ContextBuilder:
                             extra_term_context = {f"@{k[len(ANNOTATION_PREFIX):]}": v
                                                   for k, v in extra_term_context.items()}
                         onto_context[extra_term] = extra_term_context
+
+            read_properties(subschema, from_schema, onto_context, schema_path)
 
             if from_schema:
                 current_ref = f"{from_schema.location}{from_schema.ref}"
