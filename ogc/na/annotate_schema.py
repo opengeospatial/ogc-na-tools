@@ -559,8 +559,8 @@ class SchemaAnnotator:
                             elif ':' not in prop_id and prop_id not in JSON_LD_KEYWORDS:
                                 result['@id'] = f"{vocab}{prop_id}"
                         return result
-                elif isinstance(vocab, str):
-                    return {'@id': f"{ctx['@vocab']}{prop}"}
+            if vocab != UNDEFINED and isinstance(vocab, str):
+                return {'@id': f"{vocab}{prop}"}
 
         def process_properties(obj: dict, context_stack: list[dict[str, Any]],
                                from_schema: ReferencedSchema, level) -> Iterable[str]:
