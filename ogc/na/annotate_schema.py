@@ -538,29 +538,16 @@ class SchemaAnnotator:
         updated_refs: set[int] = set()
 
         def find_prop_context(prop, context_stack) -> dict | None:
-            vocab = UNDEFINED
             for ctx in reversed(context_stack):
-                if vocab is UNDEFINED and '@vocab' in ctx:
-                    vocab = ctx.get('@vocab')
                 if prop in ctx:
                     prop_ctx = ctx[prop]
                     if isinstance(prop_ctx, str):
-                        if vocab and ':' not in prop_ctx and prop_ctx not in JSON_LD_KEYWORDS:
-                            prop_ctx = f"{vocab}{prop_ctx}"
                         return {'@id': prop_ctx}
-                    elif '@id' not in prop_ctx and '@reverse' not in prop_ctx and not vocab:
+                    elif '@id' not in prop_ctx and '@reverse' not in prop_ctx:
                         raise ValueError(f'Missing @id for property {prop} in context {json.dumps(ctx, indent=2)}')
                     else:
                         result = {k: v for k, v in prop_ctx.items() if k in JSON_LD_KEYWORDS}
-                        if vocab:
-                            prop_id = result.get('@id')
-                            if not prop_id:
-                                result['@id'] = f"{vocab}{prop}"
-                            elif ':' not in prop_id and prop_id not in JSON_LD_KEYWORDS:
-                                result['@id'] = f"{vocab}{prop_id}"
                         return result
-            if vocab != UNDEFINED and isinstance(vocab, str):
-                return {'@id': f"{vocab}{prop}"}
 
         def process_properties(obj: dict, context_stack: list[dict[str, Any]],
                                from_schema: ReferencedSchema, level) -> Iterable[str]:
