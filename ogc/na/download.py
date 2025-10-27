@@ -20,6 +20,7 @@ def download_file(url: str,
                   dest: str | Path,
                   object_diff: bool = True,
                   ignore_diff_errors: bool = True):
+    logger.info('Downloading %s to %s', url, dest)
     if not isinstance(dest, Path):
         dest = Path(dest)
     r = requests.get(url)
@@ -30,12 +31,15 @@ def download_file(url: str,
             newcontent = util.load_yaml(content=r.content)
             oldcontent = util.load_yaml(filename=dest)
             overwrite = newcontent != oldcontent
+            if overwrite:
+                logger.info('Contents have changed, existing file will be overwritten', dest)
         except Exception as e:
             if ignore_diff_errors:
                 logger.warning('Error when loading content for diff: %s', str(e))
             else:
                 raise
     if overwrite:
+        logger.info('Saving %s', dest)
         dest.parent.mkdir(parents=True, exist_ok=True)
         with open(dest, 'wb') as f:
             f.write(r.content)
