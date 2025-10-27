@@ -32,7 +32,7 @@ def download_file(url: str,
             oldcontent = util.load_yaml(filename=dest)
             overwrite = newcontent != oldcontent
             if overwrite:
-                logger.info('Contents have changed, existing file will be overwritten', dest)
+                logger.info('Contents have changed, existing file will be overwritten')
         except Exception as e:
             if ignore_diff_errors:
                 logger.warning('Error when loading content for diff: %s', str(e))
