@@ -198,6 +198,8 @@ class SchemaResolver:
         ref = re.sub('^#', '', ref)
         if anchors and ref in anchors:
             return anchors[ref]
+        if not ref.startswith('/'):
+             raise ValueError(f'Invalid anchor reference: #{ref}')
         return jsonpointer.resolve_pointer(schema, ref)
 
     @staticmethod
@@ -259,11 +261,11 @@ class SchemaResolver:
         return location, fragment
 
     def resolve_schema(self, ref: str | Path, from_schema: ReferencedSchema | None = None,
-                       force_contents: dict | str | None = None) -> ReferencedSchema | None:
+                       force_contents: dict | str | None = None, return_none_on_loop=True) -> ReferencedSchema | None:
         chain = from_schema.chain + [from_schema] if from_schema else []
         try:
             schema_source, fragment = self.resolve_ref(ref, from_schema)
-            if from_schema:
+            if from_schema and return_none_on_loop:
                 for ancestor in from_schema.chain:
                     if (not schema_source or ancestor.location == schema_source) and ancestor.fragment == fragment:
                         return None
@@ -280,7 +282,6 @@ class SchemaResolver:
                                         ref=ref,
                                         is_json=from_schema.is_json,
                                         anchors=from_schema.anchors)
-
             if force_contents:
                 is_json = False
                 if isinstance(force_contents, str):
@@ -290,6 +291,8 @@ class SchemaResolver:
                         raise SchemaLoadError('Error loading schema from string contents') from e
                 else:
                     contents = force_contents
+            elif from_schema and schema_source == from_schema.location:
+                contents, is_json = from_schema.full_contents, from_schema.is_json
             else:
                 contents, is_json = self.load_contents(schema_source)
             anchors = SchemaResolver._find_anchors(contents)
@@ -651,7 +654,9 @@ class SchemaAnnotator:
                 schema_type = 'object'
 
             if schema_type == 'object':
-                used_terms.update(process_properties(subschema, context_stack, from_schema, level + 1))
+                new_terms = process_properties(subschema, context_stack, from_schema, level + 1)
+                if not in_defs:
+                    used_terms.update(new_terms)
             elif schema_type == 'array':
                 for k in ('prefixItems', 'items', 'contains'):
                     new_terms = process_subschema(subschema.get(k), context_stack, from_schema, level + 1,
