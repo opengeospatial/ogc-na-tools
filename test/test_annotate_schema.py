@@ -2,6 +2,8 @@ import json
 import unittest
 from pathlib import Path
 
+from rdflib import Graph, URIRef, Namespace
+
 from ogc.na import annotate_schema
 from ogc.na.annotate_schema import SchemaAnnotator, ContextBuilder, ReferencedSchema, SchemaResolver
 from ogc.na.util import load_yaml
@@ -88,10 +90,23 @@ class AnnotateSchemaTest(unittest.TestCase):
             }
         }).schema
 
-        self.assertEqual(deep_get(schema, 'properties', 'propA', 'x-jsonld-id'), vocab + 'test')
         self.assertEqual(deep_get(schema, 'properties', 'propB', 'x-jsonld-id'), '@id')
         self.assertEqual(deep_get(schema, 'properties', 'propC', 'x-jsonld-id'), 'http://www.another.com/')
-        self.assertEqual(deep_get(schema, 'properties', 'propD', 'x-jsonld-id'), vocab + 'propD')
+
+        builder = ContextBuilder(DATA_DIR / 'schema-vocab.yml', contents=schema)
+        instance = {
+            **builder.context,
+            'propA': 'valueA',
+            'propB': 'https://example.com',
+            'propC': 'valueC',
+            'propD': 'valueD',
+        }
+        g = Graph().parse(data=json.dumps(instance), format='json-ld')
+        resource = URIRef(instance['propB'])
+        vocab = Namespace(vocab)
+        self.assertEqual(str(g.value(resource, vocab.test)), 'valueA')
+        self.assertEqual(str(g.value(resource, URIRef('http://www.another.com/'))), 'valueC')
+        self.assertEqual(str(g.value(resource, vocab.propD)), 'valueD')
 
     def test_top_level_keywords(self):
         annotator = SchemaAnnotator()

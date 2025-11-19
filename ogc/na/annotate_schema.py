@@ -405,11 +405,6 @@ def resolve_context(ctx: Path | str | dict | list, expand_uris=True) -> Resolved
                     prefix_uri = term_val if isinstance(term_val, str) else term_val.get('@id')
                     prefixes[prefix] = prefix_uri
                     return f"{prefix_uri}{localpart}"
-            elif '@vocab' in c and vocab is UNDEFINED:
-                # look for @vocab unless it has been overridden (e.g. set to null) somewhere down the chain
-                vocab = c['@vocab']
-                if isinstance(vocab, str):
-                    return f"{c['@vocab']}{curie}"
 
         return curie
 
