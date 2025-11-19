@@ -190,7 +190,7 @@ class ResolvedContext:
 class SchemaResolver:
 
     def __init__(self, working_directory=Path()):
-        self.working_directory = working_directory.resolve()
+        self.working_directory = working_directory.absolute()
         self._schema_cache: dict[str | Path, Any] = {}
 
     @staticmethod
@@ -245,15 +245,15 @@ class SchemaResolver:
 
         if isinstance(location, Path):
             if location.is_absolute():
-                location = location.resolve()
+                location = location.absolute()
             elif not from_schema:
-                location = self.working_directory.joinpath(location).resolve()
+                location = self.working_directory.joinpath(location).absolute()
             elif from_schema.full_contents.get('$id'):
                 location = urljoin(from_schema.full_contents['$id'], str(location))
             elif not isinstance(from_schema.location, Path):
                 location = urljoin(from_schema.location, str(location))
             else:
-                location = from_schema.location.resolve().parent.joinpath(location).resolve()
+                location = from_schema.location.absolute().parent.joinpath(location).absolute()
 
         if location is None:
             raise ValueError(f'Unexpected ref type {type(ref).__name__}')
@@ -378,7 +378,7 @@ def resolve_ref(ref: str, fn_from: str | Path | None = None, url_from: str | Non
         return None, urljoin(base_url, ref)
     else:
         fn_from = fn_from if isinstance(fn_from, Path) else Path(fn_from)
-        ref = (fn_from.resolve().parent / ref).resolve()
+        ref = (fn_from.absolute().parent / ref).absolute()
         return ref, None
 
 
@@ -526,7 +526,7 @@ class SchemaAnnotator:
         if default_context and (context_fn != default_context
                                 or not (isinstance(context_fn, Path)
                                         and isinstance(default_context, Path)
-                                        and default_context.resolve() == context_fn.resolve())):
+                                        and default_context.absolute() == context_fn.absolute())):
             # Only load the provided context if it's different from the schema-referenced one
             resolved_default_context = resolve_context(default_context)
             context, prefixes = attrgetter('context', 'prefixes')(resolved_default_context)
@@ -984,11 +984,11 @@ def dump_annotated_schema(schema: AnnotatedSchema, subdir: Path | str = 'annotat
     :param root_dir: root directory for computing relative paths to schemas
     :param output_fn_transform: optional callable to transform the output path
     """
-    wd = (Path(root_dir) if root_dir else Path()).resolve()
+    wd = (Path(root_dir) if root_dir else Path()).absolute()
     subdir = subdir if isinstance(subdir, Path) else Path(subdir)
     path = schema.source
     if isinstance(path, Path):
-        output_fn = path.resolve().relative_to(wd)
+        output_fn = path.absolute().relative_to(wd)
     else:
         parsed = urlparse(str(path))
         output_fn = parsed.path
