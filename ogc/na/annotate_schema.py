@@ -791,7 +791,9 @@ class ContextBuilder:
                     else:
                         merge_contexts(onto_context[prop], prop_context)
                 else:
-                    merge_contexts(onto_context, process_subschema(prop_val, from_schema, full_property_path))
+                    merge_contexts(onto_context,
+                                   process_subschema(prop_val, from_schema, full_property_path,
+                                                     local_refs_only=True))
 
         imported_prefixes: dict[str | Path, dict[str, str]] = {}
         imported_extra_terms: dict[str | Path, dict[str, str]] = {}
@@ -799,7 +801,7 @@ class ContextBuilder:
         cached_schema_contexts = {}
 
         def process_subschema(subschema: dict, from_schema: ReferencedSchema,
-                              schema_path: list[str]) -> dict:
+                              schema_path: list[str], local_refs_only=False) -> dict:
 
             onto_context = {}
 
@@ -813,14 +815,15 @@ class ContextBuilder:
 
             if '$ref' in subschema:
                 ref = subschema['$ref']
-                ref_path_str = f"{from_schema.location}{ref}"
-                processed_refs.add(ref_path_str)
-                referenced_schema = self.schema_resolver.resolve_schema(ref, from_schema)
-                if referenced_schema:
-                    ref_ctx = copy.deepcopy(cached_schema_contexts.get(ref_path_str))
-                    if ref_ctx is None:
-                        ref_ctx = process_subschema(referenced_schema.subschema, referenced_schema, schema_path)
-                    merge_contexts(onto_context, ref_ctx)
+                if not local_refs_only or ref.startswith('#'):
+                    ref_path_str = f"{from_schema.location}{ref}"
+                    processed_refs.add(ref_path_str)
+                    referenced_schema = self.schema_resolver.resolve_schema(ref, from_schema)
+                    if referenced_schema:
+                        ref_ctx = copy.deepcopy(cached_schema_contexts.get(ref_path_str))
+                        if ref_ctx is None:
+                            ref_ctx = process_subschema(referenced_schema.subschema, referenced_schema, schema_path)
+                        merge_contexts(onto_context, ref_ctx)
 
             for i in ('allOf', 'anyOf', 'oneOf'):
                 l = subschema.get(i)
