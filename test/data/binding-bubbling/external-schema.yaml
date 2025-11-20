@@ -1,0 +1,5 @@
+properties:
+  propExt1:
+    x-jsonld-id: https://example.com/forbidden/ext1
+  propExt2:
+    x-jsonld-id: https://example.com/forbidden/ext2

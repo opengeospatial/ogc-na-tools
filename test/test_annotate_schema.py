@@ -155,3 +155,19 @@ class AnnotateSchemaTest(unittest.TestCase):
                          vocab + 'a')
         self.assertEqual(deep_get(schema, '$defs', 'objectB', 'properties', 'propB', 'x-jsonld-id'),
                          vocab + 'b')
+
+    def test_binding_bubbling(self):
+        ctx_builder = ContextBuilder(DATA_DIR / 'binding-bubbling/root-schema.yaml')
+        self.assertIn('propA1', ctx_builder.context['@context'])
+        self.assertIn('propA21', ctx_builder.context['@context'])
+        self.assertIn('propB1', ctx_builder.context['@context'])
+        self.assertIn('propParent1', ctx_builder.context['@context'])
+        self.assertIn('propParent21', ctx_builder.context['@context'])
+        self.assertNotIn('propExt1', ctx_builder.context['@context'])
+        self.assertNotIn('propExt2', ctx_builder.context['@context'])
+
+        ctx_builder = ContextBuilder(DATA_DIR / 'binding-bubbling/vocab-schema.yaml')
+        self.assertIn('propParent1', ctx_builder.context['@context'])
+        self.assertIn('propParent21', ctx_builder.context['@context'])
+        self.assertIn('propExt1', ctx_builder.context['@context'])
+        self.assertIn('propExt2', ctx_builder.context['@context'])

@@ -1,0 +1,20 @@
+$defs:
+  propB:
+    properties:
+      propB1:
+        x-jsonld-id: https://example.com/b1
+allOf:
+  - $ref: ./parent-schema.yaml
+properties:
+  propA:
+    properties:
+      propA1:
+        x-jsonld-id: https://example.com/a1
+      propA2:
+        properties:
+          propA21:
+            x-jsonld-id: https://example.com/a21
+  propB:
+    $ref: '#/$defs/propB'
+  propC:
+    $ref: ./external-schema.yaml

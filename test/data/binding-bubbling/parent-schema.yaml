@@ -1,0 +1,7 @@
+properties:
+  propParent1:
+    x-jsonld-id: https://example.com/parent1
+  propParent2:
+    properties:
+      propParent21:
+        x-jsonld-id: https://example.com/parent21

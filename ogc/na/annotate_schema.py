@@ -750,7 +750,8 @@ class ContextBuilder:
         processed_refs = set()
 
         def read_properties(subschema: dict, from_schema: ReferencedSchema,
-                            onto_context: dict, schema_path: list[str]) -> dict | None:
+                            onto_context: dict, schema_path: list[str],
+                            is_vocab=False) -> dict | None:
             if schema_path:
                 schema_path_str = '/' + '/'.join(schema_path)
             else:
@@ -782,10 +783,13 @@ class ContextBuilder:
                     self.visited_properties[full_property_path_str] = prop_id_value
                     self._missed_properties[full_property_path_str] = False
                     if prop_id_value in ('@nest', '@graph'):
-                        merge_contexts(onto_context, process_subschema(prop_val, from_schema, full_property_path))
+                        merge_contexts(onto_context,
+                                       process_subschema(prop_val, from_schema,
+                                                         full_property_path, is_vocab=is_vocab))
                     else:
                         merge_contexts(prop_context['@context'],
-                                       process_subschema(prop_val, from_schema, full_property_path))
+                                       process_subschema(prop_val, from_schema,
+                                                         full_property_path, is_vocab=is_vocab))
                     if prop not in onto_context or isinstance(onto_context[prop], str):
                         onto_context[prop] = prop_context
                     else:
@@ -793,7 +797,8 @@ class ContextBuilder:
                 else:
                     merge_contexts(onto_context,
                                    process_subschema(prop_val, from_schema, full_property_path,
-                                                     local_refs_only=True))
+                                                     is_vocab=is_vocab,
+                                                     local_refs_only=not is_vocab))
 
         imported_prefixes: dict[str | Path, dict[str, str]] = {}
         imported_extra_terms: dict[str | Path, dict[str, str]] = {}
@@ -801,7 +806,8 @@ class ContextBuilder:
         cached_schema_contexts = {}
 
         def process_subschema(subschema: dict, from_schema: ReferencedSchema,
-                              schema_path: list[str], local_refs_only=False) -> dict:
+                              schema_path: list[str], local_refs_only=False,
+                              is_vocab=False) -> dict:
 
             onto_context = {}
 
@@ -812,6 +818,7 @@ class ContextBuilder:
                 top_level_value = subschema.get(key)
                 if top_level_value:
                     onto_context[f"@{key[len(ANNOTATION_PREFIX):]}"] = top_level_value
+            is_vocab = is_vocab or bool(onto_context.get('@vocab'))
 
             if '$ref' in subschema:
                 ref = subschema['$ref']
@@ -822,23 +829,30 @@ class ContextBuilder:
                     if referenced_schema:
                         ref_ctx = copy.deepcopy(cached_schema_contexts.get(ref_path_str))
                         if ref_ctx is None:
-                            ref_ctx = process_subschema(referenced_schema.subschema, referenced_schema, schema_path)
+                            ref_ctx = process_subschema(referenced_schema.subschema,
+                                                        referenced_schema, schema_path,
+                                                        is_vocab=is_vocab)
                         merge_contexts(onto_context, ref_ctx)
 
             for i in ('allOf', 'anyOf', 'oneOf'):
                 l = subschema.get(i)
                 if isinstance(l, list):
                     for idx, sub_subschema in enumerate(l):
-                        merge_contexts(onto_context, process_subschema(sub_subschema, from_schema, schema_path))
+                        merge_contexts(onto_context,
+                                       process_subschema(sub_subschema, from_schema,
+                                                         schema_path, is_vocab=is_vocab))
 
             for i in ('prefixItems', 'items', 'contains', 'then', 'else', 'additionalProperties'):
                 l = subschema.get(i)
                 if isinstance(l, dict):
-                    merge_contexts(onto_context, process_subschema(l, from_schema, schema_path))
+                    merge_contexts(onto_context, process_subschema(l, from_schema,
+                                                                   schema_path, is_vocab=is_vocab))
 
             for pp_k, pp in subschema.get('patternProperties', {}).items():
                 if isinstance(pp, dict):
-                    merge_contexts(onto_context, process_subschema(pp, from_schema, schema_path + [pp_k]))
+                    merge_contexts(onto_context, process_subschema(pp, from_schema,
+                                                                   schema_path + [pp_k],
+                                                                   is_vocab=is_vocab))
 
             if ANNOTATION_EXTRA_TERMS in subschema:
                 for extra_term, extra_term_context in subschema[ANNOTATION_EXTRA_TERMS].items():
@@ -848,7 +862,7 @@ class ContextBuilder:
                                                   for k, v in extra_term_context.items()}
                         onto_context[extra_term] = extra_term_context
 
-            read_properties(subschema, from_schema, onto_context, schema_path)
+            read_properties(subschema, from_schema, onto_context, schema_path, is_vocab=is_vocab)
 
             if from_schema:
                 current_ref = f"{from_schema.location}{from_schema.ref}"

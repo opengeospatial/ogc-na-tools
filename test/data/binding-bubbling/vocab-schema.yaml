@@ -1,0 +1,6 @@
+allOf:
+  - $ref: ./parent-schema.yaml
+properties:
+  propC:
+    $ref: ./external-schema.yaml
+x-jsonld-vocab: https://example.net/
