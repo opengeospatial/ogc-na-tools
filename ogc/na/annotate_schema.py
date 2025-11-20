@@ -831,7 +831,8 @@ class ContextBuilder:
                         if ref_ctx is None:
                             ref_ctx = process_subschema(referenced_schema.subschema,
                                                         referenced_schema, schema_path,
-                                                        is_vocab=is_vocab)
+                                                        is_vocab=is_vocab,
+                                                        local_refs_only=local_refs_only)
                         merge_contexts(onto_context, ref_ctx)
 
             for i in ('allOf', 'anyOf', 'oneOf'):
