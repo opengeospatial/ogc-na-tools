@@ -28,6 +28,15 @@ try:
 except ImportError:
     from yaml import Loader as YamlLoader, SafeLoader as SafeYamlLoader, Dumper as YamlDumper
 
+
+class _Undefined:
+
+    def __bool__(self):
+        return False
+
+
+UNDEFINED = _Undefined()
+
 JSON_LD_KEYWORDS = {
     '@base',
     '@container',
@@ -329,6 +338,8 @@ def merge_contexts(a: dict, b: dict, fix_nest=True) -> dict[str, Any]:
                 a[term] = va
             if isinstance(vb, str):
                 vb = {'@id': vb}
+            if vb and isinstance(vb.get('@id'), _Undefined) and '@id' in va:
+                vb['@id'] = va['@id']
             if vb:
                 for vb_term, vb_term_val in vb.items():
                     if vb_term != '@context':
@@ -366,6 +377,19 @@ def merge_contexts(a: dict, b: dict, fix_nest=True) -> dict[str, Any]:
             a = merge_contexts(a, pm)
 
     return a
+
+
+def prune_context(c: Any):
+    if isinstance(c, list):
+        for entry in c:
+            prune_context(entry)
+    elif isinstance(c, dict):
+        for k in list(c.keys()):
+            v = c[k]
+            if k == '@id' and isinstance(v, _Undefined):
+                del c[k]
+            else:
+                prune_context(v)
 
 
 def dict_contains(greater: dict, smaller: dict):

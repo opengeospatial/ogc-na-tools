@@ -135,7 +135,7 @@ import requests_cache
 
 from ogc.na.exceptions import ContextLoadError, SchemaLoadError
 from ogc.na.util import is_url, load_yaml, LRUCache, dump_yaml, \
-    merge_contexts, merge_dicts, dict_contains, JSON_LD_KEYWORDS
+    merge_contexts, merge_dicts, dict_contains, JSON_LD_KEYWORDS, UNDEFINED, prune_context
 
 logger = logging.getLogger(__name__)
 
@@ -150,13 +150,6 @@ ANNOTATION_VOCAB = f'{ANNOTATION_PREFIX}vocab'
 ANNOTATION_IGNORE_EXPAND = [ANNOTATION_CONTEXT, ANNOTATION_EXTRA_TERMS, ANNOTATION_PREFIXES]
 
 CURIE_TERMS = '@id', '@type', '@index'
-
-class Undefined:
-
-    def __bool__(self):
-        return False
-
-UNDEFINED = Undefined()
 
 context_term_cache = LRUCache(maxsize=20)
 requests_session = requests_cache.CachedSession('ogc.na.annotate_schema', backend='memory', expire_after=180)
@@ -768,7 +761,7 @@ class ContextBuilder:
                     self._missed_properties.setdefault(full_property_path_str, True)
                 if not isinstance(prop_val, dict):
                     continue
-                prop_context = {'@context': {}}
+                prop_context: dict[str, Any] = {'@context': {}}
                 for term, term_val in prop_val.items():
                     if term == ANNOTATION_BASE:
                         prop_context.setdefault('@context', {})['@base'] = term_val
@@ -782,23 +775,27 @@ class ContextBuilder:
                     prop_id_value = prop_context.get('@id', prop_context.get('@reverse'))
                     self.visited_properties[full_property_path_str] = prop_id_value
                     self._missed_properties[full_property_path_str] = False
-                    if prop_id_value in ('@nest', '@graph'):
-                        merge_contexts(onto_context,
-                                       process_subschema(prop_val, from_schema,
-                                                         full_property_path, is_vocab=is_vocab))
-                    else:
-                        merge_contexts(prop_context['@context'],
-                                       process_subschema(prop_val, from_schema,
-                                                         full_property_path, is_vocab=is_vocab))
-                    if prop not in onto_context or isinstance(onto_context[prop], str):
-                        onto_context[prop] = prop_context
-                    else:
-                        merge_contexts(onto_context[prop], prop_context)
                 else:
+                    prop_context['@id'] = UNDEFINED
+                    prop_id_value = UNDEFINED
+                if (prop_id_value in ('@nest', '@graph')
+                        or (prop_id_value == UNDEFINED and from_schema == root_schema)
+                        or (not prop_id_value and is_vocab)):
+                    if prop_id_value == UNDEFINED or is_vocab:
+                        del prop_context['@id']
                     merge_contexts(onto_context,
-                                   process_subschema(prop_val, from_schema, full_property_path,
-                                                     is_vocab=is_vocab,
-                                                     local_refs_only=not is_vocab))
+                                   process_subschema(prop_val, from_schema,
+                                                     full_property_path, is_vocab=is_vocab,
+                                                     local_refs_only='@id' not in prop_context))
+                else:
+                    merge_contexts(prop_context['@context'],
+                                   process_subschema(prop_val, from_schema,
+                                                     full_property_path, is_vocab=is_vocab,
+                                                     local_refs_only='@id' not in prop_context))
+                if prop not in onto_context or isinstance(onto_context[prop], str):
+                    onto_context[prop] = prop_context
+                else:
+                    merge_contexts(onto_context[prop], prop_context)
 
         imported_prefixes: dict[str | Path, dict[str, str]] = {}
         imported_extra_terms: dict[str | Path, dict[str, str]] = {}
@@ -806,8 +803,7 @@ class ContextBuilder:
         cached_schema_contexts = {}
 
         def process_subschema(subschema: dict, from_schema: ReferencedSchema,
-                              schema_path: list[str], local_refs_only=False,
-                              is_vocab=False) -> dict:
+                              schema_path: list[str], is_vocab=False, local_refs_only=False) -> dict:
 
             onto_context = {}
 
@@ -831,8 +827,7 @@ class ContextBuilder:
                         if ref_ctx is None:
                             ref_ctx = process_subschema(referenced_schema.subschema,
                                                         referenced_schema, schema_path,
-                                                        is_vocab=is_vocab,
-                                                        local_refs_only=local_refs_only)
+                                                        is_vocab=is_vocab, local_refs_only=local_refs_only)
                         merge_contexts(onto_context, ref_ctx)
 
             for i in ('allOf', 'anyOf', 'oneOf'):
@@ -904,6 +899,8 @@ class ContextBuilder:
                 own_context[prefix] = {'@id': prefixes[prefix]}
             else:
                 del prefixes[prefix]
+
+        prune_context(own_context)
 
         if compact:
 
