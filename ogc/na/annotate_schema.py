@@ -875,12 +875,14 @@ class ContextBuilder:
             level_props = process_subschema_level(subschema, from_schema, property_path,
                                                   is_vocab=is_vocab, local_refs_only=local_refs_only)
             for prop_name, prop_entries in level_props.items():
-                prop_context = {}
+                prop_context = {'@context': {}}
                 for prop_entry in prop_entries:
                     if isinstance(prop_entry.subschema, dict):
-                        prop_context.update({'@' + k[len(ANNOTATION_PREFIX):]: v
-                                             for k, v in prop_entry.subschema.items()
-                                             if k.startswith(ANNOTATION_PREFIX)})
+                        for term, term_val in prop_entry.subschema.items():
+                            if term == ANNOTATION_BASE:
+                                prop_context.setdefault('@context', {})['@base'] = term_val
+                            elif term.startswith(ANNOTATION_PREFIX) and term not in ANNOTATION_IGNORE_EXPAND:
+                                prop_context['@' + term[len(ANNOTATION_PREFIX):]] = term_val
 
                 new_prop_path = property_path + [prop_name]
 
@@ -963,6 +965,11 @@ class ContextBuilder:
                 changed = False
                 for term in terms:
                     term_value = branch[term]
+
+                    if isinstance(term_value, dict) and not term_value:
+                        del branch[term]
+                        changed = True
+                        continue
 
                     if isinstance(term_value, dict) and '@context' in term_value:
                         if not term_value['@context']:
