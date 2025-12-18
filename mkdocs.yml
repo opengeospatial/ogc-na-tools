@@ -14,7 +14,7 @@ plugins:
   - mkdocstrings:
       handlers:
         python:
-          import:
+          inventories:
             - https://rdflib.readthedocs.io/en/stable/objects.inv
           options:
             docstring_style: sphinx
