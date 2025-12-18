@@ -5,7 +5,7 @@ from pathlib import Path
 from rdflib import Graph, URIRef, Namespace
 
 from ogc.na import annotate_schema
-from ogc.na.annotate_schema import SchemaAnnotator, ContextBuilder, ReferencedSchema, SchemaResolver
+from ogc.na.annotate_schema import SchemaAnnotator, ContextBuilder, SchemaResolver
 from ogc.na.util import load_yaml
 
 THIS_DIR = Path(__file__).parent
@@ -167,6 +167,7 @@ class AnnotateSchemaTest(unittest.TestCase):
 
         ctx_builder = ContextBuilder(DATA_DIR / 'binding-bubbling/vocab-schema.yaml')
         self.assertIn('propParent1', ctx_builder.context['@context'])
-        self.assertIn('propParent21', ctx_builder.context['@context'])
+        self.assertIn('propParent2', ctx_builder.context['@context'])
+        self.assertIn('propParent21', ctx_builder.context['@context']['propParent2']['@context'])
         self.assertNotIn('propExt1', ctx_builder.context['@context'])
         self.assertNotIn('propExt2', ctx_builder.context['@context'])

@@ -142,6 +142,7 @@ logger = logging.getLogger(__name__)
 ANNOTATION_PREFIX = 'x-jsonld-'
 ANNOTATION_CONTEXT = f'{ANNOTATION_PREFIX}context'
 ANNOTATION_ID = f'{ANNOTATION_PREFIX}id'
+ANNOTATION_REVERSE = f'{ANNOTATION_PREFIX}reverse'
 ANNOTATION_PREFIXES = f'{ANNOTATION_PREFIX}prefixes'
 ANNOTATION_EXTRA_TERMS = f'{ANNOTATION_PREFIX}extra-terms'
 ANNOTATION_BASE = f'{ANNOTATION_PREFIX}base'
@@ -173,11 +174,22 @@ class ReferencedSchema:
     is_json: bool = False
     anchors: dict[str, Any] = dataclasses.field(default_factory=dict)
 
+    @property
+    def full_ref(self):
+        return f"{self.location}#{self.fragment}" if self.fragment else self.location
+
 
 @dataclasses.dataclass
 class ResolvedContext:
     context: dict[str, Any] = dataclasses.field(default_factory=dict)
     prefixes: dict[str, str] = dataclasses.field(default_factory=dict)
+
+
+@dataclasses.dataclass
+class SchemaLevelEntry:
+    subschema: dict[str, Any]
+    from_schema: ReferencedSchema
+    parent_prop_schema: ReferencedSchema = None
 
 
 class SchemaResolver:
@@ -742,123 +754,92 @@ class ContextBuilder:
         # store processed $defs and definitions to avoid parsing them twice
         processed_refs = set()
 
-        def read_properties(subschema: dict, from_schema: ReferencedSchema,
-                            onto_context: dict, schema_path: list[str],
-                            is_vocab=False) -> dict | None:
-            if schema_path:
-                schema_path_str = '/' + '/'.join(schema_path)
-            else:
-                schema_path_str = ''
-            if not isinstance(subschema, dict):
-                return None
-            if subschema.get('type', 'object') != 'object':
-                return None
-            for prop, prop_val in subschema.get('properties', {}).items():
-                full_property_path = schema_path + [prop]
-                full_property_path_str = f"{schema_path_str}/{prop}"
-                self.visited_properties.setdefault(full_property_path_str, None)
-                if from_schema == root_schema:
-                    self._missed_properties.setdefault(full_property_path_str, True)
-                if not isinstance(prop_val, dict):
-                    continue
-                prop_context: dict[str, Any] = {'@context': {}}
-                for term, term_val in prop_val.items():
-                    if term == ANNOTATION_BASE:
-                        prop_context.setdefault('@context', {})['@base'] = term_val
-                    elif term.startswith(ANNOTATION_PREFIX) and term not in ANNOTATION_IGNORE_EXPAND:
-                        if term == ANNOTATION_ID:
-                            self.visited_properties[full_property_path_str] = term_val
-                            self._missed_properties[full_property_path_str] = False
-                        prop_context['@' + term[len(ANNOTATION_PREFIX):]] = term_val
-
-                if isinstance(prop_context.get('@id'), str) or isinstance(prop_context.get('@reverse'), str):
-                    prop_id_value = prop_context.get('@id', prop_context.get('@reverse'))
-                    self.visited_properties[full_property_path_str] = prop_id_value
-                    self._missed_properties[full_property_path_str] = False
-                else:
-                    prop_context['@id'] = UNDEFINED
-                    prop_id_value = UNDEFINED
-                if (prop_id_value in ('@nest', '@graph')
-                        or (prop_id_value == UNDEFINED and from_schema == root_schema)
-                        or (not prop_id_value and is_vocab)):
-                    if prop_id_value == UNDEFINED or is_vocab:
-                        del prop_context['@id']
-                    merge_contexts(onto_context,
-                                   process_subschema(prop_val, from_schema,
-                                                     full_property_path, is_vocab=is_vocab,
-                                                     local_refs_only='@id' not in prop_context))
-                else:
-                    merge_contexts(prop_context['@context'],
-                                   process_subschema(prop_val, from_schema,
-                                                     full_property_path, is_vocab=is_vocab,
-                                                     local_refs_only='@id' not in prop_context))
-                if prop not in onto_context or isinstance(onto_context[prop], str):
-                    onto_context[prop] = prop_context
-                else:
-                    merge_contexts(onto_context[prop], prop_context)
+        PropertyContexts = dict[str, list[dict[str, Any]]]
 
         imported_prefixes: dict[str | Path, dict[str, str]] = {}
         imported_extra_terms: dict[str | Path, dict[str, str]] = {}
 
-        cached_schema_contexts = {}
+        cached_schema_entries = {}
 
-        def process_subschema(subschema: dict, from_schema: ReferencedSchema,
-                              schema_path: list[str], is_vocab=False, local_refs_only=False) -> dict:
+        pending_subschemas = deque()
 
-            onto_context = {}
+        def merge_property_contexts(existing: dict[str, list[SchemaLevelEntry]],
+                                    new: dict[str, list[SchemaLevelEntry]]):
+            if new:
+                for prop, entries in new.items():
+                    existing.setdefault(prop, []).extend(entries)
+            return existing
+
+        def process_subschema_level(subschema: dict, from_schema: ReferencedSchema,
+                                    schema_path: list[str], is_vocab=False,
+                                    local_refs_only=False) -> dict[str, list[SchemaLevelEntry]]:
+
+            level_entries: dict[str, list[SchemaLevelEntry]] = {}
 
             if not isinstance(subschema, dict):
                 return {}
-
-            for key in (ANNOTATION_BASE, ANNOTATION_VOCAB):
-                top_level_value = subschema.get(key)
-                if top_level_value:
-                    onto_context[f"@{key[len(ANNOTATION_PREFIX):]}"] = top_level_value
-            is_vocab = is_vocab or bool(onto_context.get('@vocab'))
 
             if '$ref' in subschema:
                 ref = subschema['$ref']
                 if not local_refs_only or ref.startswith('#'):
                     ref_path_str = f"{from_schema.location}{ref}"
-                    processed_refs.add(ref_path_str)
                     referenced_schema = self.schema_resolver.resolve_schema(ref, from_schema)
-                    if referenced_schema:
-                        ref_ctx = copy.deepcopy(cached_schema_contexts.get(ref_path_str))
-                        if ref_ctx is None:
-                            ref_ctx = process_subschema(referenced_schema.subschema,
-                                                        referenced_schema, schema_path,
-                                                        is_vocab=is_vocab, local_refs_only=local_refs_only)
-                        merge_contexts(onto_context, ref_ctx)
+                    if referenced_schema and not referenced_schema.full_ref == from_schema.full_ref:
+                        full_ref = referenced_schema.full_ref
+                        if full_ref in cached_schema_entries:
+                            ref_entries = cached_schema_entries[ref_path_str]
+                        else:
+                            print('resolving', full_ref)
+                            ref_entries = process_subschema_level(
+                                referenced_schema.subschema,
+                                referenced_schema, schema_path,
+                                is_vocab=is_vocab, local_refs_only=local_refs_only)
+                            cached_schema_entries[ref_path_str] = ref_entries
+                        merge_property_contexts(
+                            level_entries,
+                            ref_entries
+                        )
 
             for i in ('allOf', 'anyOf', 'oneOf'):
                 l = subschema.get(i)
                 if isinstance(l, list):
                     for idx, sub_subschema in enumerate(l):
-                        merge_contexts(onto_context,
-                                       process_subschema(sub_subschema, from_schema,
-                                                         schema_path, is_vocab=is_vocab))
+                        merge_property_contexts(
+                            level_entries,
+                            process_subschema_level(sub_subschema, from_schema,
+                                                    schema_path, is_vocab=is_vocab))
 
             for i in ('prefixItems', 'items', 'contains', 'then', 'else', 'additionalProperties'):
                 l = subschema.get(i)
                 if isinstance(l, dict):
-                    merge_contexts(onto_context, process_subschema(l, from_schema,
-                                                                   schema_path, is_vocab=is_vocab))
+                    merge_property_contexts(
+                        level_entries,
+                        process_subschema_level(l, from_schema,
+                                                schema_path, is_vocab=is_vocab))
 
             for pp_k, pp in subschema.get('patternProperties', {}).items():
                 if isinstance(pp, dict):
-                    merge_contexts(onto_context, process_subschema(pp, from_schema,
-                                                                   schema_path + [pp_k],
-                                                                   is_vocab=is_vocab))
+                    merge_property_contexts(
+                        level_entries,
+                        process_subschema_level(pp, from_schema,
+                                                schema_path + [pp_k],
+                                                is_vocab=is_vocab))
 
             if ANNOTATION_EXTRA_TERMS in subschema:
                 for extra_term, extra_term_context in subschema[ANNOTATION_EXTRA_TERMS].items():
-                    if extra_term not in onto_context:
+                    if extra_term not in level_entries:
                         if isinstance(extra_term_context, dict):
-                            extra_term_context = {f"@{k[len(ANNOTATION_PREFIX):]}": v
-                                                  for k, v in extra_term_context.items()}
-                        onto_context[extra_term] = extra_term_context
+                            level_entries.setdefault(extra_term, []).insert(
+                                0,
+                                SchemaLevelEntry(subschema=extra_term_context,
+                                                 from_schema=from_schema)
+                            )
 
-            read_properties(subschema, from_schema, onto_context, schema_path, is_vocab=is_vocab)
+            if subschema_properties := subschema.get('properties'):
+                for prop_name, prop_schema in subschema_properties.items():
+                    level_entries.setdefault(prop_name, []).append(
+                        SchemaLevelEntry(subschema=prop_schema, from_schema=from_schema)
+                    )
 
             if from_schema:
                 current_ref = f"{from_schema.location}{from_schema.ref}"
@@ -877,10 +858,68 @@ class ContextBuilder:
                 if isinstance(sub_prefixes, dict):
                     prefixes.update({k: v for k, v in sub_prefixes.items() if k not in prefixes})
 
-            cached_schema_contexts[f"{from_schema.location}#{from_schema.fragment}"] = onto_context
+            cached_schema_entries[f"{from_schema.location}#{from_schema.fragment}"] = level_entries
+            return level_entries
+
+        def process_subschema(subschema: dict, onto_context: dict, from_schema: ReferencedSchema,
+                              property_path: list, is_vocab=False, local_refs_only=False) -> dict:
+
+            if not isinstance(subschema, dict):
+                return {}
+
+            for key in (ANNOTATION_BASE, ANNOTATION_VOCAB):
+                top_level_value = subschema.get(key)
+                if top_level_value:
+                    onto_context[f"@{key[len(ANNOTATION_PREFIX):]}"] = top_level_value
+            is_vocab = is_vocab or bool(onto_context.get('@vocab'))
+
+            level_props = process_subschema_level(subschema, from_schema, property_path,
+                                                  is_vocab=is_vocab, local_refs_only=local_refs_only)
+            for prop_name, prop_entries in level_props.items():
+                prop_context = {}
+                for prop_entry in prop_entries:
+                    if isinstance(prop_entry.subschema, dict):
+                        prop_context.update({'@' + k[len(ANNOTATION_PREFIX):]: v
+                                             for k, v in prop_entry.subschema.items()
+                                             if k.startswith(ANNOTATION_PREFIX)})
+
+                new_prop_path = property_path + [prop_name]
+
+                if '@id' in prop_context:
+                    prop_uri = prop_context['@id']
+                    visited_str = prop_uri
+                elif '@reverse' in prop_context:
+                    prop_uri = prop_context['@reverse']
+                    visited_str = '^' + prop_uri
+                elif is_vocab:
+                    prop_uri = prop_name
+                    visited_str = '@vocab'
+                else:
+                    # Allow bubbling of local subproperties
+                    pending_subschemas.extend(
+                        (entry.subschema, onto_context,
+                         entry.from_schema, new_prop_path, is_vocab, True)
+                        for entry in prop_entries
+                    )
+                    continue
+
+                onto_context[prop_name] = prop_context
+
+                if prop_uri:
+                    prop_path_str = '/'.join(new_prop_path)
+                    pending_subschemas.extend(
+                        (entry.subschema, prop_context.setdefault('@context', {}),
+                         entry.from_schema, new_prop_path, is_vocab, False)
+                        for entry in prop_entries
+                    )
+                    self.visited_properties[prop_path_str] = visited_str
+                    self._missed_properties[prop_path_str] = False
+
             return onto_context
 
-        merge_contexts(own_context, process_subschema(root_schema.subschema, root_schema, []))
+        pending_subschemas.append((root_schema.subschema, own_context, root_schema, [], False, False))
+        while pending_subschemas:
+            process_subschema(*pending_subschemas.popleft())
 
         for imported_et in imported_extra_terms.values():
             for term, v in imported_et.items():
