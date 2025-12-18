@@ -786,10 +786,9 @@ class ContextBuilder:
                     referenced_schema = self.schema_resolver.resolve_schema(ref, from_schema)
                     if referenced_schema and not referenced_schema.full_ref == from_schema.full_ref:
                         full_ref = referenced_schema.full_ref
-                        if full_ref in cached_schema_entries:
+                        if ref_path_str in cached_schema_entries:
                             ref_entries = cached_schema_entries[ref_path_str]
                         else:
-                            print('resolving', full_ref)
                             ref_entries = process_subschema_level(
                                 referenced_schema.subschema,
                                 referenced_schema, schema_path,
