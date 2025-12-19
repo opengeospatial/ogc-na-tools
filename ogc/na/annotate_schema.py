@@ -123,6 +123,7 @@ import json
 import logging
 import re
 import sys
+from builtins import isinstance
 from collections import deque
 from encodings import undefined
 from operator import attrgetter
@@ -853,7 +854,10 @@ class ContextBuilder:
 
             if ANNOTATION_EXTRA_TERMS in subschema:
                 for extra_term, extra_term_context in subschema[ANNOTATION_EXTRA_TERMS].items():
-                    if extra_term not in onto_context or onto_context[extra_term].get('@id') is UNDEFINED:
+                    if (extra_term not in onto_context
+                        or onto_context[extra_term] is UNDEFINED
+                        or (isinstance(onto_context[extra_term], dict)
+                            and onto_context[extra_term].get('@id') is UNDEFINED)):
                         if isinstance(extra_term_context, dict):
                             extra_term_context = {f"@{k[len(ANNOTATION_PREFIX):]}": v
                                                   for k, v in extra_term_context.items()}
