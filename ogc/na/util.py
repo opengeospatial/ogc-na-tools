@@ -340,7 +340,7 @@ def merge_contexts(a: dict, b: dict, fix_nest=True) -> dict[str, Any]:
                 vb = {'@id': vb}
             if vb and isinstance(vb.get('@id'), _Undefined) and '@id' in va:
                 vb['@id'] = va['@id']
-            if vb and not (isinstance(vb, dict) and isinstance(vb.get('@id'), _Undefined)):
+            if vb:
                 for vb_term, vb_term_val in vb.items():
                     if vb_term != '@context':
                         va[vb_term] = vb_term_val
@@ -356,7 +356,7 @@ def merge_contexts(a: dict, b: dict, fix_nest=True) -> dict[str, Any]:
                         va['@context'] = [va['@context'], *vb['@context']]
                     else:
                         va['@context'] = merge_contexts(va['@context'], vb['@context'])
-        if vb and not (isinstance(vb, dict) and isinstance(vb.get('@id'), _Undefined)):
+        if vb:
             a[term] = vb
     for t, tb in b.items():
         if t not in a:

@@ -919,7 +919,7 @@ class ContextBuilder:
 
             return uri
 
-        def compact_branch(branch, context_stack=None) -> bool:
+        def compact_branch(branch, context_stack=None, is_vocab=False) -> bool:
             child_context_stack = context_stack + [branch] if context_stack else [branch]
             terms = list(k for k in branch.keys() if k not in JSON_LD_KEYWORDS)
 
@@ -928,20 +928,30 @@ class ContextBuilder:
                 term_value = branch[term]
 
                 if isinstance(term_value, dict) and not term_value:
-                    del branch[term]
+                    branch.pop(term, None)
                     changed = True
                     continue
 
                 if isinstance(term_value, dict) and '@context' in term_value:
                     if not term_value['@context']:
-                        del term_value['@context']
+                        term_value.pop('@context', None)
                         changed = True
-                    else:
+                    elif is_vocab or term_value.get('@id', term_value.get('@reverse')):
+                        term_is_vocab = (is_vocab
+                                         or ('@vocab' in term_value['@context']
+                                             and term_value['@context']['@vocab'] is not None))
                         while True:
-                            if not compact_branch(term_value['@context'], child_context_stack):
+                            if not compact_branch(term_value['@context'],
+                                                  child_context_stack,
+                                                  is_vocab=term_is_vocab):
                                 break
                             else:
                                 changed = True
+                    else:
+                        # Context branch without an @id - remove
+                        branch.pop(term, None)
+                        changed = True
+                        continue
 
                 if context_stack:
                     for ctx in context_stack:
@@ -953,7 +963,7 @@ class ContextBuilder:
                         if isinstance(other, str):
                             other = {'@id': other}
                         if dict_contains(other, term_value):
-                            del branch[term]
+                            branch.pop(term, None)
                             changed = True
                             break
 
