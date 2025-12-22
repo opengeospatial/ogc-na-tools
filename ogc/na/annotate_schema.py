@@ -754,6 +754,9 @@ class ContextBuilder:
             if subschema.get('type', 'object') != 'object':
                 return None
             for prop, prop_val in subschema.get('properties', {}).items():
+                if prop in JSON_LD_KEYWORDS:
+                    # Skip reserved JSON-LD keywords
+                    continue
                 full_property_path = schema_path + [prop]
                 full_property_path_str = f"{schema_path_str}/{prop}"
                 self.visited_properties.setdefault(full_property_path_str, None)
