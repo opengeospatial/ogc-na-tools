@@ -701,7 +701,6 @@ class ContextBuilder:
     """
 
     def __init__(self, location: Path | str,
-                 compact: bool = True,
                  schema_resolver: SchemaResolver = None,
                  contents: dict | str | None = None,
                  version=1.1):
@@ -719,13 +718,12 @@ class ContextBuilder:
 
         self.visited_properties: dict[str, str | None] = {}
         self._missed_properties: dict[str, Any] = {}  # Dict instead of set to keep order of insertion
-        context = self._build_context(self.location, compact, contents=contents)
+        context = self._build_context(self.location, contents=contents)
         if context:
             context['@version'] = version
         self.context = {'@context': context}
 
     def _build_context(self, schema_location: str | Path,
-                       compact: bool = True,
                        contents: dict | str | None = None) -> dict:
 
         parsed = self._parsed_schemas.get(schema_location)
@@ -907,82 +905,80 @@ class ContextBuilder:
 
         prune_context(own_context)
 
-        if compact:
-
-            def compact_uri(uri: str) -> str:
-                if uri in JSON_LD_KEYWORDS:
-                    # JSON-LD keyword
-                    return uri
-
-                for pref, pref_uri in prefixes.items():
-                    if uri.startswith(pref_uri) and len(pref_uri) < len(uri):
-                        local_part = uri[len(pref_uri):]
-                        if local_part.startswith('//'):
-                            return uri
-                        return f"{pref}:{local_part}"
-
+        def compact_uri(uri: str) -> str:
+            if uri in JSON_LD_KEYWORDS:
+                # JSON-LD keyword
                 return uri
 
-            def compact_branch(branch, context_stack=None) -> bool:
-                child_context_stack = context_stack + [branch] if context_stack else [branch]
-                terms = list(k for k in branch.keys() if k not in JSON_LD_KEYWORDS)
+            for pref, pref_uri in prefixes.items():
+                if uri.startswith(pref_uri) and len(pref_uri) < len(uri):
+                    local_part = uri[len(pref_uri):]
+                    if local_part.startswith('//'):
+                        return uri
+                    return f"{pref}:{local_part}"
 
-                changed = False
-                for term in terms:
-                    term_value = branch[term]
+            return uri
 
-                    if isinstance(term_value, dict) and not term_value:
-                        del branch[term]
+        def compact_branch(branch, context_stack=None) -> bool:
+            child_context_stack = context_stack + [branch] if context_stack else [branch]
+            terms = list(k for k in branch.keys() if k not in JSON_LD_KEYWORDS)
+
+            changed = False
+            for term in terms:
+                term_value = branch[term]
+
+                if isinstance(term_value, dict) and not term_value:
+                    del branch[term]
+                    changed = True
+                    continue
+
+                if isinstance(term_value, dict) and '@context' in term_value:
+                    if not term_value['@context']:
+                        del term_value['@context']
                         changed = True
-                        continue
-
-                    if isinstance(term_value, dict) and '@context' in term_value:
-                        if not term_value['@context']:
-                            del term_value['@context']
-                            changed = True
-                        else:
-                            while True:
-                                if not compact_branch(term_value['@context'], child_context_stack):
-                                    break
-                                else:
-                                    changed = True
-
-                    if context_stack:
-                        for ctx in context_stack:
-                            if term not in ctx:
-                                continue
-                            other = ctx[term]
-                            if isinstance(term_value, str):
-                                term_value = {'@id': term_value}
-                            if isinstance(other, str):
-                                other = {'@id': other}
-                            if dict_contains(other, term_value):
-                                del branch[term]
-                                changed = True
+                    else:
+                        while True:
+                            if not compact_branch(term_value['@context'], child_context_stack):
                                 break
+                            else:
+                                changed = True
 
-                return changed
+                if context_stack:
+                    for ctx in context_stack:
+                        if term not in ctx:
+                            continue
+                        other = ctx[term]
+                        if isinstance(term_value, str):
+                            term_value = {'@id': term_value}
+                        if isinstance(other, str):
+                            other = {'@id': other}
+                        if dict_contains(other, term_value):
+                            del branch[term]
+                            changed = True
+                            break
 
-            def compact_uris(branch, context_stack=None):
-                child_context_stack = context_stack + [branch] if context_stack else [branch]
-                terms = list(k for k in branch.keys() if k not in JSON_LD_KEYWORDS)
-                for term in terms:
-                    term_value = branch.get(term)
-                    if isinstance(term_value, str):
-                        branch[term] = compact_uri(term_value)
-                    elif isinstance(term_value, dict):
-                        for k in CURIE_TERMS:
-                            if k in term_value:
-                                term_value[k] = compact_uri(term_value[k])
-                        if len(term_value) == 1 and '@id' in term_value:
-                            branch[term] = term_value['@id']
-                        elif '@context' in term_value:
-                            compact_uris(term_value['@context'], child_context_stack)
+            return changed
 
-            while True:
-                if not compact_branch(own_context):
-                    break
-            compact_uris(own_context)
+        def compact_uris(branch, context_stack=None):
+            child_context_stack = context_stack + [branch] if context_stack else [branch]
+            terms = list(k for k in branch.keys() if k not in JSON_LD_KEYWORDS)
+            for term in terms:
+                term_value = branch.get(term)
+                if isinstance(term_value, str):
+                    branch[term] = compact_uri(term_value)
+                elif isinstance(term_value, dict):
+                    for k in CURIE_TERMS:
+                        if k in term_value:
+                            term_value[k] = compact_uri(term_value[k])
+                    if len(term_value) == 1 and '@id' in term_value:
+                        branch[term] = term_value['@id']
+                    elif '@context' in term_value:
+                        compact_uris(term_value['@context'], child_context_stack)
+
+        while True:
+            if not compact_branch(own_context):
+                break
+        compact_uris(own_context)
 
         self._parsed_schemas[schema_location] = own_context
         return own_context
