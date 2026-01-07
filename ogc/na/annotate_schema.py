@@ -789,7 +789,7 @@ class ContextBuilder:
                     merge_contexts(prop_context['@context'] if is_vocab else onto_context,
                                    process_subschema(prop_val, from_schema,
                                                      full_property_path, is_vocab=is_vocab,
-                                                     local_refs_only='@id' not in prop_context))
+                                                     local_refs_only='@id' not in prop_context and not is_vocab))
                 else:
                     merge_contexts(prop_context['@context'],
                                    process_subschema(prop_val, from_schema,
@@ -923,6 +923,7 @@ class ContextBuilder:
             return uri
 
         def compact_branch(branch, context_stack=None, is_vocab=False) -> bool:
+            is_vocab = is_vocab or bool(branch.get('@vocab'))
             child_context_stack = context_stack + [branch] if context_stack else [branch]
             terms = list(k for k in branch.keys() if k not in JSON_LD_KEYWORDS)
 
