@@ -356,7 +356,7 @@ def merge_contexts(a: dict, b: dict, fix_nest=True) -> dict[str, Any]:
                         va['@context'] = [va['@context'], *vb['@context']]
                     else:
                         va['@context'] = merge_contexts(va['@context'], vb['@context'])
-        if vb:
+        elif vb:
             a[term] = vb
     for t, tb in b.items():
         if t not in a:
