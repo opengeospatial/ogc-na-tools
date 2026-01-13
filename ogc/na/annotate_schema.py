@@ -786,10 +786,15 @@ class ContextBuilder:
                         or (not prop_id_value and is_vocab)):
                     if prop_id_value == UNDEFINED or (not prop_id_value and is_vocab):
                         del prop_context['@id']
-                merge_contexts(prop_context['@context'],
-                               process_subschema(prop_val, from_schema,
-                                                 full_property_path, is_vocab=is_vocab,
-                                                 local_refs_only='@id' not in prop_context))
+                    merge_contexts(prop_context['@context'] if prop_context.get('@vocab') else onto_context,
+                                   process_subschema(prop_val, from_schema,
+                                                     full_property_path, is_vocab=is_vocab,
+                                                     local_refs_only='@id' not in prop_context and not is_vocab))
+                else:
+                    merge_contexts(prop_context['@context'],
+                                   process_subschema(prop_val, from_schema,
+                                                     full_property_path, is_vocab=is_vocab,
+                                                     local_refs_only='@id' not in prop_context))
                 if prop_context and ('@context' not in prop_context
                                      or ('@context' in prop_context
                                          and (len(prop_context) > 1 or prop_context['@context']))):
