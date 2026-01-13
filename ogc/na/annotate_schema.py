@@ -784,21 +784,24 @@ class ContextBuilder:
                 if (prop_id_value in ('@nest', '@graph')
                         or (prop_id_value == UNDEFINED and from_schema == root_schema)
                         or (not prop_id_value and is_vocab)):
-                    if prop_id_value == UNDEFINED or is_vocab:
+                    if prop_id_value == UNDEFINED or (not prop_id_value and is_vocab):
                         del prop_context['@id']
-                    merge_contexts(prop_context['@context'] if is_vocab else onto_context,
-                                   process_subschema(prop_val, from_schema,
-                                                     full_property_path, is_vocab=is_vocab,
-                                                     local_refs_only='@id' not in prop_context and not is_vocab))
-                else:
-                    merge_contexts(prop_context['@context'],
-                                   process_subschema(prop_val, from_schema,
-                                                     full_property_path, is_vocab=is_vocab,
-                                                     local_refs_only='@id' not in prop_context))
-                if prop not in onto_context or isinstance(onto_context[prop], str):
-                    onto_context[prop] = prop_context
-                else:
-                    merge_contexts(onto_context[prop], prop_context)
+                merge_contexts(prop_context['@context'],
+                               process_subschema(prop_val, from_schema,
+                                                 full_property_path, is_vocab=is_vocab,
+                                                 local_refs_only='@id' not in prop_context))
+                if prop_context and ('@context' not in prop_context
+                                     or ('@context' in prop_context
+                                         and (len(prop_context) > 1 or prop_context['@context']))):
+                    if prop not in onto_context:
+                        onto_context[prop] = prop_context
+                    elif isinstance(onto_context[prop], str):
+                        onto_context[prop] = {
+                            '@id': prop_context.pop('@id', prop_id_value or onto_context[prop]),
+                            **prop_context,
+                        }
+                    else:
+                        merge_contexts(onto_context[prop], prop_context)
 
         imported_prefixes: dict[str | Path, dict[str, str]] = {}
         imported_extra_terms: dict[str | Path, dict[str, str]] = {}
