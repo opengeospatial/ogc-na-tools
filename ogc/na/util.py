@@ -318,7 +318,7 @@ def git_status(repo_path: str | Path = '.'):
     }
 
 
-def merge_contexts(a: dict, b: dict, fix_nest=True) -> dict[str, Any]:
+def merge_contexts(a: dict, b: dict) -> dict[str, Any]:
     '''
     Merges two JSON-lD contexts, updating the first one passed to this function (and returning it).
     '''
@@ -362,21 +362,28 @@ def merge_contexts(a: dict, b: dict, fix_nest=True) -> dict[str, Any]:
         if t not in a:
             a[t] = tb
 
-    if fix_nest:
-        # fix nested @context inside @nest terms
-        # spec is unclear, but our tooling of interest (json-ld playground, rdflib) do not support it
-        # see: https://github.com/json-ld/json-ld.org/issues/737
-        pending_merges = []
-        for term in list(a.keys()):
-            if isinstance(a[term], dict) and a[term].get('@id') == '@nest':
-                nested_ctx = a[term].pop('@context', None)
-                if nested_ctx:
-                    pending_merges.append(nested_ctx)
-                a[term] = '@nest'
-        for pm in pending_merges:
-            a = merge_contexts(a, pm)
-
     return a
+
+
+def fix_nest(ctx: dict):
+    """
+    fix nested @context inside @nest terms
+    it should be ok, but our tooling of interest (json-ld playground, rdflib) do not support it
+    see: https://github.com/json-ld/json-ld.org/issues/737
+    """
+    for term in list(ctx.keys()):
+        if term.startswith('@'):
+            continue
+        term_value = ctx[term]
+        if not term_value or not isinstance(term_value, dict) or not term_value.get('@context'):
+            continue
+
+        # We recurse here in order to fix the innermost nesting first
+        fix_nest(term_value['@context'])
+
+        if term_value.get('@id') == '@nest':
+            term_ctx = term_value.pop('@context')
+            merge_contexts(ctx, term_ctx)
 
 
 def prune_context(c: Any):

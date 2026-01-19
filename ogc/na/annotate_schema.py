@@ -125,7 +125,6 @@ import re
 import sys
 from builtins import isinstance
 from collections import deque
-from encodings import undefined
 from operator import attrgetter
 from pathlib import Path
 from typing import Any, AnyStr, Callable, Sequence, Iterable
@@ -137,7 +136,7 @@ import requests_cache
 
 from ogc.na.exceptions import ContextLoadError, SchemaLoadError
 from ogc.na.util import is_url, load_yaml, LRUCache, dump_yaml, \
-    merge_contexts, merge_dicts, dict_contains, JSON_LD_KEYWORDS, UNDEFINED, prune_context
+    merge_contexts, merge_dicts, dict_contains, JSON_LD_KEYWORDS, UNDEFINED, prune_context, fix_nest
 
 logger = logging.getLogger(__name__)
 
@@ -779,7 +778,6 @@ class ContextBuilder:
                     self.visited_properties[full_property_path_str] = prop_id_value
                     self._missed_properties[full_property_path_str] = False
                 else:
-                    prop_context['@id'] = UNDEFINED
                     prop_id_value = UNDEFINED
                 if (prop_id_value in ('@nest', '@graph')
                         or (prop_id_value == UNDEFINED and from_schema == root_schema)
@@ -915,6 +913,7 @@ class ContextBuilder:
                 del prefixes[prefix]
 
         prune_context(own_context)
+        fix_nest(own_context)
 
         def compact_uri(uri: str) -> str:
             if uri in JSON_LD_KEYWORDS:
