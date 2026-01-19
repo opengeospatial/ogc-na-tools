@@ -783,7 +783,7 @@ class ContextBuilder:
                         or (prop_id_value == UNDEFINED and from_schema == root_schema)
                         or (not prop_id_value and is_vocab)):
                     if prop_id_value == UNDEFINED or (not prop_id_value and is_vocab):
-                        del prop_context['@id']
+                        prop_context.pop('@id', None)
                     merge_contexts(prop_context['@context'] if prop_context.get('@vocab') else onto_context,
                                    process_subschema(prop_val, from_schema,
                                                      full_property_path, is_vocab=is_vocab,
