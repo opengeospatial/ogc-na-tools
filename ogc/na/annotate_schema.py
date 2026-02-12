@@ -715,7 +715,7 @@ class ContextBuilder:
 
         self.location = location
 
-        self.visited_properties: dict[str, str | None] = {}
+        self.visited_properties: dict[str, tuple[str | None, str]] = {}
         self._missed_properties: dict[str, Any] = {}  # Dict instead of set to keep order of insertion
         context = self._build_context(self.location, contents=contents)
         if context:
@@ -758,7 +758,7 @@ class ContextBuilder:
                     continue
                 full_property_path = schema_path + [prop]
                 full_property_path_str = f"{schema_path_str}/{prop}"
-                self.visited_properties.setdefault(full_property_path_str, None)
+                self.visited_properties.setdefault(full_property_path_str, (None, from_schema.location))
                 if from_schema == root_schema:
                     self._missed_properties.setdefault(full_property_path_str, True)
                 if not isinstance(prop_val, dict):
@@ -769,13 +769,13 @@ class ContextBuilder:
                         prop_context.setdefault('@context', {})['@base'] = term_val
                     elif term.startswith(ANNOTATION_PREFIX) and term not in ANNOTATION_IGNORE_EXPAND:
                         if term == ANNOTATION_ID:
-                            self.visited_properties[full_property_path_str] = term_val
+                            self.visited_properties[full_property_path_str] = (term_val, from_schema.location)
                             self._missed_properties[full_property_path_str] = False
                         prop_context['@' + term[len(ANNOTATION_PREFIX):]] = term_val
 
                 if isinstance(prop_context.get('@id'), str) or isinstance(prop_context.get('@reverse'), str):
                     prop_id_value = prop_context.get('@id', prop_context.get('@reverse'))
-                    self.visited_properties[full_property_path_str] = prop_id_value
+                    self.visited_properties[full_property_path_str] = (prop_id_value, from_schema.location)
                     self._missed_properties[full_property_path_str] = False
                 else:
                     prop_id_value = UNDEFINED
@@ -1115,8 +1115,8 @@ def _main():
         if args.dump_visited:
             def write_visited(stream):
                 writer = csv.writer(stream, delimiter='\t')
-                writer.writerow(['path', '@id'])
-                writer.writerows(ctx_builder.visited_properties.items())
+                writer.writerow(['path', '@id', 'from_schema'])
+                writer.writerows((k, *v) for k, v in ctx_builder.visited_properties.items())
 
             if args.dump_visited == '-':
                 write_visited(sys.stdout)
