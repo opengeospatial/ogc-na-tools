@@ -764,6 +764,7 @@ class ContextBuilder:
                 if not isinstance(prop_val, dict):
                     continue
                 prop_context: dict[str, Any] = {'@context': {}}
+                new_vocab = is_vocab
                 for term, term_val in prop_val.items():
                     if term == ANNOTATION_BASE:
                         prop_context.setdefault('@context', {})['@base'] = term_val
@@ -771,6 +772,8 @@ class ContextBuilder:
                         if term == ANNOTATION_ID:
                             self.visited_properties[full_property_path_str] = (term_val, from_schema.location)
                             self._missed_properties[full_property_path_str] = False
+                        elif term == ANNOTATION_VOCAB:
+                            new_vocab = term_val is not None
                         prop_context['@' + term[len(ANNOTATION_PREFIX):]] = term_val
 
                 if isinstance(prop_context.get('@id'), str) or isinstance(prop_context.get('@reverse'), str):
@@ -784,14 +787,14 @@ class ContextBuilder:
                         or (not prop_id_value and is_vocab)):
                     if prop_id_value == UNDEFINED or (not prop_id_value and is_vocab):
                         prop_context.pop('@id', None)
-                    merge_contexts(prop_context['@context'] if prop_context.get('@vocab') else onto_context,
+                    merge_contexts(prop_context['@context'] if is_vocab else onto_context,
                                    process_subschema(prop_val, from_schema,
-                                                     full_property_path, is_vocab=is_vocab,
+                                                     full_property_path, is_vocab=new_vocab,
                                                      local_refs_only='@id' not in prop_context and not is_vocab))
                 else:
                     merge_contexts(prop_context['@context'],
                                    process_subschema(prop_val, from_schema,
-                                                     full_property_path, is_vocab=is_vocab,
+                                                     full_property_path, is_vocab=new_vocab,
                                                      local_refs_only='@id' not in prop_context))
                 if prop_context and ('@context' not in prop_context
                                      or ('@context' in prop_context
@@ -949,8 +952,8 @@ class ContextBuilder:
                         changed = True
                     elif is_vocab or term_value.get('@id', term_value.get('@reverse')):
                         term_is_vocab = (is_vocab
-                                         or ('@vocab' in term_value['@context']
-                                             and term_value['@context']['@vocab'] is not None))
+                                         and ('@vocab' not in term_value['@context']
+                                              or term_value['@context']['@vocab'] is not None))
                         while True:
                             if not compact_branch(term_value['@context'],
                                                   child_context_stack,
