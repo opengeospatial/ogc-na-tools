@@ -557,7 +557,10 @@ class SchemaAnnotator:
                     continue
                 prop_value = properties[prop]
 
-                if not isinstance(prop_value, dict):
+                if isinstance(prop_value, bool):
+                    prop_value = {} if prop_value else {'not': True}
+                    properties[prop] = prop_value
+                elif not isinstance(prop_value, dict):
                     continue
 
                 for key in list(prop_value.keys()):

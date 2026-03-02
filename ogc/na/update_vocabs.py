@@ -562,10 +562,10 @@ def _main():
                                    args.graph_store, authdetails, append=append_data)
                         if append_data:
                             logging.info("Uploaded %s for %s to SPARQL graph store (with append)",
-                                         str(path), str(doc))
+                                         str(path), str(graphname))
                         else:
                             logging.info("Uploaded %s for %s to SPARQL graph store (with replace)",
-                                         str(path), str(doc))
+                                         str(path), str(graphname))
                         uploaded_graphs.add(versioned_gname)
                     except Exception as e:
                         logging.error("Failed to upload %s for %s: %s",
