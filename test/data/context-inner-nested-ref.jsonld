@@ -1,0 +1,5 @@
+{
+  "@context": {
+    "propInner": "http://example.com/inner"
+  }
+}

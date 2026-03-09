@@ -376,7 +376,8 @@ def resolve_ref(ref: str, fn_from: str | Path | None = None, url_from: str | Non
         return ref, None
 
 
-def resolve_context(ctx: Path | str | dict | list, expand_uris=True) -> ResolvedContext:
+def resolve_context(ctx: Path | str | dict | list, expand_uris=True,
+                    _base_path: Path | None = None) -> ResolvedContext:
     if not ctx:
         return ResolvedContext()
 
@@ -420,18 +421,24 @@ def resolve_context(ctx: Path | str | dict | list, expand_uris=True) -> Resolved
         resolved = None
         if isinstance(inner_ctx, Path) or (isinstance(inner_ctx, str) and not is_url(inner_ctx)):
             try:
-                resolved = resolve_context(load_yaml(filename=ctx).get('@context'))
+                if not isinstance(inner_ctx, Path):
+                    inner_ctx = Path(inner_ctx)
+                if not inner_ctx.is_absolute() and _base_path:
+                    inner_ctx = (_base_path / inner_ctx).resolve()
+                file_base_path = inner_ctx.resolve().parent
+                resolved = resolve_context(load_yaml(filename=inner_ctx).get('@context'),
+                                           expand_uris=expand_uris, _base_path=file_base_path)
             except Exception as e:
-                raise ContextLoadError(f'Error resolving context document in file "{ctx}"') from e
+                raise ContextLoadError(f'Error resolving context document in file "{inner_ctx}"') from e
         elif isinstance(inner_ctx, str):
             try:
-                r = requests_session.get(ctx)
+                r = requests_session.get(inner_ctx)
                 r.raise_for_status()
                 fetched = r.json().get('@context')
                 if fetched:
                     resolved = resolve_context(fetched)
             except Exception as e:
-                raise ContextLoadError(f'Error resolving context document at URL "{ctx}"') from e
+                raise ContextLoadError(f'Error resolving context document at URL "{inner_ctx}"') from e
 
         elif isinstance(inner_ctx, Sequence):
             resolved_ctx = {}
@@ -439,9 +446,9 @@ def resolve_context(ctx: Path | str | dict | list, expand_uris=True) -> Resolved
             for ctx_entry in inner_ctx:
                 if isinstance(ctx_entry, dict):
                     # Array entries must be wrapped with @context
-                    resolved_entry = resolve_context({'@context': ctx_entry})
+                    resolved_entry = resolve_context({'@context': ctx_entry}, _base_path=_base_path)
                 else:
-                    resolved_entry = resolve_context(ctx_entry)
+                    resolved_entry = resolve_context(ctx_entry, _base_path=_base_path)
                 inner_prefixes.update(resolved_entry.prefixes)
                 resolved = ResolvedContext(merge_dicts(resolved_entry.context, resolved_ctx), inner_prefixes)
         else:
@@ -627,7 +634,7 @@ class SchemaAnnotator:
                         if not in_defs:
                             used_terms.update(new_terms)
 
-            for p in ('then', 'else', 'additionalProperties'):
+            for p in ('then', 'else', 'additionalProperties', 'unevaluatedProperties'):
                 branch = subschema.get(p)
                 if branch and isinstance(branch, dict):
                     new_terms = process_subschema(branch, context_stack, from_schema, level, in_defs=in_defs)
@@ -853,7 +860,7 @@ class ContextBuilder:
                                        process_subschema(sub_subschema, from_schema,
                                                          schema_path, is_vocab=is_vocab))
 
-            for i in ('prefixItems', 'items', 'contains', 'then', 'else', 'additionalProperties'):
+            for i in ('prefixItems', 'items', 'contains', 'then', 'else', 'additionalProperties', 'unevaluatedProperties'):
                 l = subschema.get(i)
                 if isinstance(l, dict):
                     merge_contexts(onto_context, process_subschema(l, from_schema,

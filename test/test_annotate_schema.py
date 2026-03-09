@@ -156,6 +156,18 @@ class AnnotateSchemaTest(unittest.TestCase):
         self.assertEqual(deep_get(schema, '$defs', 'objectB', 'properties', 'propB', 'x-jsonld-id'),
                          vocab + 'b')
 
+    def test_nested_context_file_ref(self):
+        # Bug: resolve_inner uses the outer `ctx` closure variable instead of `inner_ctx`
+        # when a context term's @context is a file path reference to a different file.
+        # This causes a ContextLoadError (or wrong annotation) instead of loading the nested file.
+        annotator = SchemaAnnotator()
+        schema = annotator.process_schema(DATA_DIR / 'schema-nested-context-ref.yml').schema
+
+        self.assertEqual(deep_get(schema, 'properties', 'propOuter', 'x-jsonld-id'),
+                         'http://example.com/outer')
+        self.assertEqual(deep_get(schema, 'properties', 'propContainer', 'properties', 'propInner', 'x-jsonld-id'),
+                         'http://example.com/inner')
+
     def test_binding_bubbling(self):
         ctx_builder = ContextBuilder(DATA_DIR / 'binding-bubbling/root-schema.yaml')
         self.assertIn('propA1', ctx_builder.context['@context'])

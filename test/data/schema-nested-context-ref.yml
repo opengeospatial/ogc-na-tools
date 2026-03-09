@@ -1,0 +1,9 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+x-jsonld-context: context-outer-nested-ref.jsonld
+type: object
+properties:
+  propOuter: {}
+  propContainer:
+    type: object
+    properties:
+      propInner: {}

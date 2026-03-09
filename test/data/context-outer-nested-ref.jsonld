@@ -1,0 +1,10 @@
+{
+  "@context": {
+    "ex": "http://example.com/",
+    "propOuter": "ex:outer",
+    "propContainer": {
+      "@id": "ex:container",
+      "@context": "context-inner-nested-ref.jsonld"
+    }
+  }
+}
