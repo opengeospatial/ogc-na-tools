@@ -714,9 +714,10 @@ class ContextBuilder:
                  contents: dict | str | None = None,
                  version=1.1):
         """
-        :param location: file or URL load the annotated schema from
-        :param compact: whether to compact the resulting context (remove redundancies, compact CURIEs)
-        :ref_mapper: an optional function to map JSON `$ref`'s before resolving them
+        :param location: file or URL to load the annotated schema from
+        :param schema_resolver: an optional SchemaResolver to resolve references
+        :param contents: optional schema contents (overrides loading from location)
+        :param version: JSON-LD @version to set on the generated context (default: 1.1)
         """
         self.context = {'@context': {}}
         self._parsed_schemas: dict[str | Path, dict] = {}
@@ -744,12 +745,6 @@ class ContextBuilder:
         prefixes = {}
 
         own_context = {}
-
-        if prefixes:
-            own_context.update(prefixes)
-
-        # store processed $defs and definitions to avoid parsing them twice
-        processed_refs = set()
 
         def read_properties(subschema: dict, from_schema: ReferencedSchema,
                             onto_context: dict, schema_path: list[str],
