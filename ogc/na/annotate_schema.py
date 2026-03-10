@@ -858,19 +858,22 @@ class ContextBuilder:
                     for idx, sub_subschema in enumerate(l):
                         merge_contexts(onto_context,
                                        process_subschema(sub_subschema, from_schema,
-                                                         schema_path, is_vocab=is_vocab))
+                                                         schema_path, is_vocab=is_vocab,
+                                                         local_refs_only=local_refs_only))
 
             for i in ('prefixItems', 'items', 'contains', 'then', 'else', 'additionalProperties', 'unevaluatedProperties'):
                 l = subschema.get(i)
                 if isinstance(l, dict):
                     merge_contexts(onto_context, process_subschema(l, from_schema,
-                                                                   schema_path, is_vocab=is_vocab))
+                                                                   schema_path, is_vocab=is_vocab,
+                                                                   local_refs_only=local_refs_only))
 
             for pp_k, pp in subschema.get('patternProperties', {}).items():
                 if isinstance(pp, dict):
                     merge_contexts(onto_context, process_subschema(pp, from_schema,
                                                                    schema_path + [pp_k],
-                                                                   is_vocab=is_vocab))
+                                                                   is_vocab=is_vocab,
+                                                                   local_refs_only=local_refs_only))
 
             if ANNOTATION_EXTRA_TERMS in subschema:
                 for extra_term, extra_term_context in subschema[ANNOTATION_EXTRA_TERMS].items():
