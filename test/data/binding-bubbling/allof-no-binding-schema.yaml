@@ -1,0 +1,6 @@
+properties:
+  propBound:
+    x-jsonld-id: https://example.com/bound
+  propNoId:
+    allOf:
+      - $ref: ./external-schema.yaml

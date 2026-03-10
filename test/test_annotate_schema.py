@@ -177,9 +177,56 @@ class AnnotateSchemaTest(unittest.TestCase):
         self.assertNotIn('propExt1', ctx_builder.context['@context'])
         self.assertNotIn('propExt2', ctx_builder.context['@context'])
 
+        # Same as propC/$ref case but the external ref is one level inside allOf —
+        # local_refs_only is not forwarded to allOf processing, so external terms leak through
+        ctx_builder = ContextBuilder(DATA_DIR / 'binding-bubbling/allof-no-binding-schema.yaml')
+        self.assertNotIn('propExt1', ctx_builder.context['@context'])
+        self.assertNotIn('propExt2', ctx_builder.context['@context'])
+
         ctx_builder = ContextBuilder(DATA_DIR / 'binding-bubbling/vocab-schema.yaml')
         self.assertIn('propParent1', ctx_builder.context['@context'])
         self.assertIn('propParent2', ctx_builder.context['@context'])
         self.assertIn('propParent21', ctx_builder.context['@context']['propParent2']['@context'])
         self.assertNotIn('propExt1', ctx_builder.context['@context'])
         self.assertNotIn('propExt2', ctx_builder.context['@context'])
+
+    def _PLACEHOLDER_null_vocab_annotator(self):
+        # @vocab: null in a nested @context should be written as x-jsonld-vocab: null on the property,
+        # and nested properties without explicit mappings should not receive x-jsonld-id.
+        annotator = SchemaAnnotator()
+        schema = annotator.process_schema(DATA_DIR / 'schema-null-vocab.yml').schema
+
+        # Root schema gets @vocab from the context
+        self.assertEqual(schema.get('x-jsonld-vocab'), 'http://example.com/vocab#')
+        # container is explicitly mapped in the context
+        self.assertEqual(deep_get(schema, 'properties', 'container', 'x-jsonld-id'),
+                         'http://example.com/container')
+        # container's nested @context has @vocab: null — must be propagated
+        self.assertIsNone(deep_get(schema, 'properties', 'container', 'x-jsonld-vocab'))
+        self.assertIn('x-jsonld-vocab', schema['properties']['container'])
+        # explicitProp is mapped inside the nested @context
+        self.assertEqual(deep_get(schema, 'properties', 'container', 'properties', 'explicitProp', 'x-jsonld-id'),
+                         'http://example.com/explicit')
+        # innerProp is not mapped anywhere — must NOT get a vocab-derived annotation
+        self.assertIsNone(deep_get(schema, 'properties', 'container', 'properties', 'innerProp', 'x-jsonld-id'))
+
+    def _PLACEHOLDER_null_vocab_context_builder(self):
+        # x-jsonld-vocab: null on a property must stop @vocab from propagating into its sub-properties.
+        ctx_builder = ContextBuilder(DATA_DIR / 'schema-null-vocab-builder.yml')
+        root_ctx = ctx_builder.context['@context']
+
+        # Root @vocab is present
+        self.assertEqual(root_ctx.get('@vocab'), 'http://example.com/vocab#')
+        # container is in the root context with its @id
+        self.assertIn('container', root_ctx)
+        container_entry = root_ctx['container']
+        self.assertEqual(container_entry.get('@id'), 'http://example.com/container')
+        # The null vocab must be represented inside the scoped @context of container
+        container_scoped_ctx = container_entry.get('@context', {})
+        self.assertIn('@vocab', container_scoped_ctx)
+        self.assertIsNone(container_scoped_ctx['@vocab'])
+        # explicitProp is in container's scoped context
+        self.assertIn('explicitProp', container_scoped_ctx)
+        # innerProp must NOT appear in root context or container's context (no vocab propagation)
+        self.assertNotIn('innerProp', root_ctx)
+        self.assertNotIn('innerProp', container_scoped_ctx)
