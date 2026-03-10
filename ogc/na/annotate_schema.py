@@ -755,7 +755,8 @@ class ContextBuilder:
                 schema_path_str = ''
             if not isinstance(subschema, dict):
                 return None
-            if subschema.get('type', 'object') != 'object':
+            schema_type = subschema.get('type')
+            if schema_type and schema_type != 'object' and not (isinstance(schema_type, list) and 'object' in schema_type):
                 return None
             for prop, prop_val in subschema.get('properties', {}).items():
                 if prop in JSON_LD_KEYWORDS:
@@ -831,16 +832,20 @@ class ContextBuilder:
                 top_level_value = subschema.get(key)
                 if top_level_value:
                     onto_context[f"@{key[len(ANNOTATION_PREFIX):]}"] = top_level_value
-            is_vocab = is_vocab or bool(onto_context.get('@vocab'))
+            if ANNOTATION_VOCAB in subschema:
+                is_vocab = subschema[ANNOTATION_VOCAB] is not None
+            else:
+                is_vocab = is_vocab or bool(onto_context.get('@vocab'))
+            if is_vocab:
+                local_refs_only = False
 
             if '$ref' in subschema:
                 ref = subschema['$ref']
                 if not local_refs_only or ref.startswith('#'):
-                    ref_path_str = f"{from_schema.location}{ref}"
-                    processed_refs.add(ref_path_str)
                     referenced_schema = self.schema_resolver.resolve_schema(ref, from_schema)
                     if referenced_schema:
-                        ref_ctx = copy.deepcopy(cached_schema_contexts.get(ref_path_str))
+                        cache_key = f"{referenced_schema.location}#{referenced_schema.fragment}"
+                        ref_ctx = copy.deepcopy(cached_schema_contexts.get(cache_key))
                         if ref_ctx is None:
                             ref_ctx = process_subschema(referenced_schema.subschema,
                                                         referenced_schema, schema_path,
