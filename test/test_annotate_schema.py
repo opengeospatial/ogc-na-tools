@@ -190,7 +190,7 @@ class AnnotateSchemaTest(unittest.TestCase):
         self.assertNotIn('propExt1', ctx_builder.context['@context'])
         self.assertNotIn('propExt2', ctx_builder.context['@context'])
 
-    def _PLACEHOLDER_null_vocab_annotator(self):
+    def test_null_vocab_annotator(self):
         # @vocab: null in a nested @context should be written as x-jsonld-vocab: null on the property,
         # and nested properties without explicit mappings should not receive x-jsonld-id.
         annotator = SchemaAnnotator()
@@ -210,7 +210,7 @@ class AnnotateSchemaTest(unittest.TestCase):
         # innerProp is not mapped anywhere — must NOT get a vocab-derived annotation
         self.assertIsNone(deep_get(schema, 'properties', 'container', 'properties', 'innerProp', 'x-jsonld-id'))
 
-    def _PLACEHOLDER_null_vocab_context_builder(self):
+    def test_null_vocab_context_builder(self):
         # x-jsonld-vocab: null on a property must stop @vocab from propagating into its sub-properties.
         ctx_builder = ContextBuilder(DATA_DIR / 'schema-null-vocab-builder.yml')
         root_ctx = ctx_builder.context['@context']

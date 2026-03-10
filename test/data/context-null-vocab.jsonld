@@ -1,0 +1,12 @@
+{
+  "@context": {
+    "@vocab": "http://example.com/vocab#",
+    "container": {
+      "@id": "http://example.com/container",
+      "@context": {
+        "@vocab": null,
+        "explicitProp": "http://example.com/explicit"
+      }
+    }
+  }
+}
