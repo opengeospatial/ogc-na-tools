@@ -580,9 +580,12 @@ class SchemaAnnotator:
                     prop_schema_ctx = {f"{ANNOTATION_PREFIX}{k[1:]}": v
                                        for k, v in prop_ctx.items()
                                        if k in JSON_LD_KEYWORDS and k != '@context'}
-                    prop_ctx_base = prop_ctx.get('@context', {}).get('@base')
+                    inner_ctx = prop_ctx.get('@context') if isinstance(prop_ctx.get('@context'), dict) else {}
+                    prop_ctx_base = inner_ctx.get('@base')
                     if prop_ctx_base:
                         prop_schema_ctx[ANNOTATION_BASE] = prop_ctx_base
+                    if '@vocab' in inner_ctx:
+                        prop_schema_ctx[ANNOTATION_VOCAB] = inner_ctx['@vocab']
 
                     if not prop_value or prop_value is True:
                         properties[prop] = prop_schema_ctx
@@ -774,12 +777,13 @@ class ContextBuilder:
                 for term, term_val in prop_val.items():
                     if term == ANNOTATION_BASE:
                         prop_context.setdefault('@context', {})['@base'] = term_val
+                    elif term == ANNOTATION_VOCAB:
+                        new_vocab = term_val is not None
+                        prop_context.setdefault('@context', {})['@vocab'] = term_val
                     elif term.startswith(ANNOTATION_PREFIX) and term not in ANNOTATION_IGNORE_EXPAND:
                         if term == ANNOTATION_ID:
                             self.visited_properties[full_property_path_str] = (term_val, from_schema.location)
                             self._missed_properties[full_property_path_str] = False
-                        elif term == ANNOTATION_VOCAB:
-                            new_vocab = term_val is not None
                         prop_context['@' + term[len(ANNOTATION_PREFIX):]] = term_val
 
                 if isinstance(prop_context.get('@id'), str) or isinstance(prop_context.get('@reverse'), str):
