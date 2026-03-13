@@ -181,6 +181,48 @@ class ResolvedContext:
     prefixes: dict[str, str] = dataclasses.field(default_factory=dict)
 
 
+@dataclasses.dataclass
+class ResolvedProperty:
+    """
+    A property encountered during ContextBuilder traversal, with its resolved
+    semantic annotations and schema metadata merged across all $ref branches.
+    """
+    path: str
+    id: str | None
+    type: str | list[str] | None
+    vocab: str | None
+    title: str | None
+    description: str | None
+    required: bool
+    sources: list[str | Path] = dataclasses.field(default_factory=list)
+
+    @property
+    def effective_id(self) -> str | None:
+        """Explicit @id, or vocab + property name if under @vocab."""
+        if self.id:
+            return self.id
+        if self.vocab:
+            return self.vocab + self.path.rsplit('/', 1)[-1]
+        return None
+
+    def merge(self, other: ResolvedProperty) -> None:
+        """Merge another occurrence of the same property path into this one."""
+        if self.id is None:
+            self.id = other.id
+        if self.type is None:
+            self.type = other.type
+        if self.vocab is None:
+            self.vocab = other.vocab
+        if self.title is None:
+            self.title = other.title
+        if self.description is None:
+            self.description = other.description
+        self.required = self.required or other.required
+        for src in other.sources:
+            if src not in self.sources:
+                self.sources.append(src)
+
+
 class SchemaResolver:
 
     def __init__(self, working_directory=Path()):
@@ -731,6 +773,7 @@ class ContextBuilder:
 
         self.visited_properties: dict[str, tuple[str | None, str]] = {}
         self._missed_properties: dict[str, Any] = {}  # Dict instead of set to keep order of insertion
+        self._resolved_properties: dict[str, ResolvedProperty] = {}
         context = self._build_context(self.location, contents=contents)
         if context:
             context['@version'] = version
@@ -751,7 +794,7 @@ class ContextBuilder:
 
         def read_properties(subschema: dict, from_schema: ReferencedSchema,
                             onto_context: dict, schema_path: list[str],
-                            is_vocab=False) -> dict | None:
+                            is_vocab=False, current_vocab: str | None = None) -> dict | None:
             if schema_path:
                 schema_path_str = '/' + '/'.join(schema_path)
             else:
@@ -792,6 +835,22 @@ class ContextBuilder:
                     self._missed_properties[full_property_path_str] = False
                 else:
                     prop_id_value = UNDEFINED
+
+                resolved = ResolvedProperty(
+                    path=full_property_path_str,
+                    id=prop_id_value if prop_id_value is not UNDEFINED else None,
+                    type=prop_context.get('@type'),
+                    vocab=current_vocab,
+                    title=prop_val.get('title'),
+                    description=prop_val.get('description'),
+                    required=prop in subschema.get('required', []),
+                    sources=[from_schema.location],
+                )
+                if full_property_path_str in self._resolved_properties:
+                    self._resolved_properties[full_property_path_str].merge(resolved)
+                else:
+                    self._resolved_properties[full_property_path_str] = resolved
+
                 if (prop_id_value in ('@nest', '@graph')
                         or (prop_id_value == UNDEFINED and from_schema == root_schema)
                         or (not prop_id_value and is_vocab)):
@@ -825,7 +884,8 @@ class ContextBuilder:
         cached_schema_contexts = {}
 
         def process_subschema(subschema: dict, from_schema: ReferencedSchema,
-                              schema_path: list[str], is_vocab=False, local_refs_only=False) -> dict:
+                              schema_path: list[str], is_vocab=False, local_refs_only=False,
+                              current_vocab: str | None = None) -> dict:
 
             onto_context = {}
 
@@ -838,6 +898,7 @@ class ContextBuilder:
                     onto_context[f"@{key[len(ANNOTATION_PREFIX):]}"] = top_level_value
             if ANNOTATION_VOCAB in subschema:
                 is_vocab = subschema[ANNOTATION_VOCAB] is not None
+                current_vocab = subschema[ANNOTATION_VOCAB]
             else:
                 is_vocab = is_vocab or bool(onto_context.get('@vocab'))
             if is_vocab:
@@ -853,7 +914,8 @@ class ContextBuilder:
                         if ref_ctx is None:
                             ref_ctx = process_subschema(referenced_schema.subschema,
                                                         referenced_schema, schema_path,
-                                                        is_vocab=is_vocab, local_refs_only=local_refs_only)
+                                                        is_vocab=is_vocab, local_refs_only=local_refs_only,
+                                                        current_vocab=current_vocab)
                         merge_contexts(onto_context, ref_ctx)
 
             for i in ('allOf', 'anyOf', 'oneOf'):
@@ -863,21 +925,24 @@ class ContextBuilder:
                         merge_contexts(onto_context,
                                        process_subschema(sub_subschema, from_schema,
                                                          schema_path, is_vocab=is_vocab,
-                                                         local_refs_only=local_refs_only))
+                                                         local_refs_only=local_refs_only,
+                                                         current_vocab=current_vocab))
 
             for i in ('prefixItems', 'items', 'contains', 'then', 'else', 'additionalProperties', 'unevaluatedProperties'):
                 l = subschema.get(i)
                 if isinstance(l, dict):
                     merge_contexts(onto_context, process_subschema(l, from_schema,
                                                                    schema_path, is_vocab=is_vocab,
-                                                                   local_refs_only=local_refs_only))
+                                                                   local_refs_only=local_refs_only,
+                                                                   current_vocab=current_vocab))
 
             for pp_k, pp in subschema.get('patternProperties', {}).items():
                 if isinstance(pp, dict):
                     merge_contexts(onto_context, process_subschema(pp, from_schema,
                                                                    schema_path + [pp_k],
                                                                    is_vocab=is_vocab,
-                                                                   local_refs_only=local_refs_only))
+                                                                   local_refs_only=local_refs_only,
+                                                                   current_vocab=current_vocab))
 
             if ANNOTATION_EXTRA_TERMS in subschema:
                 for extra_term, extra_term_context in subschema[ANNOTATION_EXTRA_TERMS].items():
@@ -890,7 +955,8 @@ class ContextBuilder:
                                                   for k, v in extra_term_context.items()}
                         onto_context[extra_term] = extra_term_context
 
-            read_properties(subschema, from_schema, onto_context, schema_path, is_vocab=is_vocab)
+            read_properties(subschema, from_schema, onto_context, schema_path, is_vocab=is_vocab,
+                            current_vocab=current_vocab)
 
             if from_schema:
                 current_ref = f"{from_schema.location}{from_schema.ref}"
@@ -1027,6 +1093,10 @@ class ContextBuilder:
     @property
     def missed_properties(self):
         return [k for (k, v) in self._missed_properties.items() if v]
+
+    @property
+    def resolved_properties(self) -> dict[str, ResolvedProperty]:
+        return self._resolved_properties
 
 
 def dump_annotated_schema(schema: AnnotatedSchema, subdir: Path | str = 'annotated',
