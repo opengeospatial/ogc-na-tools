@@ -189,11 +189,17 @@ class ResolvedProperty:
     """
     path: str
     id: str | None
-    type: str | list[str] | None
+    jsonld_type: str | list[str] | None
     vocab: str | None
     title: str | None
     description: str | None
     required: bool
+    schema_type: str | list[str] | None = None
+    format: str | None = None
+    enum: list | None = None
+    deprecated: bool = False
+    read_only: bool = False
+    write_only: bool = False
     sources: list[str | Path] = dataclasses.field(default_factory=list)
 
     @property
@@ -205,19 +211,48 @@ class ResolvedProperty:
             return self.vocab + self.path.rsplit('/', 1)[-1]
         return None
 
+    @staticmethod
+    def _normalize_type(t: str | list[str] | None) -> set[str] | None:
+        if t is None:
+            return None
+        return {t} if isinstance(t, str) else set(t)
+
+    @staticmethod
+    def _pack_type(s: set[str]) -> str | list[str] | None:
+        if not s:
+            return None  # empty intersection = incompatible types
+        if len(s) == 1:
+            return next(iter(s))
+        return sorted(s)
+
     def merge(self, other: ResolvedProperty) -> None:
         """Merge another occurrence of the same property path into this one."""
         if self.id is None:
             self.id = other.id
-        if self.type is None:
-            self.type = other.type
+        if self.jsonld_type is None:
+            self.jsonld_type = other.jsonld_type
         if self.vocab is None:
             self.vocab = other.vocab
         if self.title is None:
             self.title = other.title
         if self.description is None:
             self.description = other.description
+        if self.format is None:
+            self.format = other.format
+        a, b = self._normalize_type(self.schema_type), self._normalize_type(other.schema_type)
+        if a is None:
+            self.schema_type = other.schema_type
+        elif b is not None:
+            self.schema_type = self._pack_type(a & b)
+        if self.enum is None:
+            self.enum = other.enum
+        elif other.enum is not None:
+            other_set = set(other.enum)
+            self.enum = [v for v in self.enum if v in other_set]
         self.required = self.required or other.required
+        self.deprecated = self.deprecated or other.deprecated
+        self.read_only = self.read_only or other.read_only
+        self.write_only = self.write_only or other.write_only
         for src in other.sources:
             if src not in self.sources:
                 self.sources.append(src)
@@ -839,11 +874,17 @@ class ContextBuilder:
                 resolved = ResolvedProperty(
                     path=full_property_path_str,
                     id=prop_id_value if prop_id_value is not UNDEFINED else None,
-                    type=prop_context.get('@type'),
+                    jsonld_type=prop_context.get('@type'),
                     vocab=current_vocab,
                     title=prop_val.get('title'),
                     description=prop_val.get('description'),
                     required=prop in subschema.get('required', []),
+                    schema_type=prop_val.get('type'),
+                    format=prop_val.get('format'),
+                    enum=prop_val.get('enum'),
+                    deprecated=bool(prop_val.get('deprecated', False)),
+                    read_only=bool(prop_val.get('readOnly', False)),
+                    write_only=bool(prop_val.get('writeOnly', False)),
                     sources=[from_schema.location],
                 )
                 if full_property_path_str in self._resolved_properties:
@@ -917,6 +958,15 @@ class ContextBuilder:
                                                         is_vocab=is_vocab, local_refs_only=local_refs_only,
                                                         current_vocab=current_vocab)
                         merge_contexts(onto_context, ref_ctx)
+                else:
+                    # local_refs_only blocks this ref's context contribution, but we still
+                    # traverse it so that resolved_properties captures its properties.
+                    referenced_schema = self.schema_resolver.resolve_schema(ref, from_schema)
+                    if referenced_schema:
+                        process_subschema(referenced_schema.subschema, referenced_schema, schema_path,
+                                          is_vocab=is_vocab, local_refs_only=False,
+                                          current_vocab=current_vocab)
+                        # result intentionally discarded: no context contribution
 
             for i in ('allOf', 'anyOf', 'oneOf'):
                 l = subschema.get(i)
