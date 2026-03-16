@@ -197,6 +197,7 @@ class ResolvedProperty:
     schema_type: str | list[str] | None = None
     format: str | None = None
     enum: list | None = None
+    const: Any = None
     deprecated: bool = False
     read_only: bool = False
     write_only: bool = False
@@ -251,6 +252,8 @@ class ResolvedProperty:
         elif other.enum is not None:
             other_set = set(other.enum)
             self.enum = [v for v in self.enum if v in other_set]
+        if self.const is None:
+            self.const = other.const
         self.required = self.required or other.required
         self.deprecated = self.deprecated or other.deprecated
         self.read_only = self.read_only or other.read_only
@@ -886,6 +889,7 @@ class ContextBuilder:
                     schema_type=prop_val.get('type'),
                     format=prop_val.get('format'),
                     enum=prop_val.get('enum'),
+                    const=prop_val.get('const'),
                     deprecated=bool(prop_val.get('deprecated', False)),
                     read_only=bool(prop_val.get('readOnly', False)),
                     write_only=bool(prop_val.get('writeOnly', False)),
