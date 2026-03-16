@@ -187,7 +187,7 @@ class ResolvedProperty:
     A property encountered during ContextBuilder traversal, with its resolved
     semantic annotations and schema metadata merged across all $ref branches.
     """
-    path: str
+    path: list[str]
     id: str | None
     jsonld_type: str | list[str] | None
     vocab: str | None
@@ -201,14 +201,16 @@ class ResolvedProperty:
     read_only: bool = False
     write_only: bool = False
     sources: list[str | Path] = dataclasses.field(default_factory=list)
+    keyword: str | None = None
+    ref: str | None = None
 
     @property
     def effective_id(self) -> str | None:
         """Explicit @id, or vocab + property name if under @vocab."""
         if self.id:
             return self.id
-        if self.vocab:
-            return self.vocab + self.path.rsplit('/', 1)[-1]
+        if self.vocab and self.path:
+            return self.vocab + self.path[-1]
         return None
 
     @staticmethod
@@ -809,6 +811,7 @@ class ContextBuilder:
         self.visited_properties: dict[str, tuple[str | None, str]] = {}
         self._missed_properties: dict[str, Any] = {}  # Dict instead of set to keep order of insertion
         self._resolved_properties: dict[str, ResolvedProperty] = {}
+        self._resolved_property_defs: dict[str, list[ResolvedProperty]] = {}
         context = self._build_context(self.location, contents=contents)
         if context:
             context['@version'] = version
@@ -845,6 +848,7 @@ class ContextBuilder:
                     continue
                 full_property_path = schema_path + [prop]
                 full_property_path_str = f"{schema_path_str}/{prop}"
+                path_key = '\x00'.join(full_property_path)
                 self.visited_properties.setdefault(full_property_path_str, (None, from_schema.location))
                 if from_schema == root_schema:
                     self._missed_properties.setdefault(full_property_path_str, True)
@@ -872,7 +876,7 @@ class ContextBuilder:
                     prop_id_value = UNDEFINED
 
                 resolved = ResolvedProperty(
-                    path=full_property_path_str,
+                    path=full_property_path,
                     id=prop_id_value if prop_id_value is not UNDEFINED else None,
                     jsonld_type=prop_context.get('@type'),
                     vocab=current_vocab,
@@ -887,10 +891,10 @@ class ContextBuilder:
                     write_only=bool(prop_val.get('writeOnly', False)),
                     sources=[from_schema.location],
                 )
-                if full_property_path_str in self._resolved_properties:
-                    self._resolved_properties[full_property_path_str].merge(resolved)
+                if path_key in self._resolved_properties:
+                    self._resolved_properties[path_key].merge(resolved)
                 else:
-                    self._resolved_properties[full_property_path_str] = resolved
+                    self._resolved_properties[path_key] = resolved
 
                 if (prop_id_value in ('@nest', '@graph')
                         or (prop_id_value == UNDEFINED and from_schema == root_schema)
@@ -923,6 +927,35 @@ class ContextBuilder:
         imported_extra_terms: dict[str | Path, dict[str, str]] = {}
 
         cached_schema_contexts = {}
+        cached_schema_paths: dict[str, list[str]] = {}
+        copy_log: list[tuple[list[str], list[str], str]] = []
+
+        # ------------------------------------------------------------------
+
+        def copy_resolved_props(src_path: list[str], dst_path: list[str]) -> None:
+            """
+            Copy all ResolvedProperty entries rooted at *src_path* to *dst_path*.
+            Fallback for $ref cache-hits at unnamed nodes (allOf / root) where there
+            is no rp entry to hang a `ref` pointer on.
+            """
+            if src_path == dst_path:
+                return
+            sep = '\x00'
+            src_len = len(src_path)
+            for k, v in list(self._resolved_properties.items()):
+                if len(v.path) > src_len and v.path[:src_len] == src_path:
+                    new_path = dst_path + v.path[src_len:]
+                    new_key = sep.join(new_path)
+                    if new_key in self._resolved_properties:
+                        merged = copy.deepcopy(v)
+                        merged.path = new_path
+                        self._resolved_properties[new_key].merge(merged)
+                    else:
+                        new_rp = copy.deepcopy(v)
+                        new_rp.path = new_path
+                        self._resolved_properties[new_key] = new_rp
+
+        # ------------------------------------------------------------------
 
         def process_subschema(subschema: dict, from_schema: ReferencedSchema,
                               schema_path: list[str], is_vocab=False, local_refs_only=False,
@@ -953,10 +986,16 @@ class ContextBuilder:
                         cache_key = f"{referenced_schema.location}#{referenced_schema.fragment}"
                         ref_ctx = copy.deepcopy(cached_schema_contexts.get(cache_key))
                         if ref_ctx is None:
+                            cached_schema_paths[cache_key] = schema_path
                             ref_ctx = process_subschema(referenced_schema.subschema,
                                                         referenced_schema, schema_path,
                                                         is_vocab=is_vocab, local_refs_only=local_refs_only,
                                                         current_vocab=current_vocab)
+                        else:
+                            if cache_key in cached_schema_paths:
+                                src = cached_schema_paths[cache_key]
+                                copy_resolved_props(src, schema_path)
+                                copy_log.append((list(src), list(schema_path), cache_key))
                         merge_contexts(onto_context, ref_ctx)
                 else:
                     # local_refs_only blocks this ref's context contribution, but we still
@@ -968,23 +1007,90 @@ class ContextBuilder:
                                           current_vocab=current_vocab)
                         # result intentionally discarded: no context contribution
 
-            for i in ('allOf', 'anyOf', 'oneOf'):
-                l = subschema.get(i)
-                if isinstance(l, list):
-                    for idx, sub_subschema in enumerate(l):
-                        merge_contexts(onto_context,
-                                       process_subschema(sub_subschema, from_schema,
-                                                         schema_path, is_vocab=is_vocab,
-                                                         local_refs_only=local_refs_only,
-                                                         current_vocab=current_vocab))
+            # allOf: merge into current path (additive composition, no branch node)
+            allof = subschema.get('allOf')
+            if isinstance(allof, list):
+                for sub_subschema in allof:
+                    merge_contexts(onto_context,
+                                   process_subschema(sub_subschema, from_schema,
+                                                     schema_path, is_vocab=is_vocab,
+                                                     local_refs_only=local_refs_only,
+                                                     current_vocab=current_vocab))
 
-            for i in ('prefixItems', 'items', 'contains', 'then', 'else', 'additionalProperties', 'unevaluatedProperties'):
+            # anyOf / oneOf: group node for the keyword + a virtual node per branch
+            for kw in ('anyOf', 'oneOf'):
+                branches = subschema.get(kw)
+                if not isinstance(branches, list):
+                    continue
+                # Single branch: no visual value, treat like allOf
+                if len(branches) == 1:
+                    merge_contexts(onto_context,
+                                   process_subschema(branches[0], from_schema,
+                                                     schema_path, is_vocab=is_vocab,
+                                                     local_refs_only=local_refs_only,
+                                                     current_vocab=current_vocab))
+                    continue
+                group_path = schema_path + [f'_{kw}']
+                group_key = '\x00'.join(group_path)
+                if group_key not in self._resolved_properties:
+                    self._resolved_properties[group_key] = ResolvedProperty(
+                        path=group_path,
+                        id=None, jsonld_type=None, vocab=None,
+                        title=None, description=None,
+                        required=False, keyword=kw,
+                        sources=[from_schema.location],
+                    )
+                for idx, branch_schema in enumerate(branches):
+                    branch_path = group_path + [str(idx)]
+                    branch_key = '\x00'.join(branch_path)
+                    if branch_key not in self._resolved_properties:
+                        branch_title = None
+                        if isinstance(branch_schema, dict):
+                            branch_title = branch_schema.get('title')
+                        if not branch_title:
+                            branch_title = chr(ord('a') + idx) if idx < 26 else str(idx)
+                        self._resolved_properties[branch_key] = ResolvedProperty(
+                            path=branch_path,
+                            id=None, jsonld_type=None, vocab=None,
+                            title=branch_title, description=None,
+                            required=False, keyword='branch',
+                            sources=[from_schema.location],
+                        )
+                    merge_contexts(onto_context,
+                                   process_subschema(branch_schema, from_schema,
+                                                     branch_path, is_vocab=is_vocab,
+                                                     local_refs_only=local_refs_only,
+                                                     current_vocab=current_vocab))
+
+            for i in ('prefixItems', 'items', 'contains', 'additionalProperties', 'unevaluatedProperties'):
                 l = subschema.get(i)
                 if isinstance(l, dict):
                     merge_contexts(onto_context, process_subschema(l, from_schema,
                                                                    schema_path, is_vocab=is_vocab,
                                                                    local_refs_only=local_refs_only,
                                                                    current_vocab=current_vocab))
+
+            # then / else: each gets a virtual node (if is ignored as per design)
+            for kw in ('then', 'else'):
+                branch_schema = subschema.get(kw)
+                if not isinstance(branch_schema, dict):
+                    continue
+                branch_path = schema_path + [f'_{kw}']
+                path_key = '\x00'.join(branch_path)
+                if path_key not in self._resolved_properties:
+                    branch_title = branch_schema.get('title')
+                    self._resolved_properties[path_key] = ResolvedProperty(
+                        path=branch_path,
+                        id=None, jsonld_type=None, vocab=None,
+                        title=branch_title, description=None,
+                        required=False, keyword=kw,
+                        sources=[from_schema.location],
+                    )
+                merge_contexts(onto_context,
+                               process_subschema(branch_schema, from_schema,
+                                                 branch_path, is_vocab=is_vocab,
+                                                 local_refs_only=local_refs_only,
+                                                 current_vocab=current_vocab))
 
             for pp_k, pp in subschema.get('patternProperties', {}).items():
                 if isinstance(pp, dict):
@@ -1029,6 +1135,8 @@ class ContextBuilder:
             return onto_context
 
         merge_contexts(own_context, process_subschema(root_schema.subschema, root_schema, []))
+        self._hoist_common_branch_properties()
+        self._dedup_to_defs(copy_log)
 
         for imported_et in imported_extra_terms.values():
             for term, v in imported_et.items():
@@ -1140,6 +1248,213 @@ class ContextBuilder:
         self._parsed_schemas[schema_location] = own_context
         return own_context
 
+    def _hoist_common_branch_properties(self) -> None:
+        """
+        For each anyOf/oneOf group node, find leaf properties that appear in every
+        branch with compatible definitions and move them to the parent scope.
+        Empty branch/group nodes are removed afterwards.
+        """
+        rp = self._resolved_properties
+        sep = '\x00'
+
+        # Build parent→children index for O(1) lookups instead of O(N) scans.
+        # children[parent_key] = {child_name: child_key}
+        children: dict[str, dict[str, str]] = {}
+        for k, v in rp.items():
+            if v.path:
+                pk = sep.join(v.path[:-1])
+                children.setdefault(pk, {})[v.path[-1]] = k
+
+        def _del(k: str) -> ResolvedProperty:
+            v = rp.pop(k)
+            pk = sep.join(v.path[:-1])
+            if pk in children:
+                children[pk].pop(v.path[-1], None)
+                if not children[pk]:
+                    del children[pk]
+            return v
+
+        def _add(new_rp: ResolvedProperty) -> None:
+            k = sep.join(new_rp.path)
+            if k in rp:
+                rp[k].merge(new_rp)
+            else:
+                rp[k] = new_rp
+            pk = sep.join(new_rp.path[:-1])
+            children.setdefault(pk, {})[new_rp.path[-1]] = k
+
+        def _all_descendants(key: str) -> list[tuple[str, ResolvedProperty]]:
+            """BFS via children index — O(descendants), not O(|rp|)."""
+            result = []
+            stack = list(children.get(key, {}).values())
+            while stack:
+                k = stack.pop()
+                if k in rp:
+                    result.append((k, rp[k]))
+                    stack.extend(children.get(k, {}).values())
+            return result
+
+        # Process deepest groups first so inner groups are cleaned up before outer
+        # groups inspect their branches (avoids stale keys after re-pathing).
+        group_keys = sorted(
+            [k for k, v in rp.items() if v.keyword in ('anyOf', 'oneOf')],
+            key=lambda k: len(rp[k].path),
+            reverse=True,
+        )
+
+        for group_key in group_keys:
+            group = rp.get(group_key)
+            if not group:
+                continue
+            group_path = group.path
+            parent_path = group_path[:-1]
+
+            # Direct branch children of this group (O(branches), not O(|rp|))
+            branch_keys = [
+                ck for ck in children.get(group_key, {}).values()
+                if rp[ck].keyword == 'branch'
+            ]
+            if len(branch_keys) < 2:
+                continue
+
+            # Branches that use a ref have their content in defs — skip hoisting for
+            # the whole group if any branch has a ref (can't inspect their inline content).
+            any_ref = any(rp[bk].ref for bk in branch_keys if bk in rp)
+
+            if not any_ref:
+                # Direct non-virtual property children per branch
+                branch_props = {
+                    bk: {
+                        name: ck
+                        for name, ck in children.get(bk, {}).items()
+                        if not rp[ck].keyword
+                    }
+                    for bk in branch_keys
+                }
+
+                common_names = set.intersection(*(set(bp.keys()) for bp in branch_props.values()))
+
+                for name in list(common_names):
+                    # Skip properties that have children (nested objects); hoist only leaves
+                    if any(branch_props[bk][name] in children for bk in branch_keys):
+                        continue
+
+                    branch_resolved = [rp[branch_props[bk][name]] for bk in branch_keys]
+                    first = branch_resolved[0]
+                    if not all(
+                        r.schema_type == first.schema_type and r.id == first.id
+                        for r in branch_resolved[1:]
+                    ):
+                        continue
+
+                    parent_prop_path = parent_path + [name]
+                    merged = copy.deepcopy(first)
+                    merged.path = parent_prop_path
+                    for other in branch_resolved[1:]:
+                        merged.merge(other)
+
+                    _add(merged)
+                    for bk in branch_keys:
+                        _del(branch_props[bk][name])
+
+            # Remove branch nodes that are now empty; keep those with a ref (content in defs)
+            for bk in list(branch_keys):
+                if bk in rp and bk not in children and not rp[bk].ref:
+                    _del(bk)
+
+            remaining = [
+                k for k in branch_keys
+                if k in rp and rp[k].keyword == 'branch'
+            ]
+
+            if len(remaining) <= 1:
+                if len(remaining) == 1:
+                    sole_key = remaining[0]
+                    if rp[sole_key].ref:
+                        # Sole remaining branch is ref'd: can't inline-unwrap, leave as-is
+                        pass
+                    else:
+                        sole_path = rp[sole_key].path
+                        for k, v in _all_descendants(sole_key):
+                            _del(k)
+                            new_rp = copy.deepcopy(v)
+                            new_rp.path = parent_path + v.path[len(sole_path):]
+                            _add(new_rp)
+                        _del(sole_key)
+                        if group_key in rp:
+                            _del(group_key)
+                elif group_key in rp:
+                    _del(group_key)
+
+    def _dedup_to_defs(self, copy_log: list[tuple[list[str], list[str], str]]) -> None:
+        """
+        Post-hoist deduplication: for each (src_path, dst_path, cache_key) in copy_log,
+        if the dst subtree still has entries (not all hoisted), move the src subtree
+        into _resolved_property_defs[cache_key] with relative paths and replace both
+        the src and dst nodes with ``ref`` pointers.
+        """
+        if not copy_log:
+            return
+
+        rp = self._resolved_properties
+        sep = '\x00'
+
+        # Build a parent→{child_name: child_key} index for O(1) lookups.
+        children: dict[str, dict[str, str]] = {}
+        for k, v in rp.items():
+            if v.path:
+                pk = sep.join(v.path[:-1])
+                children.setdefault(pk, {})[v.path[-1]] = k
+
+        def _get_descendants(path: list[str]) -> list[tuple[str, ResolvedProperty]]:
+            result = []
+            stack = list(children.get(sep.join(path), {}).values())
+            while stack:
+                k = stack.pop()
+                if k in rp:
+                    result.append((k, rp[k]))
+                    stack.extend(children.get(k, {}).values())
+            return result
+
+        def _remove_descendants(path: list[str]) -> None:
+            path_key = sep.join(path)
+            stack = list(children.get(path_key, {}).values())
+            while stack:
+                k = stack.pop()
+                stack.extend(children.get(k, {}).values())
+                rp.pop(k, None)
+                children.pop(k, None)
+            children.pop(path_key, None)
+
+        for src_path, dst_path, cache_key in copy_log:
+            if not src_path or not dst_path or src_path == dst_path:
+                continue
+
+            dst_key = sep.join(dst_path)
+            dst_descendants = _get_descendants(dst_path)
+            if not dst_descendants:
+                continue  # all hoisted away; nothing to dedup
+
+            if cache_key not in self._resolved_property_defs:
+                src_descendants = _get_descendants(src_path)
+                if not src_descendants:
+                    continue
+                src_len = len(src_path)
+                def_entries = []
+                for _, v in src_descendants:
+                    entry = copy.deepcopy(v)
+                    entry.path = v.path[src_len:]
+                    def_entries.append(entry)
+                self._resolved_property_defs[cache_key] = def_entries
+                _remove_descendants(src_path)
+                src_key = sep.join(src_path)
+                if src_key in rp:
+                    rp[src_key].ref = cache_key
+
+            _remove_descendants(dst_path)
+            if dst_key in rp:
+                rp[dst_key].ref = cache_key
+
     @property
     def missed_properties(self):
         return [k for (k, v) in self._missed_properties.items() if v]
@@ -1147,6 +1462,10 @@ class ContextBuilder:
     @property
     def resolved_properties(self) -> dict[str, ResolvedProperty]:
         return self._resolved_properties
+
+    @property
+    def resolved_property_defs(self) -> dict[str, list[ResolvedProperty]]:
+        return self._resolved_property_defs
 
 
 def dump_annotated_schema(schema: AnnotatedSchema, subdir: Path | str = 'annotated',
