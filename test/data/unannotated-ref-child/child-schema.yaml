@@ -1,0 +1,4 @@
+properties:
+  propNested:
+    x-jsonld-id: http://example.com/nested
+    type: string

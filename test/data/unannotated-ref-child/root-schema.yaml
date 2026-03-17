@@ -1,0 +1,3 @@
+x-jsonld-vocab: http://example.com/vocab#
+allOf:
+  - $ref: ./parent-schema.yaml

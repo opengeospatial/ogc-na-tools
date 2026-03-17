@@ -230,3 +230,21 @@ class AnnotateSchemaTest(unittest.TestCase):
         # innerProp must NOT appear in root context or container's context (no vocab propagation)
         self.assertNotIn('innerProp', root_ctx)
         self.assertNotIn('innerProp', container_scoped_ctx)
+
+    def test_unannotated_prop_follows_external_ref(self):
+        # Regression: without prop_context['@id'] = UNDEFINED for unannotated properties,
+        # local_refs_only is incorrectly set to True, blocking external $ref traversal and
+        # preventing child properties of unannotated properties from being collected.
+        ctx_builder = ContextBuilder(DATA_DIR / 'unannotated-ref-child/root-schema.yaml')
+        # root-schema has @vocab; parent-schema disables it (x-jsonld-vocab: null), so
+        # propContainer (in parent-schema, unannotated, from_schema != root_schema) falls
+        # into the else branch where local_refs_only depends on '@id' being in prop_context.
+        # Without prop_context['@id'] = UNDEFINED, prop_context has len=1 and empty @context,
+        # so the property is never added to the context at all.
+        # With the fix, local_refs_only=False → child-schema.yaml is followed, propNested
+        # appears in propContainer's scoped context, and compact_branch keeps it (root @vocab).
+        # (Checking visited_properties is insufficient — the else branch always traverses
+        # blocked refs for resolved_properties, so it always passes regardless.)
+        root_ctx = ctx_builder.context['@context']
+        self.assertIn('propContainer', root_ctx)
+        self.assertIn('propNested', root_ctx['propContainer']['@context'])

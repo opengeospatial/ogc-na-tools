@@ -1,0 +1,4 @@
+x-jsonld-vocab: null
+properties:
+  propContainer:
+    $ref: ./child-schema.yaml
