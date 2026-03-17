@@ -876,6 +876,7 @@ class ContextBuilder:
                     self.visited_properties[full_property_path_str] = (prop_id_value, from_schema.location)
                     self._missed_properties[full_property_path_str] = False
                 else:
+                    prop_context['@id'] = UNDEFINED
                     prop_id_value = UNDEFINED
 
                 resolved = ResolvedProperty(
