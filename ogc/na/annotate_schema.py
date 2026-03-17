@@ -1141,6 +1141,7 @@ class ContextBuilder:
         merge_contexts(own_context, process_subschema(root_schema.subschema, root_schema, []))
         self._hoist_common_branch_properties()
         self._dedup_to_defs(copy_log)
+        self._renumber_branches()
 
         for imported_et in imported_extra_terms.values():
             for term, v in imported_et.items():
@@ -1458,6 +1459,35 @@ class ContextBuilder:
             _remove_descendants(dst_path)
             if dst_key in rp:
                 rp[dst_key].ref = cache_key
+
+    def _renumber_branches(self) -> None:
+        """
+        After hoisting/deduplication some branches may have been pruned, leaving
+        gaps in the auto-generated a/b/c labels.  Re-assign sequential labels to
+        all surviving branches whose title looks auto-generated (single lowercase
+        letter).  Applied to both _resolved_properties and _resolved_property_defs.
+        """
+        def _relabel(entries: dict[str, ResolvedProperty] | list[ResolvedProperty]) -> None:
+            # Collect group → [branch, ...] sorted by their numeric path index
+            groups: dict[str, list[ResolvedProperty]] = {}
+            iterable = entries.values() if isinstance(entries, dict) else entries
+            for v in iterable:
+                if v.keyword == 'branch' and v.path:
+                    group_key = '\x00'.join(v.path[:-1])
+                    groups.setdefault(group_key, []).append(v)
+
+            for branches in groups.values():
+                # Sort by the numeric index stored in the last path segment
+                branches.sort(key=lambda b: int(b.path[-1]) if b.path[-1].isdigit() else 0)
+                new_idx = 0
+                for branch in branches:
+                    if branch.title and len(branch.title) == 1 and branch.title.islower():
+                        branch.title = chr(ord('a') + new_idx) if new_idx < 26 else str(new_idx)
+                    new_idx += 1
+
+        _relabel(self._resolved_properties)
+        for def_entries in self._resolved_property_defs.values():
+            _relabel(def_entries)
 
     @property
     def missed_properties(self):
