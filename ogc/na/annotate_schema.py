@@ -1026,6 +1026,17 @@ class ContextBuilder:
                 branches = subschema.get(kw)
                 if not isinstance(branches, list):
                     continue
+                # Flatten nested same-keyword branches (e.g. anyOf[anyOf[a,b],c] → anyOf[a,b,c]).
+                # Only inlines branches that are *purely* the same keyword with no other keys.
+                def _flatten(bl):
+                    result = []
+                    for b in bl:
+                        if isinstance(b, dict) and set(b.keys()) == {kw} and isinstance(b.get(kw), list):
+                            result.extend(_flatten(b[kw]))
+                        else:
+                            result.append(b)
+                    return result
+                branches = _flatten(branches)
                 # Single branch: no visual value, treat like allOf
                 if len(branches) == 1:
                     merge_contexts(onto_context,
