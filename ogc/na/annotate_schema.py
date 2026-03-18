@@ -1359,7 +1359,10 @@ class ContextBuilder:
                     branch_resolved = [rp[branch_props[bk][name]] for bk in branch_keys]
                     first = branch_resolved[0]
                     if not all(
-                        r.schema_type == first.schema_type and r.id == first.id
+                        r.schema_type == first.schema_type
+                        and r.id == first.id
+                        and r.enum == first.enum
+                        and r.const == first.const
                         for r in branch_resolved[1:]
                     ):
                         continue
