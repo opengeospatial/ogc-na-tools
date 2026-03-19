@@ -933,32 +933,7 @@ class ContextBuilder:
 
         cached_schema_contexts = {}
         cached_schema_paths: dict[str, list[str]] = {}
-        copy_log: list[tuple[list[str], list[str], str]] = []
-
-        # ------------------------------------------------------------------
-
-        def copy_resolved_props(src_path: list[str], dst_path: list[str]) -> None:
-            """
-            Copy all ResolvedProperty entries rooted at *src_path* to *dst_path*.
-            Fallback for $ref cache-hits at unnamed nodes (allOf / root) where there
-            is no rp entry to hang a `ref` pointer on.
-            """
-            if src_path == dst_path:
-                return
-            sep = '\x00'
-            src_len = len(src_path)
-            for k, v in list(self._resolved_properties.items()):
-                if len(v.path) > src_len and v.path[:src_len] == src_path:
-                    new_path = dst_path + v.path[src_len:]
-                    new_key = sep.join(new_path)
-                    if new_key in self._resolved_properties:
-                        merged = copy.deepcopy(v)
-                        merged.path = new_path
-                        self._resolved_properties[new_key].merge(merged)
-                    else:
-                        new_rp = copy.deepcopy(v)
-                        new_rp.path = new_path
-                        self._resolved_properties[new_key] = new_rp
+        ref_log: list[tuple[list[str], list[str], str]] = []
 
         # ------------------------------------------------------------------
 
@@ -999,8 +974,8 @@ class ContextBuilder:
                         else:
                             if cache_key in cached_schema_paths:
                                 src = cached_schema_paths[cache_key]
-                                copy_resolved_props(src, schema_path)
-                                copy_log.append((list(src), list(schema_path), cache_key))
+                                if src and schema_path:
+                                    ref_log.append((list(src), list(schema_path), cache_key))
                         merge_contexts(onto_context, ref_ctx)
                 else:
                     # local_refs_only blocks this ref's context contribution, but we still
@@ -1152,7 +1127,7 @@ class ContextBuilder:
 
         merge_contexts(own_context, process_subschema(root_schema.subschema, root_schema, []))
         self._hoist_common_branch_properties()
-        self._dedup_to_defs(copy_log)
+        self._dedup_to_defs(ref_log)
         self._renumber_branches()
 
         for imported_et in imported_extra_terms.values():
@@ -1406,14 +1381,14 @@ class ContextBuilder:
                 elif group_key in rp:
                     _del(group_key)
 
-    def _dedup_to_defs(self, copy_log: list[tuple[list[str], list[str], str]]) -> None:
+    def _dedup_to_defs(self, ref_log: list[tuple[list[str], list[str], str]]) -> None:
         """
-        Post-hoist deduplication: for each (src_path, dst_path, cache_key) in copy_log,
-        if the dst subtree still has entries (not all hoisted), move the src subtree
-        into _resolved_property_defs[cache_key] with relative paths and replace both
-        the src and dst nodes with ``ref`` pointers.
+        For each (src_path, dst_path, cache_key) recorded at $ref cache-hit time,
+        move the src subtree into _resolved_property_defs[cache_key] with relative
+        paths (first occurrence only) and set a ``ref`` pointer on both the src node
+        and the dst node.  No pre-copying is needed — dst has no inline children.
         """
-        if not copy_log:
+        if not ref_log:
             return
 
         rp = self._resolved_properties
@@ -1446,19 +1421,18 @@ class ContextBuilder:
                 children.pop(k, None)
             children.pop(path_key, None)
 
-        for src_path, dst_path, cache_key in copy_log:
+        for src_path, dst_path, cache_key in ref_log:
             if not src_path or not dst_path or src_path == dst_path:
                 continue
 
             dst_key = sep.join(dst_path)
-            dst_descendants = _get_descendants(dst_path)
-            if not dst_descendants:
-                continue  # all hoisted away; nothing to dedup
+            if dst_key not in rp:
+                continue
 
             if cache_key not in self._resolved_property_defs:
                 src_descendants = _get_descendants(src_path)
                 if not src_descendants:
-                    continue
+                    continue  # all hoisted away; nothing to put in a def
                 src_len = len(src_path)
                 def_entries = []
                 for _, v in src_descendants:
@@ -1471,8 +1445,7 @@ class ContextBuilder:
                 if src_key in rp:
                     rp[src_key].ref = cache_key
 
-            _remove_descendants(dst_path)
-            if dst_key in rp:
+            if dst_key in rp:  # may have been removed if dst was under src
                 rp[dst_key].ref = cache_key
 
     def _renumber_branches(self) -> None:
