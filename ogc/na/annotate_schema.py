@@ -1439,6 +1439,9 @@ class ContextBuilder:
                     entry = copy.deepcopy(v)
                     entry.path = v.path[src_len:]
                     def_entries.append(entry)
+                def_entries.sort(key=lambda e: [
+                    int(seg) if seg.isdigit() else seg for seg in e.path
+                ])
                 self._resolved_property_defs[cache_key] = def_entries
                 _remove_descendants(src_path)
                 src_key = sep.join(src_path)
@@ -1573,6 +1576,11 @@ def _main():
     )
 
     parser.add_argument(
+        '--dump-resolved',
+        help='Dump resolved properties and defs as JSON to a file (- for stdout)',
+    )
+
+    parser.add_argument(
         '--ignore-existing',
         help="Ignore existing x-jsonld- properties when annotating",
         action='store_true',
@@ -1604,6 +1612,34 @@ def _main():
             else:
                 with open(args.dump_visited, 'w', newline='') as f:
                     write_visited(f)
+
+        if args.dump_resolved:
+            def _serialize_rp(rp: ResolvedProperty) -> dict:
+                d = dataclasses.asdict(rp)
+                d['sources'] = [str(s) for s in rp.sources]
+                d['effectiveId'] = rp.effective_id
+                return {k: v for k, v in d.items()
+                        if v is not None and (k == 'const' or (v != [] and v is not False))}
+
+            key_map = {k: str(i) for i, k in enumerate(ctx_builder.resolved_property_defs)}
+
+            def _with_short_ref(d: dict) -> dict:
+                if 'ref' in d and d['ref'] in key_map:
+                    d['ref'] = key_map[d['ref']]
+                return d
+
+            properties_list = [_with_short_ref(_serialize_rp(rp))
+                               for rp in ctx_builder.resolved_properties.values()]
+            defs = {
+                key_map[k]: [_with_short_ref(_serialize_rp(e)) for e in entries]
+                for k, entries in ctx_builder.resolved_property_defs.items()
+            }
+            dump = {'defs': defs, 'properties': properties_list}
+            if args.dump_resolved == '-':
+                json.dump(dump, sys.stdout, indent=2)
+            else:
+                with open(args.dump_resolved, 'w') as f:
+                    json.dump(dump, f, indent=2)
     else:
         annotator = SchemaAnnotator(ignore_existing=args.ignore_existing)
         annotated = annotator.process_schema(args.schema, args.context)
