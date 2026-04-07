@@ -906,10 +906,35 @@ class ContextBuilder:
                         or (not prop_id_value and is_vocab)):
                     if prop_id_value == UNDEFINED or (not prop_id_value and is_vocab):
                         prop_context.pop('@id', None)
+                    # Decide whether to block external $ref context contributions for
+                    # this property's sub-schema ("binding bubbling" prevention).
+                    #
+                    # The problem we guard against: a property with no x-jsonld-id that
+                    # is itself a $ref to an external schema whose annotated properties
+                    # would then "bubble up" and overwrite valid bindings at the parent
+                    # scope.  Classic example: a bare `link` property that $refs a link
+                    # schema — that schema's `type` binding must not clobber a top-level
+                    # `type` mapping that already exists.
+                    #
+                    # However, a property can legitimately lack an explicit x-jsonld-id
+                    # in the *root* schema while still having a proper binding that
+                    # arrived earlier via allOf processing (which runs before
+                    # read_properties).  If we applied local_refs_only=True in that case
+                    # we would incorrectly block external $refs inside, e.g.,
+                    # features.items.anyOf branches, dropping their semantic annotations.
+                    #
+                    # Rule: local_refs_only=True only when the property is *genuinely*
+                    # unbound — no x-jsonld-id on the property itself AND no inherited
+                    # binding already present in onto_context from allOf/anyOf.
+                    existing = onto_context.get(prop)
+                    prop_already_bound = (
+                        (isinstance(existing, str) and existing)
+                        or (isinstance(existing, dict) and bool(existing.get('@id')))
+                    )
                     merge_contexts(prop_context['@context'] if is_vocab else onto_context,
                                    process_subschema(prop_val, from_schema,
                                                      full_property_path, is_vocab=new_vocab,
-                                                     local_refs_only='@id' not in prop_context and not is_vocab))
+                                                     local_refs_only=not prop_already_bound and '@id' not in prop_context and not is_vocab))
                 else:
                     merge_contexts(prop_context['@context'],
                                    process_subschema(prop_val, from_schema,

@@ -286,3 +286,4 @@ poetry.toml
 ogc/na/_version.py
 .idea/modules.xml
 .idea/
+CLAUDE.md

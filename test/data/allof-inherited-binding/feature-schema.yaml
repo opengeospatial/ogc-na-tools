@@ -1,0 +1,7 @@
+# Simulates a feature schema whose annotated properties (topology, name) should
+# appear in the context when referenced from features.items.anyOf in root-schema.yaml.
+properties:
+  topology:
+    x-jsonld-id: https://example.com/topology
+  name:
+    x-jsonld-id: https://example.com/name

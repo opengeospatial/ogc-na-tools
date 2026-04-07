@@ -1,0 +1,6 @@
+# External schema whose properties must NOT bubble up into the root context.
+# Referenced by the 'naked' property in root-schema.yaml, which has no x-jsonld-id
+# and no inherited binding from allOf.
+properties:
+  forbidden:
+    x-jsonld-id: https://example.com/forbidden

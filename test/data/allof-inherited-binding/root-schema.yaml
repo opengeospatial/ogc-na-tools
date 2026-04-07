@@ -1,0 +1,18 @@
+# Root schema that mirrors the topo-feature-collection / topo-feature pattern:
+#
+#   - 'features' has no x-jsonld-id here; its binding (https://example.com/features)
+#     arrives via allOf -> collection-schema.yaml.
+#   - features.items.anyOf[0] references feature-schema.yaml (external), which
+#     contributes 'topology' and 'name' with their own x-jsonld-id annotations.
+#   - 'naked' has no x-jsonld-id and no allOf-inherited binding, so its external
+#     $ref (naked-schema.yaml) must not bubble its properties into the root context.
+allOf:
+  - $ref: ./collection-schema.yaml
+properties:
+  features:
+    type: array
+    items:
+      anyOf:
+        - $ref: ./feature-schema.yaml
+  naked:
+    $ref: ./naked-schema.yaml

@@ -1,0 +1,6 @@
+# Simulates a base featureCollection schema that defines the 'features' binding.
+# Referenced via allOf from root-schema.yaml.
+properties:
+  features:
+    x-jsonld-id: https://example.com/features
+    type: array

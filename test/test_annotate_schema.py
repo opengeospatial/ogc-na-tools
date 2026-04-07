@@ -231,6 +231,36 @@ class AnnotateSchemaTest(unittest.TestCase):
         self.assertNotIn('innerProp', root_ctx)
         self.assertNotIn('innerProp', container_scoped_ctx)
 
+    def test_allof_inherited_binding_propagation(self):
+        # Regression: a property (e.g. 'features') that has no x-jsonld-id in the
+        # root schema but receives its binding via allOf was incorrectly flagged as
+        # "truly unbound", causing local_refs_only=True.  That blocked external $refs
+        # inside the property's sub-schema (items.anyOf, etc.) from contributing their
+        # annotations to the context — so properties like 'topology' and 'name' (which
+        # come from an external $ref inside features.items.anyOf) were silently dropped.
+        #
+        # The fix: before setting local_refs_only=True, also check onto_context for an
+        # already-present binding contributed by a prior allOf pass.  If such a binding
+        # exists the property is NOT truly naked and external refs should be followed.
+        #
+        # Concretely mirrors the topo-feature-collection / topo-feature pattern where
+        # features.items.anyOf[0] -> topo-feature/schema.yaml contains topology/@id.
+        ctx_builder = ContextBuilder(DATA_DIR / 'allof-inherited-binding/root-schema.yaml')
+        ctx = ctx_builder.context['@context']
+
+        # 'features' binding arrives via allOf -> collection-schema.yaml
+        self.assertIn('features', ctx)
+
+        # 'topology' and 'name' come from feature-schema.yaml (external anyOf $ref
+        # inside features.items); they should be hoisted to the root context because
+        # 'features' has no explicit x-jsonld-id in the root schema.
+        self.assertIn('topology', ctx)
+        self.assertIn('name', ctx)
+
+        # 'naked' has no x-jsonld-id and no allOf-inherited binding, so its external
+        # $ref (naked-schema.yaml / 'forbidden') must NOT bubble into the root context.
+        self.assertNotIn('forbidden', ctx)
+
     def test_unannotated_prop_follows_external_ref(self):
         # Regression: without prop_context['@id'] = UNDEFINED for unannotated properties,
         # local_refs_only is incorrectly set to True, blocking external $ref traversal and
