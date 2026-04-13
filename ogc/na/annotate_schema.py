@@ -835,7 +835,8 @@ class ContextBuilder:
 
         def read_properties(subschema: dict, from_schema: ReferencedSchema,
                             onto_context: dict, schema_path: list[str],
-                            is_vocab=False, current_vocab: str | None = None) -> dict | None:
+                            is_vocab=False, current_vocab: str | None = None,
+                            sibling_context: dict | None = None) -> dict | None:
             if schema_path:
                 schema_path_str = '/' + '/'.join(schema_path)
             else:
@@ -926,7 +927,17 @@ class ContextBuilder:
                     # Rule: local_refs_only=True only when the property is *genuinely*
                     # unbound — no x-jsonld-id on the property itself AND no inherited
                     # binding already present in onto_context from allOf/anyOf.
+                    #
+                    # Additionally, check sibling_context: when this sub-schema is one
+                    # branch of an allOf/anyOf/oneOf, the binding may have been established
+                    # by a prior sibling branch and merged into the outer accumulated context
+                    # (passed in as sibling_context) rather than the local onto_context.
+                    # Classic example: allOf[0] = base schema that binds 'features', allOf[1]
+                    # = inline properties with features.items.$ref; when processing allOf[1],
+                    # onto_context is empty but sibling_context already has the features binding.
                     existing = onto_context.get(prop)
+                    if existing is None and sibling_context:
+                        existing = sibling_context.get(prop)
                     prop_already_bound = (
                         (isinstance(existing, str) and existing)
                         or (isinstance(existing, dict) and bool(existing.get('@id')))
@@ -964,7 +975,8 @@ class ContextBuilder:
 
         def process_subschema(subschema: dict, from_schema: ReferencedSchema,
                               schema_path: list[str], is_vocab=False, local_refs_only=False,
-                              current_vocab: str | None = None) -> dict:
+                              current_vocab: str | None = None,
+                              sibling_context: dict | None = None) -> dict:
 
             onto_context = {}
 
@@ -1012,7 +1024,9 @@ class ContextBuilder:
                                           current_vocab=current_vocab)
                         # result intentionally discarded: no context contribution
 
-            # allOf: merge into current path (additive composition, no branch node)
+            # allOf: merge into current path (additive composition, no branch node).
+            # Pass onto_context as sibling_context so each branch can see bindings
+            # that prior sibling branches have already contributed.
             allof = subschema.get('allOf')
             if isinstance(allof, list):
                 for sub_subschema in allof:
@@ -1020,9 +1034,11 @@ class ContextBuilder:
                                    process_subschema(sub_subschema, from_schema,
                                                      schema_path, is_vocab=is_vocab,
                                                      local_refs_only=local_refs_only,
-                                                     current_vocab=current_vocab))
+                                                     current_vocab=current_vocab,
+                                                     sibling_context=onto_context))
 
-            # anyOf / oneOf: group node for the keyword + a virtual node per branch
+            # anyOf / oneOf: group node for the keyword + a virtual node per branch.
+            # Same sibling_context treatment as allOf.
             for kw in ('anyOf', 'oneOf'):
                 branches = subschema.get(kw)
                 if not isinstance(branches, list):
@@ -1044,7 +1060,8 @@ class ContextBuilder:
                                    process_subschema(branches[0], from_schema,
                                                      schema_path, is_vocab=is_vocab,
                                                      local_refs_only=local_refs_only,
-                                                     current_vocab=current_vocab))
+                                                     current_vocab=current_vocab,
+                                                     sibling_context=onto_context))
                     continue
                 group_path = schema_path + [f'_{kw}']
                 group_key = '\x00'.join(group_path)
@@ -1076,7 +1093,8 @@ class ContextBuilder:
                                    process_subschema(branch_schema, from_schema,
                                                      branch_path, is_vocab=is_vocab,
                                                      local_refs_only=local_refs_only,
-                                                     current_vocab=current_vocab))
+                                                     current_vocab=current_vocab,
+                                                     sibling_context=onto_context))
 
             for i in ('prefixItems', 'items', 'contains', 'additionalProperties', 'unevaluatedProperties'):
                 l = subschema.get(i)
@@ -1128,7 +1146,7 @@ class ContextBuilder:
                         onto_context[extra_term] = extra_term_context
 
             read_properties(subschema, from_schema, onto_context, schema_path, is_vocab=is_vocab,
-                            current_vocab=current_vocab)
+                            current_vocab=current_vocab, sibling_context=sibling_context)
 
             if from_schema:
                 current_ref = f"{from_schema.location}{from_schema.ref}"

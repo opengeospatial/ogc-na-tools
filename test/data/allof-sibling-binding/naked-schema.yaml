@@ -1,0 +1,5 @@
+# Schema for the 'naked' property (no binding anywhere).
+# Its annotated property 'forbidden' must NOT bubble up into the root context.
+properties:
+  forbidden:
+    x-jsonld-id: https://example.com/forbidden

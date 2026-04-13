@@ -261,6 +261,43 @@ class AnnotateSchemaTest(unittest.TestCase):
         # $ref (naked-schema.yaml / 'forbidden') must NOT bubble into the root context.
         self.assertNotIn('forbidden', ctx)
 
+    def test_allof_sibling_binding_propagation(self):
+        # Regression: a property ('features') that has no x-jsonld-id in an allOf branch
+        # gets its binding from a *sibling* allOf branch (allOf[0] -> collection-schema).
+        #
+        # Schema shape:
+        #   allOf:
+        #     - $ref: collection-schema.yaml   # binds features: https://example.com/features
+        #     - properties:
+        #         features:
+        #           items:
+        #             $ref: feature-schema.yaml  # contributes topology, name
+        #         naked:
+        #           $ref: naked-schema.yaml      # no binding anywhere → must stay blocked
+        #
+        # Without sibling_context, allOf[1] is processed with an empty local onto_context,
+        # so 'features' looks unbound → local_refs_only=True → items.$ref is blocked and
+        # topology/name are silently dropped.
+        #
+        # The fix: pass the accumulated outer onto_context as sibling_context to each allOf
+        # branch call.  read_properties falls through to sibling_context when onto_context
+        # has no entry for the property, so the allOf[0] binding is found and
+        # local_refs_only stays False.
+        ctx_builder = ContextBuilder(DATA_DIR / 'allof-sibling-binding/root-schema.yaml')
+        ctx = ctx_builder.context['@context']
+
+        # 'features' binding from allOf[0] -> collection-schema.yaml
+        self.assertIn('features', ctx)
+
+        # 'topology' and 'name' come from feature-schema.yaml referenced via
+        # features.items.$ref in allOf[1]; they should appear in the output context.
+        self.assertIn('topology', ctx)
+        self.assertIn('name', ctx)
+
+        # 'naked' has no binding in any allOf branch, so its $ref (naked-schema.yaml /
+        # 'forbidden') must NOT bubble into the root context.
+        self.assertNotIn('forbidden', ctx)
+
     def test_unannotated_prop_follows_external_ref(self):
         # Regression: without prop_context['@id'] = UNDEFINED for unannotated properties,
         # local_refs_only is incorrectly set to True, blocking external $ref traversal and

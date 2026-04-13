@@ -1,0 +1,7 @@
+# Feature schema — its annotated properties should reach the context when
+# referenced via features.items.$ref in root-schema.yaml's allOf[1].
+properties:
+  topology:
+    x-jsonld-id: https://example.com/topology
+  name:
+    x-jsonld-id: https://example.com/name

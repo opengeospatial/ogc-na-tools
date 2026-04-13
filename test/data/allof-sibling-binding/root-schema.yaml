@@ -1,0 +1,23 @@
+# Root schema that mirrors the myFeatureCollection pattern:
+#
+#   allOf[0] -> collection-schema.yaml provides the binding for 'features'.
+#   allOf[1] is an inline properties block with features.items.$ref pointing at
+#   feature-schema.yaml, which contributes annotated properties 'topology' and 'name'.
+#
+# The bug: when allOf[1] is processed, its local onto_context is empty (allOf[0]'s
+# result lives in the outer accumulated context).  Without sibling_context, 'features'
+# appears unbound → local_refs_only=True → the items.$ref is blocked and topology/name
+# are silently dropped.  With sibling_context, the outer context is visible → the
+# binding is found → local_refs_only=False → topology/name appear in the output.
+#
+# 'naked' has no binding anywhere, so its $ref (naked-schema.yaml / 'forbidden')
+# must still be blocked to verify bubbling prevention still works.
+allOf:
+  - $ref: ./collection-schema.yaml
+  - properties:
+      features:
+        type: array
+        items:
+          $ref: ./feature-schema.yaml
+      naked:
+        $ref: ./naked-schema.yaml
