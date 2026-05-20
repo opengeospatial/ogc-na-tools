@@ -1,0 +1,18 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+x-jsonld-prefixes:
+  ex: http://example.com/
+type: object
+properties:
+  ex:name:
+    x-jsonld-id: http://example.com/name
+  ex:container:
+    x-jsonld-id: http://example.com/container
+    type: object
+    properties:
+      child:
+        x-jsonld-id: http://example.com/child
+  ex:typed:
+    x-jsonld-id: http://example.com/typed
+    x-jsonld-type: '@id'
+  normalProp:
+    x-jsonld-id: http://example.com/normal

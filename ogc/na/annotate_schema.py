@@ -619,16 +619,42 @@ class SchemaAnnotator:
         updated_refs: set[int] = set()
 
         def find_prop_context(prop, context_stack) -> dict | None:
+            def expand_curie(name):
+                if ':' not in name:
+                    return None
+                pfx, local = name.split(':', 1)
+                if pfx in prefixes:
+                    return f"{prefixes[pfx]}{local}"
+                for c in reversed(context_stack):
+                    if pfx in c:
+                        pval = c[pfx]
+                        if isinstance(pval, str):
+                            return f"{pval}{local}"
+                        elif isinstance(pval, dict) and isinstance(pval.get('@id'), str):
+                            return f"{pval['@id']}{local}"
+                return None
+
             for ctx in reversed(context_stack):
                 if prop in ctx:
                     prop_ctx = ctx[prop]
                     if isinstance(prop_ctx, str):
                         return {'@id': prop_ctx}
                     elif '@id' not in prop_ctx and '@reverse' not in prop_ctx:
+                        # For compact IRI terms (prefix:local) the @id is implied by
+                        # CURIE expansion; synthesize it rather than raising an error.
+                        expanded = expand_curie(prop)
+                        if expanded:
+                            result = {k: v for k, v in prop_ctx.items() if k in JSON_LD_KEYWORDS}
+                            result['@id'] = expanded
+                            return result
                         raise ValueError(f'Missing @id for property {prop} in context {json.dumps(ctx, indent=2)}')
                     else:
                         result = {k: v for k, v in prop_ctx.items() if k in JSON_LD_KEYWORDS}
                         return result
+            # CURIE fallback: no explicit entry, but prefix:local with a known prefix
+            expanded = expand_curie(prop)
+            if expanded:
+                return {'@id': expanded}
 
         def process_properties(obj: dict, context_stack: list[dict[str, Any]],
                                from_schema: ReferencedSchema, level) -> Iterable[str]:
@@ -901,6 +927,25 @@ class ContextBuilder:
                     self._resolved_properties[path_key].merge(resolved)
                 else:
                     self._resolved_properties[path_key] = resolved
+
+                if ':' in prop:
+                    # CURIE-named property: @id is implied by prefix expansion in JSON-LD,
+                    # so don't emit it explicitly. Other annotations (@type, @container…)
+                    # are valid as a term definition for the compact IRI and must be kept.
+                    # Nested child bindings are hoisted directly into the parent context.
+                    child_ctx = process_subschema(prop_val, from_schema,
+                                                  full_property_path, is_vocab=new_vocab,
+                                                  current_vocab=current_vocab)
+                    prop_context.pop('@id', None)
+                    nested = prop_context.pop('@context', {})
+                    merge_contexts(nested, child_ctx)
+                    merge_contexts(onto_context, nested)
+                    if prop_context:
+                        if prop not in onto_context:
+                            onto_context[prop] = prop_context
+                        else:
+                            merge_contexts(onto_context[prop], prop_context)
+                    continue
 
                 if (prop_id_value in ('@nest', '@graph')
                         or (prop_id_value == UNDEFINED and from_schema == root_schema)
@@ -1226,7 +1271,7 @@ class ContextBuilder:
                     if not term_value['@context']:
                         term_value.pop('@context', None)
                         changed = True
-                    elif is_vocab or term_value.get('@id', term_value.get('@reverse')):
+                    elif is_vocab or term_value.get('@id', term_value.get('@reverse')) or ':' in term:
                         term_is_vocab = (is_vocab
                                          and ('@vocab' not in term_value['@context']
                                               or term_value['@context']['@vocab'] is not None))

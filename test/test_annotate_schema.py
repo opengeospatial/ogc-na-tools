@@ -315,3 +315,64 @@ class AnnotateSchemaTest(unittest.TestCase):
         root_ctx = ctx_builder.context['@context']
         self.assertIn('propContainer', root_ctx)
         self.assertIn('propNested', root_ctx['propContainer']['@context'])
+
+    def test_curie_property_annotation(self):
+        # Properties named in prefix:local form should receive x-jsonld-id set to the
+        # expanded full URI during annotation (the prefix is resolved from the context).
+        annotator = SchemaAnnotator()
+        schema = annotator.process_schema(DATA_DIR / 'curie-property/schema.yaml').schema
+
+        # ex:name -> http://example.com/name (prefix ex = http://example.com/)
+        self.assertEqual(
+            deep_get(schema, 'properties', 'ex:name', 'x-jsonld-id'),
+            'http://example.com/name',
+        )
+        # ex:container is also a CURIE property and should get the same treatment
+        self.assertEqual(
+            deep_get(schema, 'properties', 'ex:container', 'x-jsonld-id'),
+            'http://example.com/container',
+        )
+        # normalProp is an ordinary named property; annotation comes from the context mapping
+        self.assertEqual(
+            deep_get(schema, 'properties', 'normalProp', 'x-jsonld-id'),
+            'http://example.com/normal',
+        )
+        # ex:typed has an explicit context entry with @type but no @id — the @id must
+        # be synthesized from CURIE expansion rather than raising an error
+        self.assertEqual(
+            deep_get(schema, 'properties', 'ex:typed', 'x-jsonld-id'),
+            'http://example.com/typed',
+        )
+        self.assertEqual(
+            deep_get(schema, 'properties', 'ex:typed', 'x-jsonld-type'),
+            '@id',
+        )
+
+    def test_curie_property_context_builder(self):
+        # CURIE-named properties must not appear as explicit terms in the built context —
+        # JSON-LD expands them via the prefix definition and an explicit entry would conflict.
+        # Nested bindings of a CURIE property must be hoisted to the parent context.
+        ctx_builder = ContextBuilder(DATA_DIR / 'curie-property/schema-builder.yaml')
+        ctx = ctx_builder.context['@context']
+
+        # The prefix definition must be present so CURIE expansion works
+        self.assertIn('ex', ctx)
+
+        # CURIE-named properties must NOT appear as explicit terms
+        self.assertNotIn('ex:name', ctx)
+        self.assertNotIn('ex:container', ctx)
+
+        # normalProp has an explicit context mapping and must appear
+        self.assertIn('normalProp', ctx)
+
+        # child is nested under ex:container in the schema but its binding should be
+        # hoisted to the root context (since ex:container itself is not emitted)
+        self.assertIn('child', ctx)
+
+        # ex:typed has @type but no @id in its context entry; the annotation must survive
+        # (the @id is implied by CURIE expansion and must not appear explicitly)
+        self.assertIn('ex:typed', ctx)
+        typed_entry = ctx['ex:typed']
+        self.assertIsInstance(typed_entry, dict)
+        self.assertNotIn('@id', typed_entry)
+        self.assertEqual(typed_entry.get('@type'), '@id')

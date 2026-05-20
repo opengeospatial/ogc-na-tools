@@ -1,0 +1,9 @@
+{
+  "@context": {
+    "ex": "http://example.com/",
+    "normalProp": "ex:normal",
+    "ex:typed": {
+      "@type": "@id"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+x-jsonld-context: context.jsonld
+type: object
+properties:
+  ex:name: {}
+  ex:container:
+    type: object
+    properties:
+      child:
+        x-jsonld-id: http://example.com/child
+  normalProp: {}
+  ex:typed: {}
