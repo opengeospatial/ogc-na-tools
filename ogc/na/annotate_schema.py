@@ -727,7 +727,7 @@ class SchemaAnnotator:
             if '$ref' in subschema and id(subschema) not in updated_refs:
                 if self._ref_mapper:
                     subschema['$ref'] = self._ref_mapper(subschema['$ref'], subschema)
-                if subschema['$ref'].startswith('#/') or subschema['$ref'].startswith(f"{from_schema.location}#/"):
+                if subschema['$ref'].startswith('#') or subschema['$ref'].startswith(f"{from_schema.location}#"):
                     target_schema = self.schema_resolver.resolve_schema(subschema['$ref'], from_schema)
                     if target_schema:
                         new_terms = process_subschema(target_schema.subschema, context_stack,

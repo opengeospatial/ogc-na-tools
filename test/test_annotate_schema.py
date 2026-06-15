@@ -156,6 +156,28 @@ class AnnotateSchemaTest(unittest.TestCase):
         self.assertEqual(deep_get(schema, '$defs', 'objectB', 'properties', 'propB', 'x-jsonld-id'),
                          vocab + 'b')
 
+    def test_anchor_ref_inner_context(self):
+        # Regression: $ref: "#anchor" (a $anchor-style ref, not a JSON Pointer #/ ref)
+        # was not followed during property traversal, so $defs entries referenced this way
+        # were never annotated with the inner @context of the containing array property.
+        # The properties ended up in x-jsonld-extra-terms instead of on the $defs schema.
+        annotator = SchemaAnnotator()
+        schema = annotator.process_schema(
+            DATA_DIR / 'anchor-ref-inner-context/schema.yaml').schema
+
+        # Top-level property with inner @context
+        self.assertEqual(deep_get(schema, 'properties', 'items', 'x-jsonld-id'),
+                         'http://example.com/items')
+        # $defs/item properties must be annotated via the inner @context of 'items'
+        self.assertEqual(deep_get(schema, '$defs', 'item', 'properties', 'itemCode', 'x-jsonld-id'),
+                         'http://example.com/code')
+        self.assertEqual(deep_get(schema, '$defs', 'item', 'properties', 'itemLabel', 'x-jsonld-id'),
+                         'http://example.com/label')
+        # Must not leak into extra-terms
+        extra = schema.get('x-jsonld-extra-terms', {})
+        self.assertNotIn('itemCode', extra)
+        self.assertNotIn('itemLabel', extra)
+
     def test_nested_context_file_ref(self):
         # Bug: resolve_inner uses the outer `ctx` closure variable instead of `inner_ctx`
         # when a context term's @context is a file path reference to a different file.

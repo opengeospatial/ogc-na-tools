@@ -1,0 +1,14 @@
+{
+  "@context": {
+    "ex": "http://example.com/",
+    "name": "ex:name",
+    "items": {
+      "@id": "ex:items",
+      "@container": "@set",
+      "@context": {
+        "itemCode": "ex:code",
+        "itemLabel": "ex:label"
+      }
+    }
+  }
+}

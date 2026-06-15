@@ -1,0 +1,19 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+x-jsonld-context: context.jsonld
+type: object
+$defs:
+  item:
+    $anchor: item
+    type: object
+    properties:
+      itemCode:
+        type: string
+      itemLabel:
+        type: string
+properties:
+  name:
+    type: string
+  items:
+    type: array
+    items:
+      $ref: '#item'
