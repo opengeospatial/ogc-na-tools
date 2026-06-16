@@ -398,3 +398,28 @@ class AnnotateSchemaTest(unittest.TestCase):
         self.assertIsInstance(typed_entry, dict)
         self.assertNotIn('@id', typed_entry)
         self.assertEqual(typed_entry.get('@type'), '@id')
+
+    def test_resolve_context_array_term_override(self):
+        # Later entries in a context array must override terms defined by earlier entries.
+        # Regression: resolved_ctx was never updated in the loop, so only the last entry
+        # survived and all earlier entries were discarded.
+        resolved = annotate_schema.resolve_context([
+            {'termA': 'http://example.com/a', 'termB': 'http://example.com/b'},
+            {'termA': 'http://example.com/a-override'},
+        ])
+        # termA from the second entry must win
+        self.assertEqual(resolved.context['termA'], 'http://example.com/a-override')
+        # termB from the first entry must survive (not discarded)
+        self.assertEqual(resolved.context['termB'], 'http://example.com/b')
+
+    def test_resolve_context_dict_wrapping_array(self):
+        # A context passed as {"@context": [...]} must not crash with AttributeError when
+        # the inner @context value is a list (was calling .keys() on the list directly).
+        resolved = annotate_schema.resolve_context({
+            '@context': [
+                {'termA': 'http://example.com/a', 'termB': 'http://example.com/b'},
+                {'termA': 'http://example.com/a-override'},
+            ]
+        })
+        self.assertEqual(resolved.context['termA'], 'http://example.com/a-override')
+        self.assertEqual(resolved.context['termB'], 'http://example.com/b')

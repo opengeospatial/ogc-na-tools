@@ -532,10 +532,13 @@ def resolve_context(ctx: Path | str | dict | list, expand_uris=True,
                 else:
                     resolved_entry = resolve_context(ctx_entry, _base_path=_base_path)
                 inner_prefixes.update(resolved_entry.prefixes)
-                resolved = ResolvedContext(merge_dicts(resolved_entry.context, resolved_ctx), inner_prefixes)
+                resolved_ctx = merge_dicts(resolved_entry.context, resolved_ctx)
+            resolved = ResolvedContext(resolved_ctx, inner_prefixes)
         else:
             if '@context' in inner_ctx:
                 inner_ctx = inner_ctx['@context']
+                if not isinstance(inner_ctx, dict):
+                    return resolve_inner(inner_ctx, ctx_stack)
             resolved = ResolvedContext(inner_ctx, {})
 
         if not resolved or not resolved.context:
