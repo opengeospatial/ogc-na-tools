@@ -1,0 +1,7 @@
+{
+  "@context": {
+    "ex": "http://example.org/",
+    "termA": "ex:termA",
+    "termB": "ex:termB"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "@context": {
+    "@import": "./base.jsonld",
+    "termA": "http://example.org/override/termA",
+    "termC": "http://example.org/termC"
+  }
+}

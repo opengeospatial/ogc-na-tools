@@ -459,9 +459,20 @@ def resolve_ref(ref: str, fn_from: str | Path | None = None, url_from: str | Non
 
 
 def resolve_context(ctx: Path | str | dict | list, expand_uris=True,
-                    _base_path: Path | None = None) -> ResolvedContext:
+                    base_url: str | Path | None = None) -> ResolvedContext:
     if not ctx:
         return ResolvedContext()
+
+    # Normalise caller-supplied base to an absolute string URL so all relative-ref
+    # resolution can go through a single urljoin() call regardless of scheme.
+    if base_url is None:
+        _base_url: str | None = None
+    elif isinstance(base_url, Path):
+        _base_url = base_url.resolve().as_uri()
+    elif not is_url(base_url):
+        _base_url = Path(base_url).resolve().as_uri()
+    else:
+        _base_url = base_url
 
     prefixes = {}
 
@@ -499,28 +510,53 @@ def resolve_context(ctx: Path | str | dict | list, expand_uris=True,
             term_val['@context'] = resolve_inner(term_ctx, ctx_stack).context
         return term_val
 
+    def _to_absolute_url(ref: str | Path) -> str:
+        """Resolve *ref* to an absolute URL using *_base_url* when available."""
+        if isinstance(ref, Path):
+            if ref.is_absolute():
+                return ref.resolve().as_uri()
+            return urljoin(_base_url, ref.as_posix()) if _base_url else ref.resolve().as_uri()
+        if is_url(ref):
+            return ref
+        return urljoin(_base_url, ref) if _base_url else Path(ref).resolve().as_uri()
+
+    def _load_from_url(url: str) -> tuple[Any, str]:
+        """Load the @context value from *url* (file:// or http/https).
+
+        Returns (content, final_url) where *final_url* is the URL after any
+        redirects, used as the new base for relative refs inside the document.
+        """
+        parsed = urlparse(url)
+        if parsed.scheme == 'file':
+            path = Path(parsed.path)
+            try:
+                return load_yaml(filename=path).get('@context'), url
+            except Exception as e:
+                raise ContextLoadError(f'Error loading context file "{path}"') from e
+        try:
+            r = requests_session.get(url)
+            r.raise_for_status()
+            return r.json().get('@context'), r.url
+        except Exception as e:
+            raise ContextLoadError(f'Error fetching context from "{url}"') from e
+
     def resolve_inner(inner_ctx, ctx_stack=None) -> ResolvedContext | None:
         resolved = None
+
+        # Normalise Path objects and local path strings to absolute file:// URLs
+        # so the two loading branches below collapse into one.
         if isinstance(inner_ctx, Path) or (isinstance(inner_ctx, str) and not is_url(inner_ctx)):
+            inner_ctx = _to_absolute_url(inner_ctx)
+
+        if isinstance(inner_ctx, str):
             try:
-                if not isinstance(inner_ctx, Path):
-                    inner_ctx = Path(inner_ctx)
-                if not inner_ctx.is_absolute() and _base_path:
-                    inner_ctx = (_base_path / inner_ctx).resolve()
-                file_base_path = inner_ctx.resolve().parent
-                resolved = resolve_context(load_yaml(filename=inner_ctx).get('@context'),
-                                           expand_uris=expand_uris, _base_path=file_base_path)
+                content, final_url = _load_from_url(inner_ctx)
+                new_base = urljoin(final_url, '.')
+                resolved = resolve_context(content, expand_uris=expand_uris, base_url=new_base)
+            except ContextLoadError:
+                raise
             except Exception as e:
-                raise ContextLoadError(f'Error resolving context document in file "{inner_ctx}"') from e
-        elif isinstance(inner_ctx, str):
-            try:
-                r = requests_session.get(inner_ctx)
-                r.raise_for_status()
-                fetched = r.json().get('@context')
-                if fetched:
-                    resolved = resolve_context(fetched)
-            except Exception as e:
-                raise ContextLoadError(f'Error resolving context document at URL "{inner_ctx}"') from e
+                raise ContextLoadError(f'Error resolving context at "{inner_ctx}"') from e
 
         elif isinstance(inner_ctx, Sequence):
             resolved_ctx = {}
@@ -528,18 +564,40 @@ def resolve_context(ctx: Path | str | dict | list, expand_uris=True,
             for ctx_entry in inner_ctx:
                 if isinstance(ctx_entry, dict):
                     # Array entries must be wrapped with @context
-                    resolved_entry = resolve_context({'@context': ctx_entry}, _base_path=_base_path)
+                    resolved_entry = resolve_context({'@context': ctx_entry},
+                                                     expand_uris=expand_uris, base_url=_base_url)
                 else:
-                    resolved_entry = resolve_context(ctx_entry, _base_path=_base_path)
+                    resolved_entry = resolve_context(ctx_entry,
+                                                     expand_uris=expand_uris, base_url=_base_url)
                 inner_prefixes.update(resolved_entry.prefixes)
                 resolved_ctx = merge_dicts(resolved_entry.context, resolved_ctx)
             resolved = ResolvedContext(resolved_ctx, inner_prefixes)
+
         else:
             if '@context' in inner_ctx:
                 inner_ctx = inner_ctx['@context']
                 if not isinstance(inner_ctx, dict):
                     return resolve_inner(inner_ctx, ctx_stack)
-            resolved = ResolvedContext(inner_ctx, {})
+
+            import_ref = inner_ctx.get('@import')
+            if import_ref:
+                import_url = _to_absolute_url(import_ref)
+                import_content, import_final_url = _load_from_url(import_url)
+                # JSON-LD 1.1: an @import-referenced context MUST NOT itself contain @import.
+                raw_entries = import_content if isinstance(import_content, list) else [import_content]
+                if any(isinstance(e, dict) and '@import' in e for e in raw_entries):
+                    raise ContextLoadError(
+                        f'Context at "{import_url}" contains @import, which is '
+                        f'not allowed in an @import-referenced context'
+                    )
+                imported = resolve_context(import_content, expand_uris=expand_uris,
+                                           base_url=urljoin(import_final_url, '.'))
+                # Local terms override imported ones; @import key is dropped.
+                base_ctx = dict(imported.context) if imported and imported.context else {}
+                base_ctx.update({k: v for k, v in inner_ctx.items() if k != '@import'})
+                resolved = ResolvedContext(base_ctx, dict(imported.prefixes) if imported else {})
+            else:
+                resolved = ResolvedContext(inner_ctx, {})
 
         if not resolved or not resolved.context:
             return resolved

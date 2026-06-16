@@ -1,0 +1,6 @@
+{
+  "@context": {
+    "@import": "../base.jsonld",
+    "termD": "http://example.org/termD"
+  }
+}

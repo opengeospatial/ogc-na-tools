@@ -423,3 +423,31 @@ class AnnotateSchemaTest(unittest.TestCase):
         })
         self.assertEqual(resolved.context['termA'], 'http://example.com/a-override')
         self.assertEqual(resolved.context['termB'], 'http://example.com/b')
+
+    def test_import_basic(self):
+        # @import pre-populates the context with the imported terms; local terms override.
+        ctx_file = DATA_DIR / 'context-import' / 'with-import.jsonld'
+        resolved = annotate_schema.resolve_context(ctx_file)
+        # termA must be the local override, not the value from base.jsonld
+        self.assertEqual(resolved.context['termA'], 'http://example.org/override/termA')
+        # termB comes entirely from the imported base context (CURIE-expanded)
+        self.assertEqual(resolved.context['termB'], 'http://example.org/termB')
+        # termC is a local-only term
+        self.assertEqual(resolved.context['termC'], 'http://example.org/termC')
+
+    def test_import_relative_path_from_subdirectory(self):
+        # @import with a relative path must resolve relative to the importing file,
+        # not the working directory.  child-with-import.jsonld is in sub/ and
+        # references ../base.jsonld, which must resolve to context-import/base.jsonld.
+        ctx_file = DATA_DIR / 'context-import' / 'sub' / 'child-with-import.jsonld'
+        resolved = annotate_schema.resolve_context(ctx_file)
+        self.assertEqual(resolved.context['termA'], 'http://example.org/termA')
+        self.assertEqual(resolved.context['termB'], 'http://example.org/termB')
+        self.assertEqual(resolved.context['termD'], 'http://example.org/termD')
+
+    def test_import_nested_raises(self):
+        # JSON-LD 1.1: an @import-referenced context MUST NOT itself contain @import.
+        # nested-import.jsonld imports with-import.jsonld, which has @import — must error.
+        ctx_file = DATA_DIR / 'context-import' / 'nested-import.jsonld'
+        with self.assertRaises(annotate_schema.ContextLoadError):
+            annotate_schema.resolve_context(ctx_file)
