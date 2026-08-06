@@ -1,0 +1,11 @@
+# Base/parent schema, referenced via allOf from root-schema.yaml. Binds 'note' and
+# 'label' to SKOS predicates, each with an explicit @type.
+properties:
+  note:
+    x-jsonld-id: http://www.w3.org/2004/02/skos/core#note
+    x-jsonld-type: http://www.w3.org/2001/XMLSchema#string
+    type: string
+  label:
+    x-jsonld-id: http://www.w3.org/2004/02/skos/core#prefLabel
+    x-jsonld-type: http://www.w3.org/2001/XMLSchema#string
+    type: string

@@ -283,6 +283,33 @@ class AnnotateSchemaTest(unittest.TestCase):
         # $ref (naked-schema.yaml / 'forbidden') must NOT bubble into the root context.
         self.assertNotIn('forbidden', ctx)
 
+    def test_allof_child_overrides_parent_binding(self):
+        # A schema composed as allOf[base $ref, own properties] - the shape produced by
+        # the bblocks postprocessor's `extends`/profiling mechanism - can redeclare a
+        # binding already provided by the base schema. This is what lets a specialising
+        # ("child") block override a semantic mapping inherited from its parent, e.g. to
+        # narrow skos:note down to skos:definition, without forking the base schema.
+        #
+        # allOf branches are merged in order via merge_contexts(), which favours the
+        # second argument on conflicting keys, so the later (child) branch must win over
+        # the earlier (base) one. The override is per JSON-LD keyword, not all-or-nothing:
+        # a property that only redeclares @id still inherits @type from the base binding
+        # if the child doesn't redeclare it too.
+        ctx_builder = ContextBuilder(DATA_DIR / 'allof-override-binding/root-schema.yaml')
+        ctx = ctx_builder.context['@context']
+
+        # 'note': child only overrides @id -> @id comes from the child, @type is still
+        # inherited from the base schema.
+        note = ctx['note']
+        self.assertEqual(note['@id'], 'http://www.w3.org/2004/02/skos/core#definition')
+        self.assertEqual(note['@type'], 'http://www.w3.org/2001/XMLSchema#string')
+
+        # 'label': child overrides both @id and @type -> both come from the child, the
+        # base schema's bindings are fully shadowed.
+        label = ctx['label']
+        self.assertEqual(label['@id'], 'http://www.w3.org/2004/02/skos/core#altLabel')
+        self.assertEqual(label['@type'], 'http://www.w3.org/2001/XMLSchema#language')
+
     def test_allof_sibling_binding_propagation(self):
         # Regression: a property ('features') that has no x-jsonld-id in an allOf branch
         # gets its binding from a *sibling* allOf branch (allOf[0] -> collection-schema).

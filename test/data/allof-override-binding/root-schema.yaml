@@ -1,0 +1,17 @@
+# Mirrors the shape the bblocks postprocessor's `extends`/profiling mechanism produces:
+# a child schema composed as allOf[base $ref, own properties]. The child re-declares
+# bindings for 'note' and 'label' that were already bound in base-schema.yaml, to check
+# that the later (child) allOf branch wins over the earlier (base) one.
+allOf:
+  - $ref: ./base-schema.yaml
+  - properties:
+      note:
+        # Only @id is redeclared here: specialises skos:note -> skos:definition, while
+        # the @type mapping is left to be inherited from the base schema.
+        x-jsonld-id: http://www.w3.org/2004/02/skos/core#definition
+        type: string
+      label:
+        # Both @id and @type are redeclared: a full override of the base binding.
+        x-jsonld-id: http://www.w3.org/2004/02/skos/core#altLabel
+        x-jsonld-type: http://www.w3.org/2001/XMLSchema#language
+        type: string
