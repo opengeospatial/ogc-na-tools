@@ -1184,8 +1184,24 @@ class ContextBuilder:
                     branch_key = '\x00'.join(branch_path)
                     if branch_key not in self._resolved_properties:
                         branch_title = None
+                        branch_source = from_schema.location
                         if isinstance(branch_schema, dict):
                             branch_title = branch_schema.get('title')
+                            # If the branch is (or starts with) a $ref, resolve it so the
+                            # branch's title/source reflect the referenced schema (e.g. the
+                            # bblock it points to) rather than the schema the oneOf/anyOf
+                            # itself lives in.
+                            branch_ref = branch_schema.get('$ref')
+                            if branch_ref:
+                                try:
+                                    referenced_branch_schema = self.schema_resolver.resolve_schema(
+                                        branch_ref, from_schema)
+                                except Exception:
+                                    referenced_branch_schema = None
+                                if referenced_branch_schema:
+                                    branch_source = referenced_branch_schema.location
+                                    if not branch_title and isinstance(referenced_branch_schema.subschema, dict):
+                                        branch_title = referenced_branch_schema.subschema.get('title')
                         if not branch_title:
                             branch_title = chr(ord('a') + idx) if idx < 26 else str(idx)
                         self._resolved_properties[branch_key] = ResolvedProperty(
@@ -1193,7 +1209,7 @@ class ContextBuilder:
                             id=None, jsonld_type=None, vocab=None,
                             title=branch_title, description=None,
                             required=False, keyword='branch',
-                            sources=[from_schema.location],
+                            sources=[branch_source],
                         )
                     merge_contexts(onto_context,
                                    process_subschema(branch_schema, from_schema,
