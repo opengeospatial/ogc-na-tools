@@ -212,6 +212,23 @@ class AnnotateSchemaTest(unittest.TestCase):
         self.assertNotIn('propExt1', ctx_builder.context['@context'])
         self.assertNotIn('propExt2', ctx_builder.context['@context'])
 
+    def test_extra_terms_survive_doubly_referenced_schema(self):
+        # Regression: x-jsonld-extra-terms should still bind a property whose only
+        # occurrence in the resolved schema comes from an external, unannotated $ref
+        # that is reached twice (e.g. once directly and once nested under "properties").
+        # The second time such a $ref is resolved, its context is served from
+        # cached_schema_contexts via copy.deepcopy(). Before the fix, deepcopy()'d an
+        # "undefined marker" (_Undefined) into a *new* instance, so the `is UNDEFINED`
+        # identity checks guarding the extra-terms override no longer matched, and the
+        # property was left unbound (silently pruned) instead of getting its extra-term
+        # mapping applied.
+        ctx_builder = ContextBuilder(DATA_DIR / 'extra-terms-double-ref/root-schema.yaml')
+        root_ctx = ctx_builder.context['@context']
+        self.assertEqual(root_ctx.get('start_datetime'), {
+            '@id': 'https://example.com/start_datetime',
+            '@type': 'xsd:dateTime',
+        })
+
     def test_null_vocab_annotator(self):
         # @vocab: null in a nested @context should be written as x-jsonld-vocab: null on the property,
         # and nested properties without explicit mappings should not receive x-jsonld-id.

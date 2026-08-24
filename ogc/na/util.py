@@ -30,9 +30,24 @@ except ImportError:
 
 
 class _Undefined:
+    """
+    Sentinel type for "no value set yet". UNDEFINED is meant to be a singleton,
+    and code across the codebase relies on `is UNDEFINED`/`is not UNDEFINED`
+    identity checks to detect it. copy.copy()/copy.deepcopy() would otherwise
+    produce a distinct _Undefined instance that fails those identity checks
+    (e.g. when a cached context dict containing UNDEFINED values is
+    deepcopy'd for reuse), so __copy__/__deepcopy__ are overridden to always
+    return the same singleton instance.
+    """
 
     def __bool__(self):
         return False
+
+    def __copy__(self):
+        return self
+
+    def __deepcopy__(self, memo):
+        return self
 
 
 UNDEFINED = _Undefined()

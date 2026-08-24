@@ -136,7 +136,7 @@ import requests_cache
 
 from ogc.na.exceptions import ContextLoadError, SchemaLoadError
 from ogc.na.util import is_url, load_yaml, LRUCache, dump_yaml, \
-    merge_contexts, merge_dicts, dict_contains, JSON_LD_KEYWORDS, UNDEFINED, prune_context, fix_nest
+    merge_contexts, merge_dicts, dict_contains, JSON_LD_KEYWORDS, UNDEFINED, _Undefined, prune_context, fix_nest
 
 logger = logging.getLogger(__name__)
 
@@ -1259,9 +1259,9 @@ class ContextBuilder:
             if ANNOTATION_EXTRA_TERMS in subschema:
                 for extra_term, extra_term_context in subschema[ANNOTATION_EXTRA_TERMS].items():
                     if (extra_term not in onto_context
-                        or onto_context[extra_term] is UNDEFINED
+                        or isinstance(onto_context[extra_term], _Undefined)
                         or (isinstance(onto_context[extra_term], dict)
-                            and onto_context[extra_term].get('@id') is UNDEFINED)):
+                            and isinstance(onto_context[extra_term].get('@id'), _Undefined))):
                         if isinstance(extra_term_context, dict):
                             extra_term_context = {f"@{k[len(ANNOTATION_PREFIX):]}": v
                                                   for k, v in extra_term_context.items()}

@@ -1,0 +1,11 @@
+type: object
+allOf:
+  - $ref: ./common.json
+properties:
+  properties:
+    allOf:
+      - $ref: ./common.json
+x-jsonld-extra-terms:
+  start_datetime:
+    x-jsonld-id: https://example.com/start_datetime
+    x-jsonld-type: xsd:dateTime
