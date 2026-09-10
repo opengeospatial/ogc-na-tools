@@ -167,6 +167,7 @@ def generate_provenance(g: Graph = None,
         g.add((activity, PROV.endedAtTime, Literal(end)))
     if metadata.batch_activity_id:
         batch_activity = BNode()
+        g.add((batch_activity, RDF.type, PROV.Activity))
         g.add((batch_activity, DCTERMS.identifier, Literal(metadata.batch_activity_id)))
         g.add((activity, PROV.wasInformedBy, batch_activity))
     if metadata.comment:

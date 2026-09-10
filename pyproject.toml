@@ -53,5 +53,6 @@ dev = [
     "mkdocs-section-index",
     "mkdocstrings",
     "mkdocstrings-python",
-    "mkdocs-markdownextradata-plugin"
+    "mkdocs-markdownextradata-plugin",
+    "pyshacl"
 ]
