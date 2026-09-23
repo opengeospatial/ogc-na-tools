@@ -1,0 +1,11 @@
+# Negative control: the child schema redeclares 'href' as a bare top-level property,
+# instead of restating the enclosing 'assets' object. Assembly matches allOf branches by
+# structural position, not by property name alone, so this must NOT override the nested
+# 'assets.href' binding inherited from base-schema.yaml — it only introduces an
+# unrelated, independent top-level 'href' term.
+allOf:
+  - $ref: ./base-schema.yaml
+  - properties:
+      href:
+        type: string
+        x-jsonld-id: http://example.com/child/bare-href

@@ -1,0 +1,11 @@
+# Base/parent schema, referenced via allOf from root-schema.yaml. Binds 'href', nested
+# inside the 'assets' object, to a generic predicate.
+properties:
+  assets:
+    type: object
+    x-jsonld-id: http://example.com/hasAsset
+    properties:
+      href:
+        type: string
+        x-jsonld-id: http://example.com/base/href
+        x-jsonld-type: '@id'

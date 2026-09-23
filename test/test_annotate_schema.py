@@ -327,6 +327,45 @@ class AnnotateSchemaTest(unittest.TestCase):
         self.assertEqual(label['@id'], 'http://www.w3.org/2004/02/skos/core#altLabel')
         self.assertEqual(label['@type'], 'http://www.w3.org/2001/XMLSchema#language')
 
+    def test_allof_child_overrides_nested_parent_binding(self):
+        # Same override mechanism as test_allof_child_overrides_parent_binding, but for a
+        # term nested inside an object ('assets.href') instead of a top-level property.
+        # Assembly matches allOf branches by structural position in the schema tree, not
+        # by property name alone, so overriding a nested term isn't as simple as
+        # redeclaring its name: the child has to restate the whole enclosing object
+        # ('assets'), with its own x-jsonld-id, in its own allOf branch — see
+        # test_allof_child_does_not_override_nested_binding_via_bare_redeclaration for the
+        # negative case where that isn't done.
+        ctx_builder = ContextBuilder(DATA_DIR / 'allof-override-nested-binding/root-schema.yaml')
+        ctx = ctx_builder.context['@context']
+
+        # 'assets' itself keeps its own binding (identical in base and child here).
+        assets = ctx['assets']
+        self.assertEqual(assets['@id'], 'http://example.com/hasAsset')
+
+        # 'href', nested under 'assets': only @id is redeclared by the child -> @id comes
+        # from the child, @type ('@id') is still inherited from the base schema.
+        href = assets['@context']['href']
+        self.assertEqual(href['@id'], 'http://example.com/child/href')
+        self.assertEqual(href['@type'], '@id')
+
+    def test_allof_child_does_not_override_nested_binding_via_bare_redeclaration(self):
+        # Negative control for the above: redeclaring 'href' as a bare top-level property
+        # in the child's own allOf branch, instead of restating the enclosing 'assets'
+        # object, must NOT override the nested 'assets.href' binding inherited from the
+        # base schema. It only introduces an unrelated, independent top-level 'href' term.
+        ctx_builder = ContextBuilder(DATA_DIR / 'allof-override-nested-binding/root-schema-bare-redeclare.yaml')
+        ctx = ctx_builder.context['@context']
+
+        # The nested binding is untouched: still the base schema's mapping.
+        href = ctx['assets']['@context']['href']
+        self.assertEqual(href['@id'], 'http://example.com/base/href')
+        self.assertEqual(href['@type'], '@id')
+
+        # The bare top-level 'href' is a separate, independent term (compacted to a plain
+        # string since it only maps @id, with no other keyword).
+        self.assertEqual(ctx['href'], 'http://example.com/child/bare-href')
+
     def test_allof_sibling_binding_propagation(self):
         # Regression: a property ('features') that has no x-jsonld-id in an allOf branch
         # gets its binding from a *sibling* allOf branch (allOf[0] -> collection-schema).

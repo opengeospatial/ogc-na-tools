@@ -1,0 +1,18 @@
+# Mirrors the shape the bblocks postprocessor's `extends`/profiling mechanism produces,
+# but for a term nested inside an object rather than a top-level property. The child
+# schema restates the whole 'assets' object (not just 'href') in its own allOf branch,
+# with its own x-jsonld-id on both the object and the nested property, to override the
+# 'href' binding inherited from base-schema.yaml.
+allOf:
+  - $ref: ./base-schema.yaml
+  - properties:
+      assets:
+        type: object
+        x-jsonld-id: http://example.com/hasAsset
+        properties:
+          href:
+            # Only @id is redeclared here: specialises http://example.com/base/href ->
+            # http://example.com/child/href, while the @type mapping ('@id') is left to
+            # be inherited from the base schema.
+            type: string
+            x-jsonld-id: http://example.com/child/href
