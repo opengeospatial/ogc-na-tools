@@ -1,0 +1,7 @@
+# Schema for the result object. Its annotated properties must reach the context
+# through the inherited 'hasResult' binding.
+type: object
+properties:
+  depth:
+    x-jsonld-id: https://example.com/depth
+    type: number

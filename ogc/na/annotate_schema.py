@@ -1051,7 +1051,8 @@ class ContextBuilder:
                     merge_contexts(prop_context['@context'] if is_vocab else onto_context,
                                    process_subschema(prop_val, from_schema,
                                                      full_property_path, is_vocab=new_vocab,
-                                                     local_refs_only=not prop_already_bound and '@id' not in prop_context and not is_vocab))
+                                                     local_refs_only=not prop_already_bound and '@id' not in prop_context and not is_vocab,
+                                                     sibling_context={**(sibling_context or {}), **onto_context}))
                 else:
                     merge_contexts(prop_context['@context'],
                                    process_subschema(prop_val, from_schema,

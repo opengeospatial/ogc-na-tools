@@ -300,6 +300,28 @@ class AnnotateSchemaTest(unittest.TestCase):
         # $ref (naked-schema.yaml / 'forbidden') must NOT bubble into the root context.
         self.assertNotIn('forbidden', ctx)
 
+    def test_allof_sibling_binding_propagation_through_nest(self):
+        # Regression: same as test_allof_sibling_binding_propagation, but the sibling
+        # binding is *inside* an @nest property. allOf[0] binds 'properties' (@nest) and
+        # 'properties.hasResult'; allOf[1] restates 'properties' without any x-jsonld-id
+        # and only adds a $ref under 'hasResult'.
+        #
+        # The recursion into a @nest property did not pass sibling_context down, so the
+        # nested 'hasResult' looked unbound -> local_refs_only=True -> the external $ref
+        # (result-schema.yaml) was blocked and its terms silently dropped.
+        ctx_builder = ContextBuilder(DATA_DIR / 'allof-sibling-nested-binding/root-schema.yaml')
+        ctx = ctx_builder.context['@context']
+
+        # The inherited binding is still there...
+        self.assertEqual(ctx['hasResult']['@id'], 'https://example.com/hasResult')
+        self.assertEqual(ctx['hasResult']['@type'], '@id')
+
+        # ...and the terms from the $ref'd result schema are not dropped.
+        self.assertIn('depth', ctx)
+
+        # 'unboundResult' has no binding anywhere, so its $ref must stay blocked.
+        self.assertNotIn('forbidden', ctx)
+
     def test_allof_child_overrides_parent_binding(self):
         # A schema composed as allOf[base $ref, own properties] - the shape produced by
         # the bblocks postprocessor's `extends`/profiling mechanism - can redeclare a

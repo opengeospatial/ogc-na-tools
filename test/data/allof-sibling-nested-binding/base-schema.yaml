@@ -1,0 +1,11 @@
+# Base schema: binds 'properties' as @nest and, inside it, binds 'hasResult'.
+# Referenced via allOf[0] from root-schema.yaml.
+type: object
+properties:
+  properties:
+    x-jsonld-id: '@nest'
+    type: object
+    properties:
+      hasResult:
+        x-jsonld-id: https://example.com/hasResult
+        x-jsonld-type: '@id'

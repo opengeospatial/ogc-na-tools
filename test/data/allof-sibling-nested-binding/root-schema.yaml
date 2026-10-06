@@ -1,0 +1,18 @@
+# allOf[0] binds properties (@nest) and properties.hasResult.
+# allOf[1] restates the same structure without any x-jsonld-id, only adding a $ref
+# under hasResult. The nested 'hasResult' must be seen as already bound (by the
+# sibling branch), so the external $ref contributes its terms.
+#
+# 'unboundResult' has no binding anywhere, so its $ref (also result-schema.yaml)
+# must keep being blocked.
+allOf:
+  - $ref: ./base-schema.yaml
+  - type: object
+    properties:
+      properties:
+        type: object
+        properties:
+          hasResult:
+            $ref: ./result-schema.yaml
+          unboundResult:
+            $ref: ./unbound-schema.yaml

@@ -1,0 +1,6 @@
+# Schema for a property with no binding anywhere: its annotated 'forbidden' term
+# must NOT bubble up into the root context.
+type: object
+properties:
+  forbidden:
+    x-jsonld-id: https://example.com/forbidden
