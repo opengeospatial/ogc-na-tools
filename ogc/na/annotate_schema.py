@@ -1492,7 +1492,9 @@ class ContextBuilder:
 
                 common_names = set.intersection(*(set(bp.keys()) for bp in branch_props.values()))
 
-                for name in list(common_names):
+                # Iterate in first-branch declaration order (not set order) so the output is
+                # deterministic regardless of PYTHONHASHSEED
+                for name in [n for n in branch_props[branch_keys[0]] if n in common_names]:
                     # Skip properties that have children (nested objects); hoist only leaves
                     if any(branch_props[bk][name] in children for bk in branch_keys):
                         continue

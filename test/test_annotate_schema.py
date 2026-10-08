@@ -556,3 +556,21 @@ class AnnotateSchemaTest(unittest.TestCase):
         ctx_file = DATA_DIR / 'context-import' / 'nested-import.jsonld'
         with self.assertRaises(annotate_schema.ContextLoadError):
             annotate_schema.resolve_context(ctx_file)
+    def test_hoisted_properties_order_is_deterministic(self):
+        # Hoisted common branch properties must not depend on set iteration order (PYTHONHASHSEED)
+        import os
+        import subprocess
+        import sys
+        code = ("import sys\n"
+                "from ogc.na.annotate_schema import ContextBuilder\n"
+                "cb = ContextBuilder(sys.argv[1])\n"
+                "print([rp.path for rp in cb.resolved_properties.values()])\n")
+        schema = str(DATA_DIR / 'hoist-order' / 'schema.yaml')
+        outputs = {
+            subprocess.run([sys.executable, '-c', code, schema], check=True, capture_output=True, text=True,
+                           env={**os.environ, 'PYTHONHASHSEED': str(seed)}).stdout
+            for seed in range(1, 9)
+        }
+        self.assertEqual(1, len(outputs))
+        hoisted = [p for p in eval(outputs.pop()) if len(p) == 2 and p[0] == 'step' and p[1] != '_anyOf']
+        self.assertEqual(['name', 'unitText', 'propertyID'], [p[1] for p in hoisted])

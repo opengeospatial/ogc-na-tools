@@ -1,0 +1,8 @@
+type: object
+properties:
+  step:
+    anyOf:
+      - type: object
+        properties: {name: {type: string}, unitText: {type: string}, propertyID: {type: string}, value: {type: string}}
+      - type: object
+        properties: {name: {type: string}, unitText: {type: string}, propertyID: {type: string}, other: {type: string}}
