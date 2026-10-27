@@ -139,7 +139,11 @@ def entail(g: Graph,
 
     if not inplace:
         g = copy_triples(g)
-    shacl_validate(g, shacl_graph=rules, ont_graph=extra, advanced=True, inplace=True)
+    # Mix extra into the data graph ourselves: since pyshacl 0.22, ont_graph only
+    # contributes RDFS/OWL axioms, dropping instance data (e.g., skos:Concept members)
+    if extra:
+        copy_triples(extra, g)
+    shacl_validate(g, shacl_graph=rules, ont_graph=None, advanced=True, inplace=True)
 
     if entailed_extra:
         for triple in entailed_extra:
@@ -158,9 +162,15 @@ def validate(g: Graph, shacl_graph: Graph, extra: Optional[Graph] = None,
     :param extra: Graph with additional ontological information for validation
     :return: the resulting [][ogc.na.validation.ValidationReport]
     """
+    # Mix extra into a private copy of the data graph instead of using ont_graph, which
+    # since pyshacl 0.22 only brings in RDFS/OWL axioms and drops instance data
+    # (e.g., skos:Concept members)
+    if extra:
+        g = copy_triples(extra, copy_triples(g))
+        kwargs.setdefault('inplace', True)
     return ValidationReport(shacl_validate(data_graph=g,
                                            shacl_graph=shacl_graph,
-                                           ont_graph=extra,
+                                           ont_graph=None,
                                            inference='rdfs',
                                            advanced=True,
                                            **kwargs))
